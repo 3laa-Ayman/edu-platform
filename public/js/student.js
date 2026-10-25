@@ -208,7 +208,7 @@ async function askAI(card, qid) {
   try {
     const r = await API.post(`/ai/explain/${qid}`);
     const cost = r.usage?.cost_egp
-      ? `<div class="src">Gemini · ${r.usage.input_tokens + r.usage.output_tokens} توكن · التكلفة ${fmtMoney(r.usage.cost_egp)} · المتبقي ${fmtMoney(r.usage.remaining_egp)}</div>`
+      ? `<div class="src">Gemini · ${r.usage.input_tokens + r.usage.output_tokens} توكن · التكلفة ${fmtMoney(r.usage.cost_egp, 4)} · المتبقي ${fmtMoney(r.usage.remaining_egp, 3)}</div>`
       : '<div class="src">شرح محفوظ — مجاني</div>';
     box.innerHTML = `${cost}<p class="pre">${esc(r.explanation)}</p>${r.law_note ? `<p class="law">📐 ${esc(r.law_note)}</p>` : ''}
       ${r.warning ? `<p class="notice bad">${esc(r.warning)}</p>` : ''}`;

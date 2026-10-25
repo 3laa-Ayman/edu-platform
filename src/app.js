@@ -35,6 +35,7 @@ app.get('/health', async (req, res) => {
 app.use(express.static(require('path').join(__dirname, '../public'), { maxAge: env.isProd ? '1h' : 0 }));
 
 app.use('/api/webhooks', webhookLimiter, require('./routes/webhooks.routes'));
+app.use('/api/cron', webhookLimiter, require('./routes/cron.routes'));
 app.use('/api', globalLimiter, require('./routes'));
 
 app.use((req, res) => res.status(404).json({ error: { code: 'NOT_FOUND', message: 'المسار غير موجود' } }));

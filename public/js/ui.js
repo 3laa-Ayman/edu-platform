@@ -5,7 +5,7 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 
 const fmtDate = (d) => (d ? new Date(d).toLocaleString('ar-EG-u-nu-latn', { dateStyle: 'medium', timeStyle: 'short' }) : '—');
 const fmtDay = (d) => (d ? new Date(d).toLocaleDateString('ar-EG-u-nu-latn', { dateStyle: 'medium' }) : '—');
-const fmtMoney = (n) => `${Number(n || 0).toLocaleString('ar-EG-u-nu-latn', { maximumFractionDigits: 2 })} ج`;
+const fmtMoney = (n, digits = 2) => `${Number(n || 0).toLocaleString('ar-EG-u-nu-latn', { maximumFractionDigits: digits })} ج`;
 const todayStr = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;

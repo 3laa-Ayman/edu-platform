@@ -109,7 +109,7 @@ router.get('/payments', validate({
   const { status, page, limit } = req.q;
   const { rows } = await db.query(
     `SELECT p.id, p.reference, p.plan_code, p.amount_egp, p.provider, p.method_type, p.status, p.sender_account,
-            p.transfer_ref, p.receipt_path IS NOT NULL AS has_receipt, p.admin_note, p.created_at, p.paid_at,
+            p.transfer_ref, (p.receipt_data IS NOT NULL OR p.receipt_path IS NOT NULL) AS has_receipt, p.admin_note, p.created_at, p.paid_at,
             u.student_code, u.full_name, u.phone
        FROM payments p JOIN users u ON u.id = p.user_id
       WHERE p.status = $1 ORDER BY p.created_at ASC LIMIT $2 OFFSET $3`,
@@ -119,10 +119,14 @@ router.get('/payments', validate({
 });
 
 router.get('/payments/:id/receipt', validate({ params: idParam }), async (req, res) => {
-  const { rows: [p] } = await db.query(`SELECT receipt_path FROM payments WHERE id = $1`, [req.p.id]);
+  const { rows: [p] } = await db.query(`SELECT receipt_data, receipt_mime, receipt_path FROM payments WHERE id = $1`, [req.p.id]);
+  if (p?.receipt_data) {
+    // Mime type comes from the upload whitelist; helmet adds X-Content-Type-Options: nosniff.
+    return res.type(p.receipt_mime).set('Content-Disposition', 'inline').send(p.receipt_data);
+  }
   if (!p?.receipt_path) throw notFound('لا يوجد إيصال');
-  // receipt_path is a server-generated basename; path.basename guards against traversal anyway.
-  res.sendFile(path.join(env.uploadDir, 'receipts', path.basename(p.receipt_path)));
+  // Legacy disk receipts: receipt_path is a server-generated basename; path.basename guards against traversal anyway.
+  return res.sendFile(path.join(env.uploadDir, 'receipts', path.basename(p.receipt_path)));
 });
 
 router.post('/payments/:id/approve', validate({ params: idParam, body: z.object({ note: z.string().max(500).optional() }) }), async (req, res) => {

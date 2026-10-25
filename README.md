@@ -3,17 +3,29 @@
 Node.js (Express 5) + PostgreSQL + واجهة ويب عربية (طالب + أدمن) يعرضها نفس السيرفر على `/`.
 كل المواصفات مبنية في الكود ومختبرة باختبار تشغيلي كامل (`npm run test:smoke` → 92 فحص).
 
-## النشر برابط أونلاين (Render — مجاناً)
+## النشر برابط أونلاين (Vercel + Neon — مجاناً بدون كارت)
 
-1. ارفع المشروع على GitHub (مستودع جديد، Private مسموح).
-2. ادخل [render.com](https://render.com) ← **New** ← **Blueprint** ← اختر المستودع. الملف `render.yaml` بيجهّز السيرفر وقاعدة البيانات لوحده.
-3. هيطلب منك `ADMIN_PASSWORD` — اكتب كلمة سر للأدمن.
-4. بعد ما يخلص (5–10 دقائق) هتاخد رابط زي `https://edu-platform-xxxx.onrender.com`.
+**1) قاعدة البيانات — [neon.tech](https://neon.tech):** سجّل بـ GitHub ← أنشئ Project (منطقة Frankfurt) ← انسخ الـ **Connection string**.
 
-النسخة دي شغالة بـ `DEMO_MODE=true`: رمز OTP بيظهر على الشاشة، الدفع محاكاة، وشرح الذكاء الاصطناعي تجريبي، و6 أسئلة جاهزة.
-- **الأدمن:** `admin@example.com` + كلمة السر اللي اخترتها.
-- **ملاحظات الخطة المجانية:** السيرفر بينام بعد 15 دقيقة من غير استخدام (أول فتح بياخد ~50 ثانية)، وقاعدة البيانات المجانية بتنتهي بعد 30 يوم، وصور الإيصالات المرفوعة بتتمسح مع كل إعادة تشغيل.
-- **للإطلاق الحقيقي:** خلّي `DEMO_MODE=false` وضيف مفاتيح Paymob / Fawry / Gemini / SMTP.
+**2) السيرفر والواجهة — [vercel.com](https://vercel.com):** سجّل بـ GitHub ← **Add New → Project** ← اختر المستودع ← افتح **Environment Variables** وضيف:
+
+| Key | Value |
+|---|---|
+| `DATABASE_URL` | الـ Connection string من Neon |
+| `JWT_SECRET` | نص عشوائي طويل (32 حرف أو أكتر) |
+| `ADMIN_PASSWORD` | كلمة سر الأدمن |
+| `NODE_ENV` | `production` |
+| `DEMO_MODE` | `true` |
+| `OTP_DEV_ECHO` | `true` |
+| `CRON_SECRET` | نص عشوائي (لتشغيل المهام المجدولة) |
+
+ثم **Deploy**. أول طلب بيجهّز الجداول ويعمل حساب الأدمن (`admin@example.com`) و6 أسئلة تجريبية تلقائياً.
+
+- `api/index.js` هو نقطة الدخول على Vercel، و`vercel.json` فيه المهام المجدولة (توزيع التيمات الخميس، تقارير السبت، تنظيف يومي).
+- الإيصالات بتتخزن في قاعدة البيانات (مفيش اعتماد على ملفات السيرفر)، وأقصى حجم للملف 4MB.
+- `DEMO_MODE=true`: OTP بيظهر على الشاشة، الدفع محاكاة، وشرح AI تجريبي. **للإطلاق الحقيقي:** `DEMO_MODE=false` + مفاتيح Paymob / Fawry / Gemini / SMTP.
+
+بديل: `render.yaml` جاهز للنشر على Render (بيطلب كارت)، أو أي سيرفر بـ `npm run start:render`.
 
 ## التشغيل السريع
 
@@ -53,6 +65,7 @@ src/
     stats.service.js          نسب الأداء لكل مادة
   routes/                     نقاط الـ API (بالأسفل)
   jobs/                       مهام مجدولة (توزيع التيمات الخميس، تقارير السبت، تنظيف يومي)
+api/index.js                  نقطة الدخول على Vercel (serverless)
 public/                       واجهة الويب (HTML/CSS/JS بدون build): صفحات الطالب والأدمن
 scripts/                      migrate · seed · make-excel-template · smoke-test · demo
 templates/questions-template.xlsx   نموذج شيت الأسئلة
@@ -130,5 +143,5 @@ app/admin/*                      رفع Excel، مراجعة الإيصالات�
 - مفاتيح Paymob (Secret/Public/HMAC/Integration ID) وFawry (Merchant code/Secure key)، وتسجيل روابط الـ Webhook في لوحاتهم: `{APP_BASE_URL}/api/webhooks/paymob` و `/api/webhooks/fawry`. **راجع صيغ التوقيع مع الوثائق الحالية لكل بوابة واختبر على بيئة الـ staging أولاً.**
 - `GEMINI_API_KEY` وراجع الأسعار الحالية (`GEMINI_INPUT_USD_PER_M` / `GEMINI_OUTPUT_USD_PER_M`) وسعر الدولار `USD_TO_EGP`.
 - SMTP حقيقي للـ OTP والتقارير، ومزود SMS/WhatsApp في `sendSms` داخل `notify.service.js`.
-- لو هتشغّل أكثر من نسخة من السيرفر: خلي `ENABLE_CRON=true` على نسخة واحدة فقط، واستخدم Redis store لـ express-rate-limit، وخزّن الإيصالات على S3 بدل القرص المحلي.
+- لو هتشغّل أكثر من نسخة من السيرفر: خلي `ENABLE_CRON=true` على نسخة واحدة فقط، واستخدم Redis store لـ express-rate-limit، والإيصالات متخزنة في قاعدة البيانات فمفيش مشكلة مع تعدد النسخ.
 - نسخ احتياطي يومي لقاعدة البيانات.

@@ -186,7 +186,9 @@ CREATE TABLE IF NOT EXISTS payments (
   status           VARCHAR(15) NOT NULL DEFAULT 'pending'
                      CHECK (status IN ('pending', 'under_review', 'paid', 'failed', 'rejected')),
   provider_txn_id  VARCHAR(120),
-  receipt_path     TEXT,                         -- manual: uploaded screenshot
+  receipt_path     TEXT,                         -- legacy: receipt file on local disk
+  receipt_data     BYTEA,                        -- manual: uploaded receipt (stored in DB — works on serverless/ephemeral disks)
+  receipt_mime     VARCHAR(50),
   sender_account   VARCHAR(60),                  -- manual: wallet number / InstaPay address
   transfer_ref     VARCHAR(120),                 -- manual: transaction number shown on receipt
   admin_note       TEXT,
@@ -197,6 +199,8 @@ CREATE TABLE IF NOT EXISTS payments (
   created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+ALTER TABLE payments ADD COLUMN IF NOT EXISTS receipt_data BYTEA;
+ALTER TABLE payments ADD COLUMN IF NOT EXISTS receipt_mime VARCHAR(50);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_payments_provider_txn ON payments (provider, provider_txn_id) WHERE provider_txn_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_payments_status ON payments (status, created_at);
 

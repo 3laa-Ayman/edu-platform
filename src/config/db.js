@@ -7,7 +7,8 @@ types.setTypeParser(1700, (v) => parseFloat(v));
 
 const pool = new Pool({
   connectionString: env.databaseUrl,
-  max: 20,
+  // Serverless: many small instances, each with its own pool → keep it small.
+  max: Number(process.env.DB_POOL_MAX) || (process.env.VERCEL ? 3 : 20),
   idleTimeoutMillis: 30000,
   // Hosted databases reached over the public network need TLS (set DATABASE_SSL=true).
   ssl: process.env.DATABASE_SSL === 'true' ? { rejectUnauthorized: false } : undefined,

@@ -1,5 +1,4 @@
 const router = require('express').Router();
-const fs = require('fs/promises');
 const env = require('../config/env');
 const db = require('../config/db');
 const { validate, z } = require('../middleware/validate');
@@ -36,7 +35,11 @@ router.get('/me', async (req, res) => {
   const [current, history, payments] = await Promise.all([
     getActiveSubscription(req.user.id),
     db.query(`SELECT plan_code, starts_at, ends_at, status FROM subscriptions WHERE user_id = $1 ORDER BY starts_at DESC`, [req.user.id]),
-    db.query(`SELECT * FROM payments WHERE user_id = $1 ORDER BY created_at DESC LIMIT 50`, [req.user.id]),
+    db.query(
+      `SELECT reference, plan_code, amount_egp, provider, status, admin_note, created_at, paid_at
+         FROM payments WHERE user_id = $1 ORDER BY created_at DESC LIMIT 50`,
+      [req.user.id],
+    ),
   ]);
   res.json({ current, history: history.rows, payments: payments.rows.map(publicPayment) });
 });
@@ -65,31 +68,25 @@ router.post('/checkout', validate({
 
 /** Manual transfer (Vodafone Cash / InstaPay): upload receipt → admin reviews → activation. */
 router.post('/manual', uploadLimiter, receiptUpload.single('receipt'), async (req, res) => {
-  const cleanup = () => req.file && fs.unlink(req.file.path).catch(() => {});
-  try {
-    if (!req.file) throw badRequest('ارفع صورة الإيصال في الحقل receipt');
-    const body = z.object({
-      plan_code: z.string(),
-      provider: z.enum(['vodafone_cash', 'instapay']),
-      sender_account: z.string().trim().min(5).max(60),
-      transfer_ref: z.string().trim().max(120).optional(),
-    }).parse(req.body);
-    const plan = await getPlan(body.plan_code);
+  if (!req.file) throw badRequest('ارفع صورة الإيصال في الحقل receipt');
+  const body = z.object({
+    plan_code: z.string(),
+    provider: z.enum(['vodafone_cash', 'instapay']),
+    sender_account: z.string().trim().min(5).max(60),
+    transfer_ref: z.string().trim().max(120).optional(),
+  }).parse(req.body);
+  const plan = await getPlan(body.plan_code);
 
-    const pending = await db.query(
-      `SELECT 1 FROM payments WHERE user_id = $1 AND status = 'under_review' LIMIT 1`, [req.user.id]);
-    if (pending.rowCount) throw conflict('لديك إيصال قيد المراجعة بالفعل، انتظر رد الإدارة');
+  const pending = await db.query(
+    `SELECT 1 FROM payments WHERE user_id = $1 AND status = 'under_review' LIMIT 1`, [req.user.id]);
+  if (pending.rowCount) throw conflict('لديك إيصال قيد المراجعة بالفعل، انتظر رد الإدارة');
 
-    const { rows: [payment] } = await db.query(
-      `INSERT INTO payments (user_id, plan_code, amount_egp, provider, method_type, status, receipt_path, sender_account, transfer_ref)
-       VALUES ($1, $2, $3, $4, 'manual', 'under_review', $5, $6, $7) RETURNING *`,
-      [req.user.id, plan.code, plan.price_egp, body.provider, req.file.filename, body.sender_account, body.transfer_ref || null],
-    );
-    res.status(201).json({ message: 'تم استلام الإيصال وسيتم مراجعته وتفعيل الاشتراك قريباً', payment: publicPayment(payment) });
-  } catch (err) {
-    cleanup();
-    throw err;
-  }
+  const { rows: [payment] } = await db.query(
+    `INSERT INTO payments (user_id, plan_code, amount_egp, provider, method_type, status, receipt_data, receipt_mime, sender_account, transfer_ref)
+     VALUES ($1, $2, $3, $4, 'manual', 'under_review', $5, $6, $7, $8) RETURNING *`,
+    [req.user.id, plan.code, plan.price_egp, body.provider, req.file.buffer, req.file.mimetype, body.sender_account, body.transfer_ref || null],
+  );
+  res.status(201).json({ message: 'تم استلام الإيصال وسيتم مراجعته وتفعيل الاشتراك قريباً', payment: publicPayment(payment) });
 });
 
 // Development helper: simulate a successful gateway callback when no gateway keys are configured.
