@@ -1,0 +1,45 @@
+# Render Blueprint — one-click deploy of the API + frontend + PostgreSQL.
+# Render dashboard → New → Blueprint → pick this repository.
+# DEMO_MODE keeps OTP-on-screen, simulated payments and mock AI enabled for testing.
+# For the real launch: set DEMO_MODE=false and add the gateway / SMTP / Gemini keys.
+services:
+  - type: web
+    name: edu-platform
+    runtime: node
+    plan: free
+    region: frankfurt
+    buildCommand: npm ci
+    startCommand: npm run start:render
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DEMO_MODE
+        value: "true"
+      - key: OTP_DEV_ECHO
+        value: "true"
+      - key: ENABLE_CRON
+        value: "true"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: edu-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ADMIN_EMAIL
+        value: admin@example.com
+      - key: ADMIN_PASSWORD
+        sync: false            # Render asks you for it during setup
+      - key: BCRYPT_ROUNDS
+        value: "12"
+      - key: VODAFONE_CASH_NUMBER
+        value: "01000000000"
+      - key: INSTAPAY_ADDRESS
+        value: demo@instapay
+
+databases:
+  - name: edu-db
+    plan: free
+    region: frankfurt
+    databaseName: edu_platform
+    user: edu
