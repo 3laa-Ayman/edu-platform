@@ -164,10 +164,15 @@ async function registerStudent(i) {
   // ---------------- Practice + mistakes bank
   const subjects = await call('GET', '/api/catalog/subjects', { token: A.token });
   ok(subjects.data.subjects.length >= 3, `subjects: ${subjects.data.subjects.map((s) => s.name).join(', ')}`);
-  const qs = await call('GET', '/api/catalog/questions?limit=50', { token: A.token });
-  ok(qs.data.questions.length >= 6 && qs.data.questions.every((q) => !('correct_option' in q) && !('explanation' in q)), 'questions served without answers');
-  const pastStd = await call('GET', '/api/catalog/questions?category=past_exam', { token: B.token });
-  ok(pastStd.status === 403, 'past exams are premium-only (B is standard)');
+  ok((await call('GET', '/api/catalog/questions?limit=50', { token: A.token })).status === 400, 'practice requires choosing a subject (no "all subjects")');
+  const physics = subjects.data.subjects.find((s) => s.name === 'فيزياء');
+  const qs = await call('GET', `/api/catalog/questions?limit=50&subject_id=${physics.id}`, { token: A.token });
+  ok(qs.data.questions.length >= 3 && qs.data.questions.every((q) => q.subject_id === physics.id && !('correct_option' in q) && !('explanation' in q)), 'questions of the chosen subject only, served without answers');
+  // Past exams are part of the standard plan (admins can still change plan features).
+  const stdPlan = (await call('GET', '/api/admin/plans', { token: AT })).data.plans.find((p) => p.code === 'standard');
+  await call('PATCH', '/api/admin/plans/standard', { token: AT, body: { features: { ...stdPlan.features, past_exams: true } } });
+  const pastStd = await call('GET', `/api/catalog/questions?category=past_exam&subject_id=${physics.id}`, { token: B.token });
+  ok(pastStd.status === 200 && pastStd.data.questions.every((q) => q.category === 'past_exam'), 'past exams available on the standard plan (B is standard)');
 
   const allQ = await call('GET', '/api/admin/questions?limit=100', { token: AT });
   const byText = (t) => allQ.data.items.find((q) => q.question_text.includes(t) && q.question_text.includes(rnd));
@@ -183,7 +188,7 @@ async function registerStudent(i) {
   const imgRes = await fetch(API + triQ.media.question);
   ok(imgRes.status === 200 && imgRes.headers.get('content-type') === 'image/png' && /immutable/.test(imgRes.headers.get('cache-control')), 'image served (png, cached)');
   ok((await fetch(API + triQ.media.question.replace(/[0-9a-f]{16}$/, '0000000000000000'))).status === 404, 'wrong image hash → 404');
-  const practiceAll = await call('GET', '/api/catalog/questions?limit=50', { token: A.token });
+  const practiceAll = await call('GET', `/api/catalog/questions?limit=50&subject_id=${triQ.subject_id}`, { token: A.token });
   const pTri = practiceAll.data.questions.find((q) => q.id === triQ.id);
   ok(pTri && pTri.image === triQ.media.question, 'students get question image in practice');
   const pinned = await (async () => {
@@ -366,7 +371,7 @@ async function registerStudent(i) {
   const blockedPractice = await call('GET', '/api/catalog/questions', { token: D.token });
   ok(blockedPractice.status === 403 && blockedPractice.data.error.code === 'PLAN_UPGRADE_REQUIRED', 'disabled plan feature is enforced');
   await call('PATCH', '/api/admin/plans/standard', { token: AT, body: { price_egp: 149, features: plansAdm.data.plans.find((p) => p.code === 'standard').features } });
-  ok((await call('GET', '/api/catalog/questions', { token: D.token })).status === 200, 'feature re-enabled');
+  ok((await call('GET', `/api/catalog/questions?subject_id=${physics.id}`, { token: D.token })).status === 200, 'feature re-enabled');
   const newPlan = await call('POST', '/api/admin/plans', { token: AT, body: { code: `p${rnd}`, name_ar: 'باقة الامتحانات', price_egp: 99, duration_days: 14, rank: 0, features: { practice: true }, is_active: false } });
   ok(newPlan.status === 201, 'admin creates a new plan');
 

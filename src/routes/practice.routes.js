@@ -35,7 +35,7 @@ router.get('/subjects', async (req, res) => {
 
 router.get('/questions', requireSubscription('practice'), validate({
   query: z.object({
-    subject_id: z.coerce.number().int().positive().optional(),
+    subject_id: z.coerce.number({ message: 'اختار المادة اللي هتحل عليها' }).int().positive(),
     lesson_id: z.coerce.number().int().positive().optional(),
     category: z.enum(['lesson', 'past_exam']).optional(),
     exam_year: z.coerce.number().int().optional(),
@@ -45,7 +45,7 @@ router.get('/questions', requireSubscription('practice'), validate({
 }), async (req, res) => {
   const f = req.q;
   if (f.category === 'past_exam' && req.user.role !== 'admin' && !req.subscription.features?.past_exams) {
-    throw forbidden('أسئلة الامتحانات السابقة متاحة في اشتراك البريميم', 'PLAN_UPGRADE_REQUIRED');
+    throw forbidden('أسئلة الامتحانات السابقة غير متاحة في باقتك الحالية', 'PLAN_UPGRADE_REQUIRED');
   }
   const { rows } = await db.query(
     `${QUESTION_SELECT}

@@ -359,10 +359,10 @@ Views.practice = async (el) => {
     el.innerHTML = `<div class="card">
       <h1>التدريب</h1>
       <form id="f" class="form grid3">
-        <label>المادة<select name="subject_id"><option value="">كل المواد</option>
+        <label>المادة<select name="subject_id" required><option value="" disabled selected>اختار المادة</option>
           ${subjects.map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select></label>
         <label>الدرس<select name="lesson_id"><option value="">كل الدروس</option></select></label>
-        <label>النوع<select name="category"><option value="">الكل</option><option value="lesson">دروس</option><option value="past_exam">امتحانات سابقة (بريميم)</option></select></label>
+        <label>النوع<select name="category"><option value="">الكل</option><option value="lesson">دروس</option><option value="past_exam">امتحانات سابقة</option></select></label>
         <label>عدد الأسئلة<select name="limit"><option>5</option><option selected>10</option><option>20</option></select></label>
         <label class="check"><input type="checkbox" name="unsolved_only"> أسئلة جديدة بس (محلتهاش قبل كده)</label>
         <button class="btn primary" type="submit">ابدأ</button>
