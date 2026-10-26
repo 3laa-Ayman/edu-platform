@@ -160,7 +160,7 @@ function openQuestionModal(q, subjects, onSaved) {
   const preview = $('.math-preview', m);
   const renderPreview = () => {
     const parts = [f.question_text.value, ...['a', 'b', 'c', 'd'].map((k) => f[`option_${k}`].value)];
-    preview.innerHTML = parts.some((t) => /[\^_]/.test(t))
+    preview.innerHTML = parts.some((t) => rich(t) !== esc(t))
       ? `${rich(parts[0])}${parts.slice(1).some(Boolean) ? ` — ${parts.slice(1).map((t, i) => `${'أبجد'[i]}) ${rich(t)}`).join('  ')}` : ''}`
       : '';
   };

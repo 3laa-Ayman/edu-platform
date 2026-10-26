@@ -49,6 +49,11 @@ const CATEGORY_MAP = new Map([
 function cellText(cell) {
   const v = cell.value;
   if (v === null || v === undefined) return '';
+  // Numbers formatted as scientific in Excel (3.00E+08) keep that meaning: 3×10^{8}
+  if (typeof v === 'number' && /E[+-]/i.test(cell.numFmt || '')) {
+    const [m, e] = v.toExponential().split('e');
+    return `${Number(m)}×10^{${Number(e)}}`;
+  }
   if (typeof v === 'object') {
     // Keep Excel superscript/subscript formatting as ^{..} / _{..} (rendered as real exponents on the platform).
     if (v.richText) {

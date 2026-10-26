@@ -11,8 +11,33 @@ const MATH_RUN = /[0-9A-Za-z(][0-9A-Za-z.,×·*/+\-−=()]*(?:[\^_](?:\{[^{}<>]*
 // Exponent/index: {anything} or a signed number or ONE letter (so H_2O → H₂O, not H₂ₒ).
 const MATH_OP = /([\^_])(?:\{([^{}<>]*)\}|([-−+]?(?:[0-9٠-٩]+(?:\.[0-9٠-٩]+)?|[A-Za-zء-ي])))/g;
 const supSub = (op, v) => (op === '^' ? `<sup>${v}</sup>` : `<sub>${v}</sub>`);
+
+/**
+ * Brings every common way of typing an exponent / index to the ^ / _ notation:
+ * 10 ^ 8 · 10**8 · x^(n+1) · 10 أس 8 · س تربيع / تكعيب · 3E+08 / 1.6e-19 · <sup>8</sup> · look-alike carets (ˆ ＾).
+ * Unicode superscripts (10⁸) and Excel superscript formatting already arrive ready.
+ */
+function normalizeMath(text) {
+  return String(text ?? '')
+    .replace(/<sup>\s*([\s\S]*?)\s*<\/sup>/gi, '^{$1}')
+    .replace(/<sub>\s*([\s\S]*?)\s*<\/sub>/gi, '_{$1}')
+    .replace(/[ˆ＾]/g, '^')
+    // "1.6 × 10^-19" / "3 x 10^8": keep the whole number together so it is not reordered inside Arabic text
+    .replace(/(\d)\s*[×·]\s*(?=\d)/g, '$1×')
+    .replace(/(\d)\s+[xX]\s+(?=10\s*(?:\^|\*\*))/g, '$1×')
+    .replace(/([A-Za-z0-9)\]])\s*\*\*\s*(?=[-−+]?[A-Za-z0-9(])/g, '$1^') // x**2 (markdown **bold** is left alone)
+    .replace(/\s*\^\s*/g, '^')
+    .replace(/([\^_])\(([^()]*)\)/g, '$1{$2}')
+    .replace(/(\S)\s+(?:أُس|أس|اس)\s+([-−+]?[0-9٠-٩]+)/g, '$1^{$2}')
+    .replace(/(\S)\s+تربيع(?=$|[\s.,،؛؟?!)])/g, '$1^{2}')
+    .replace(/(\S)\s+تكعيب(?=$|[\s.,،؛؟?!)])/g, '$1^{3}')
+    .replace(/(^|[^A-Za-z0-9.])(\d+(?:\.\d+)?)[eE]([+-]?)(\d+)(?![A-Za-z0-9])/g,
+      (_, pre, m, sign, e) => `${pre}${m}×10^{${sign === '-' ? '-' : ''}${Number(e)}}`);
+}
+
 function rich(text) {
-  return esc(text)
+  return esc(normalizeMath(text))
+    .replace(/\*\*([^*\n]+?)\*\*/g, '<strong>$1</strong>') // markdown bold (e.g. in AI explanations)
     // Latin/number formulas: render + keep them left-to-right inside Arabic text.
     .replace(MATH_RUN, (match) => {
       const [, run, tail] = match.match(/^(.*?)([.,]*)$/); // sentence punctuation stays outside the LTR formula
