@@ -188,7 +188,9 @@ Views.home = async (el) => {
       <a class="tile" href="#/practice"><span class="tile-label">أسئلة النهارده</span><b>${perf.today.answered}</b><small>${perf.today.answered ? `منهم ${perf.today.correct} صح` : 'لسه محلتش أسئلة النهارده'}</small></a>
       <a class="tile" href="#/mistakes"><span class="tile-label">بنك الأخطاء</span><b>${mist.total}</b><small>سؤال محتاج مراجعة</small></a>
       <a class="tile" href="#/planner"><span class="tile-label">مهام النهارده</span><b>${tasks.summary.done}/${tasks.summary.total}</b><small>${tasks.summary.planned_minutes} دقيقة مذاكرة</small></a>
-      <div class="tile"><span class="tile-label">نقاط الذكاء الاصطناعي</span><b>${fmtPoints(ai.remaining_points)}</b><small>متبقي من ${fmtPoints(ai.limit_points)}</small>${bar(100 - ai.used_percent, ai.used_percent > 80 ? 'bad' : 'good')}</div>
+      ${sub && !sub.features?.ai_explanations
+        ? '<a class="tile" href="#/subscribe"><span class="tile-label">نقاط الذكاء الاصطناعي</span><b>🔒</b><small>الشرح بالذكاء الاصطناعي متاح في باقة أعلى</small></a>'
+        : `<div class="tile"><span class="tile-label">نقاط الذكاء الاصطناعي</span><b>${fmtPoints(ai.remaining_points)}</b><small>متبقي من ${fmtPoints(ai.limit_points)}</small>${bar(100 - ai.used_percent, ai.used_percent > 80 ? 'bad' : 'good')}</div>`}
     </section>
 
     <section class="card">
@@ -320,7 +322,11 @@ async function askAI(card, qid) {
       ${r.warning ? `<p class="notice bad">${esc(r.warning)}</p>` : ''}`;
   } catch (err) {
     if (err.code === 'AI_LIMIT_REACHED') box.innerHTML = `<p class="notice bad">⛔ ${esc(err.message)}</p>`;
-    else throw err;
+    else if (isSubError(err)) {
+      // e.g. Plus: the button is shown, but using it needs Premium.
+      box.innerHTML = `<div class="notice mid upgrade">🔒 ${esc(err.message)}
+        <a class="btn primary tiny" href="#/subscribe">${err.details?.plan_name ? `اشترك في ${esc(err.details.plan_name)}` : 'عرض الباقات'}</a></div>`;
+    } else throw err;
   }
 }
 

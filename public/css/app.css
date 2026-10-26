@@ -303,3 +303,4 @@ select option { color: var(--text); }
 .bell { position: relative; }
 .bell-count { position: absolute; top: -4px; inset-inline-end: -4px; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 999px;
   background: var(--bad); color: #fff; font-size: .7rem; font-weight: 700; line-height: 18px; text-align: center; }
+.notice.upgrade { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }

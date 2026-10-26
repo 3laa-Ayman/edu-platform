@@ -172,7 +172,7 @@ CREATE TABLE IF NOT EXISTS plans (
 -- Initial plans only: once created they are managed from the admin dashboard (never overwritten here).
 INSERT INTO plans (code, name_ar, price_egp, duration_days, rank, features) VALUES
   ('standard', 'Plus', 99, 30, 1,
-     '{"practice": true, "mistakes_bank": true, "ai_explanations": true, "competitions": true, "parent_reports": true, "past_exams": true}'),
+     '{"practice": true, "mistakes_bank": true, "ai_explanations": false, "competitions": true, "parent_reports": true, "past_exams": true}'),
   ('premium',  'Premium',   199, 30, 2,
      '{"practice": true, "mistakes_bank": true, "ai_explanations": true, "competitions": true, "parent_reports": true, "past_exams": true, "priority_support": true}')
 ON CONFLICT (code) DO NOTHING;

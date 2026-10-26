@@ -226,12 +226,17 @@ async function registerStudent(i) {
   ok(none.data.source === null && none.data.ai_available, 'no saved explanation → offers AI');
   const ai1 = await call('POST', `/api/ai/explain/${qNoExp.id}`, { token: A.token });
   ok(ai1.status === 200 && ai1.data.source === 'gemini' && ai1.data.usage.cost_egp > 0, `gemini explanation, cost ${ai1.data.usage?.cost_egp} EGP`, ai1.data);
+  // Plus (standard) shows the AI button, but using it needs Premium.
   await call('POST', '/api/catalog/answer', { token: B.token, body: { question_id: qNoExp.id, choice: 'A' } });
-  const ai2 = await call('POST', `/api/ai/explain/${qNoExp.id}`, { token: B.token });
+  ok((await call('GET', `/api/catalog/questions/${qNoExp.id}/explanation`, { token: B.token })).data.ai_available, 'Plus student is offered the AI button');
+  const plusAi = await call('POST', `/api/ai/explain/${qNoExp.id}`, { token: B.token });
+  ok(plusAi.status === 403 && plusAi.data.error.code === 'PLAN_UPGRADE_REQUIRED' && plusAi.data.error.message.includes(price.premium ? 'Premium' : '')
+    && plusAi.data.error.details?.plan_code === 'premium', `Plus → "${plusAi.data.error?.message}"`, plusAi.data);
+  const ai2 = await call('POST', `/api/ai/explain/${qNoExp.id}`, { token: AT });
   if (ai1.data.explanation.startsWith('[شرح تجريبي')) {
     // No GEMINI_API_KEY: the mock must never be cached, or it would hide the AI button from everyone.
     ok(ai2.data.source === 'gemini', 'mock AI explanation is not cached');
-    ok((await call('GET', `/api/catalog/questions/${qNoExp.id}/explanation`, { token: B.token })).data.ai_available, 'AI button still offered after a mock explanation');
+    ok((await call('GET', `/api/catalog/questions/${qNoExp.id}/explanation`, { token: A.token })).data.ai_available, 'AI button still offered after a mock explanation');
   } else {
     ok(ai2.data.source === 'ai_cache' && ai2.data.usage.cost_egp === 0, 'second student gets cached AI explanation free');
   }
