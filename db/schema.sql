@@ -377,3 +377,15 @@ CREATE TABLE IF NOT EXISTS question_media (
 -- competition question (never actually answered wrong), and stop counting old unanswered attempts.
 DELETE FROM mistakes WHERE last_selected_option IS NULL AND wrong_count = 1;
 DELETE FROM attempts WHERE selected_option IS NULL;
+
+-- Competition answers autosaved on the server while solving (displayed labels), used for auto-submit.
+ALTER TABLE competition_entries ADD COLUMN IF NOT EXISTS draft_answers JSONB NOT NULL DEFAULT '{}';
+
+-- ---------------------------------------------------------------------
+-- 10) Rate-limit counters shared by all server instances (serverless-safe)
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS rate_limits (
+  key       VARCHAR(200) PRIMARY KEY,
+  hits      INT NOT NULL,
+  reset_at  TIMESTAMPTZ NOT NULL
+);

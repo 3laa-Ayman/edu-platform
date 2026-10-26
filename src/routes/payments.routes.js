@@ -27,6 +27,11 @@ router.get('/plans', async (req, res) => {
   ]);
   res.json({
     plans: rows,
+    // Online gateways are offered only when configured (or simulated in demo/dev mode).
+    gateways: {
+      paymob: Boolean(env.paymob.secretKey) || env.allowMocks,
+      fawry: Boolean(env.fawry.merchantCode) || env.allowMocks,
+    },
     manual_payment: {
       vodafone_cash: s.vodafone_cash_number,
       instapay: s.instapay_address,

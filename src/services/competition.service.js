@@ -28,6 +28,7 @@ async function renderEntry(entry, client = db) {
     started_at: entry.started_at,
     deadline_at: entry.deadline_at,
     submitted_at: entry.submitted_at,
+    saved_answers: entry.draft_answers || {},
     questions: entry.question_order.map(({ qid, perm }, idx) => {
       const q = byId.get(qid);
       // Displayed label LETTERS[i] shows the original option perm[i].
@@ -55,8 +56,13 @@ async function startEntry(competitionId, user) {
       [comp.id, user.id],
     );
     if (existing.rows[0]) {
-      if (existing.rows[0].submitted_at) throw conflict('لقد قمت بتسليم هذه المسابقة بالفعل');
-      return renderEntry(existing.rows[0], c); // resume
+      const e = existing.rows[0];
+      if (e.submitted_at) throw conflict('لقد قمت بتسليم هذه المسابقة بالفعل');
+      if (Date.now() > e.deadline_at.getTime() + SUBMIT_GRACE_MS) {
+        // Returned (not thrown) so the grading is committed with the transaction.
+        return { expired: true, result: await finalizeEntry(c, e, mergeAnswers(e.draft_answers)) };
+      }
+      return renderEntry(e, c); // resume (with the answers saved on the server)
     }
 
     let teamId = null;
@@ -81,7 +87,79 @@ async function startEntry(competitionId, user) {
   });
 }
 
-/** answers: [{ question_id, choice }] where choice is the DISPLAYED label (A–D) the student saw. */
+/** Saved answers (displayed labels) merged with the ones sent now (the latter win). */
+const mergeAnswers = (draft, answers = []) => {
+  const map = new Map(Object.entries(draft || {}).map(([qid, ch]) => [Number(qid), normalizeChoice(ch)]));
+  for (const a of answers) {
+    const ch = normalizeChoice(a.choice);
+    if (ch) map.set(Number(a.question_id), ch);
+    else map.delete(Number(a.question_id));
+  }
+  return map;
+};
+
+/**
+ * Grades and closes an entry (inside a transaction, entry row locked).
+ * Used by the student's submit AND by the automatic submit when time runs out.
+ */
+async function finalizeEntry(c, entry, given) {
+  const ids = entry.question_order.map((o) => o.qid);
+  const { rows } = await c.query(`SELECT * FROM questions WHERE id = ANY($1::bigint[])`, [ids]);
+  const byId = new Map(rows.map((q) => [q.id, q]));
+
+  let score = 0;
+  let wrong = 0;
+  let skipped = 0;
+  for (const { qid, perm } of entry.question_order) {
+    const q = byId.get(qid);
+    if (!q) continue;
+    const shown = given.get(qid);
+    const original = shown ? perm[LETTERS.indexOf(shown)] : null; // un-shuffle
+    if (!original) {
+      // Unanswered: no points, but NOT a mistake — no attempt recorded, nothing added to the mistakes bank.
+      skipped++;
+      await c.query(
+        `INSERT INTO competition_answers (entry_id, question_id, selected_option, is_correct) VALUES ($1, $2, NULL, FALSE)`,
+        [entry.id, qid]);
+      continue;
+    }
+    const { isCorrect } = await recordAnswer(c, { userId: entry.user_id, question: q, selected: original, source: 'competition', entryId: entry.id });
+    if (isCorrect) score++;
+    else wrong++;
+    await c.query(
+      `INSERT INTO competition_answers (entry_id, question_id, selected_option, is_correct) VALUES ($1, $2, $3, $4)`,
+      [entry.id, qid, original, isCorrect],
+    );
+  }
+  const { rows: [done] } = await c.query(
+    `UPDATE competition_entries
+        SET submitted_at = LEAST(now(), deadline_at + interval '30 seconds'), score = $2,
+            draft_answers = $3,
+            duration_seconds = GREATEST(1, EXTRACT(EPOCH FROM (LEAST(now(), deadline_at) - started_at))::int)
+      WHERE id = $1 RETURNING score, total_questions, duration_seconds, submitted_at`,
+    [entry.id, score, JSON.stringify(Object.fromEntries(given))],
+  );
+  return { ...done, correct: score, wrong, skipped, percent: Math.round((done.score / done.total_questions) * 100) };
+}
+
+/** Autosave: the student's answers are stored on the server as they go (survives closed tabs / lost connection). */
+async function saveDraft(competitionId, user, answers) {
+  const { rows: [entry] } = await db.query(
+    `SELECT id, draft_answers, deadline_at, submitted_at FROM competition_entries WHERE competition_id = $1 AND user_id = $2`,
+    [competitionId, user.id]);
+  if (!entry) throw badRequest('يجب بدء المسابقة أولاً');
+  if (entry.submitted_at) throw conflict('تم التسليم بالفعل');
+  if (Date.now() > entry.deadline_at.getTime() + SUBMIT_GRACE_MS) throw badRequest('انتهى الوقت');
+  const merged = Object.fromEntries(mergeAnswers(entry.draft_answers, answers));
+  await db.query(
+    `UPDATE competition_entries SET draft_answers = $2 WHERE id = $1 AND submitted_at IS NULL`, [entry.id, JSON.stringify(merged)]);
+  return { saved: Object.keys(merged).length };
+}
+
+/**
+ * answers: [{ question_id, choice }] where choice is the DISPLAYED label (A–D) the student saw.
+ * Merged with the autosaved answers. After the deadline the autosaved answers are what counts.
+ */
 async function submitEntry(competitionId, user, answers) {
   return db.withTransaction(async (c) => {
     const { rows: [entry] } = await c.query(
@@ -90,52 +168,43 @@ async function submitEntry(competitionId, user, answers) {
     );
     if (!entry) throw badRequest('يجب بدء المسابقة أولاً');
     if (entry.submitted_at) throw conflict('تم التسليم بالفعل');
-    if (Date.now() > entry.deadline_at.getTime() + SUBMIT_GRACE_MS) throw badRequest('انتهى الوقت المسموح للتسليم');
-
-    const given = new Map(answers.map((a) => [Number(a.question_id), normalizeChoice(a.choice)]));
-    const ids = entry.question_order.map((o) => o.qid);
-    const { rows } = await c.query(`SELECT * FROM questions WHERE id = ANY($1::bigint[])`, [ids]);
-    const byId = new Map(rows.map((q) => [q.id, q]));
-
-    let score = 0;
-    let wrong = 0;
-    let skipped = 0;
-    for (const { qid, perm } of entry.question_order) {
-      const q = byId.get(qid);
-      if (!q) continue;
-      const shown = given.get(qid);
-      const original = shown ? perm[LETTERS.indexOf(shown)] : null; // un-shuffle
-      if (!original) {
-        // Unanswered: no points, but NOT a mistake — no attempt recorded, nothing added to the mistakes bank.
-        skipped++;
-        await c.query(
-          `INSERT INTO competition_answers (entry_id, question_id, selected_option, is_correct) VALUES ($1, $2, NULL, FALSE)`,
-          [entry.id, qid]);
-        continue;
-      }
-      const { isCorrect } = await recordAnswer(c, { userId: user.id, question: q, selected: original, source: 'competition', entryId: entry.id });
-      if (isCorrect) score++;
-      else wrong++;
-      await c.query(
-        `INSERT INTO competition_answers (entry_id, question_id, selected_option, is_correct) VALUES ($1, $2, $3, $4)`,
-        [entry.id, qid, original, isCorrect],
-      );
-    }
-    const { rows: [done] } = await c.query(
-      `UPDATE competition_entries
-          SET submitted_at = now(), score = $2,
-              duration_seconds = GREATEST(1, EXTRACT(EPOCH FROM (LEAST(now(), deadline_at) - started_at))::int)
-        WHERE id = $1 RETURNING score, total_questions, duration_seconds, submitted_at`,
-      [entry.id, score],
-    );
-    return { ...done, correct: score, wrong, skipped, percent: Math.round((done.score / done.total_questions) * 100) };
+    const late = Date.now() > entry.deadline_at.getTime() + SUBMIT_GRACE_MS;
+    // Late (e.g. reconnecting after the time ran out): grade what was saved before the deadline.
+    const given = mergeAnswers(entry.draft_answers, late ? [] : answers);
+    const result = await finalizeEntry(c, entry, given);
+    return { ...result, late };
   });
+}
+
+/**
+ * Automatic submit for entries whose time is over (student closed the tab, lost connection...).
+ * Safe to call often: each entry is locked and finalized exactly once.
+ */
+async function finalizeExpired({ competitionId = null, userId = null } = {}) {
+  const { rows } = await db.query(
+    `SELECT id FROM competition_entries
+      WHERE submitted_at IS NULL AND deadline_at + interval '30 seconds' < now()
+        AND ($1::bigint IS NULL OR competition_id = $1) AND ($2::bigint IS NULL OR user_id = $2)
+      LIMIT 500`,
+    [competitionId, userId]);
+  let finalized = 0;
+  for (const { id } of rows) {
+    await db.withTransaction(async (c) => {
+      const { rows: [entry] } = await c.query(
+        `SELECT * FROM competition_entries WHERE id = $1 AND submitted_at IS NULL FOR UPDATE SKIP LOCKED`, [id]);
+      if (!entry) return;
+      await finalizeEntry(c, entry, mergeAnswers(entry.draft_answers));
+      finalized++;
+    });
+  }
+  return { finalized };
 }
 
 const displayName = `split_part(u.full_name, ' ', 1) || ' (' || u.student_code || ')'`;
 
 async function leaderboard(competitionId, limit = 100) {
   const comp = await getCompetition(competitionId);
+  await finalizeExpired({ competitionId });
   const { rows: individuals } = await db.query(
     `SELECT RANK() OVER (ORDER BY e.score DESC, e.duration_seconds ASC) AS rank,
             ${displayName} AS student, e.score, e.total_questions, e.duration_seconds
@@ -166,6 +235,7 @@ async function leaderboard(competitionId, limit = 100) {
 /** After the competition ends: the student's answers with the correct ones. */
 async function review(competitionId, userId) {
   const comp = await getCompetition(competitionId);
+  await finalizeExpired({ competitionId, userId });
   if (new Date() < comp.ends_at) throw forbidden('تظهر الإجابات الصحيحة بعد انتهاء المسابقة');
   const { rows } = await db.query(
     `SELECT q.id AS question_id, q.question_text, q.option_a, q.option_b, q.option_c, q.option_d,
@@ -180,4 +250,4 @@ async function review(competitionId, userId) {
   return rows.map((r) => ({ ...r, media: media[r.question_id] || {} }));
 }
 
-module.exports = { getCompetition, startEntry, submitEntry, leaderboard, review };
+module.exports = { getCompetition, startEntry, saveDraft, submitEntry, finalizeExpired, leaderboard, review };

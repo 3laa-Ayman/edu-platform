@@ -3,6 +3,7 @@ const env = require('../config/env');
 const db = require('../config/db');
 const { autoAssignTeams } = require('../services/team.service');
 const { sendWeeklyReportsToAll } = require('../services/report.service');
+const { finalizeExpired } = require('../services/competition.service');
 
 /** Job registry — run by node-cron on a normal server, or by Vercel Cron via /api/cron/:job. */
 const JOBS = {
@@ -12,6 +13,8 @@ const JOBS = {
   'parent-reports': sendWeeklyReportsToAll,
   // Housekeeping.
   cleanup: async () => {
+    const competitions = await finalizeExpired();
+    await db.query(`DELETE FROM rate_limits WHERE reset_at < now() - interval '1 day'`);
     const invites = await db.query(
       `UPDATE team_invites SET status = 'expired', responded_at = now() WHERE status = 'pending' AND created_at < now() - interval '7 days'`);
     const otps = await db.query(`DELETE FROM otp_codes WHERE created_at < now() - interval '2 days'`);
@@ -21,7 +24,7 @@ const JOBS = {
     const payments = await db.query(
       `UPDATE payments SET status = 'failed', admin_note = 'expired', updated_at = now()
         WHERE status = 'pending' AND method_type = 'gateway' AND created_at < now() - interval '3 days'`);
-    return { invites_expired: invites.rowCount, otps_deleted: otps.rowCount, abandoned_registrations: abandoned.rowCount, payments_expired: payments.rowCount };
+    return { competition_entries_finalized: competitions.finalized, invites_expired: invites.rowCount, otps_deleted: otps.rowCount, abandoned_registrations: abandoned.rowCount, payments_expired: payments.rowCount };
   },
 };
 

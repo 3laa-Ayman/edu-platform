@@ -10,8 +10,10 @@
     "db:seed": "node scripts/seed.js",
     "excel:template": "node scripts/make-excel-template.js",
     "test:smoke": "node scripts/smoke-test.js",
-    "start:render": "node scripts/migrate.js && node scripts/seed.js && node src/server.js",
-    "test:math": "node scripts/test-math.js"
+    "start:render": "node scripts/stamp-assets.js && node scripts/migrate.js && node scripts/seed.js && node src/server.js",
+    "test:math": "node scripts/test-math.js",
+    "vercel-build": "node scripts/stamp-assets.js",
+    "test:competition": "node scripts/test-competition-autosave.js"
   },
   "license": "UNLICENSED",
   "dependencies": {

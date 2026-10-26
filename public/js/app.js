@@ -91,6 +91,7 @@ function renderTopbar(path) {
 
 async function render() {
   Cleanup.forEach((fn) => fn());
+  Cleanup.splice(1); // keep the permanent competition-timer cleanup, drop per-page ones
   closeModal();
   const [rawPath, rawQuery = ''] = (location.hash.slice(1) || '/').split('?');
   const path = rawPath || '/';

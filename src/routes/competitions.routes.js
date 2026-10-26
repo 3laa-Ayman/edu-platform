@@ -8,6 +8,7 @@ router.get('/', validate({
   query: z.object({ status: z.enum(['upcoming', 'active', 'finished']).optional(), type: z.enum(['team_weekly', 'individual_monthly']).optional() }),
 }), async (req, res) => {
   const { status, type } = req.q;
+  await svc.finalizeExpired({ userId: req.user.id });
   const { rows } = await db.query(
     `SELECT c.id, c.title, c.type, c.starts_at, c.ends_at, c.duration_minutes,
             (SELECT COUNT(*) FROM competition_questions cq WHERE cq.competition_id = c.id)::int AS question_count,
@@ -24,7 +25,21 @@ router.get('/', validate({
 });
 
 router.post('/:id/start', requireSubscription('competitions'), validate({ params: idParam }), async (req, res) => {
-  res.json(await svc.startEntry(req.p.id, req.user));
+  const r = await svc.startEntry(req.p.id, req.user);
+  if (r.expired) {
+    return res.status(409).json({ error: { code: 'TIME_UP', message: 'انتهى وقتك في المسابقة وتم تسليم إجاباتك المحفوظة تلقائياً', details: r.result } });
+  }
+  return res.json(r);
+});
+
+/** Autosave while solving (the page sends changes every few seconds). */
+router.put('/:id/answers', validate({
+  params: idParam,
+  body: z.object({
+    answers: z.array(z.object({ question_id: z.coerce.number().int().positive(), choice: z.string().max(3).nullable() })).max(500),
+  }),
+}), async (req, res) => {
+  res.json(await svc.saveDraft(req.p.id, req.user, req.body.answers));
 });
 
 router.post('/:id/submit', validate({

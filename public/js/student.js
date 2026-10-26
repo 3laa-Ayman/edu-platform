@@ -355,7 +355,7 @@ function quizResult(el, result, { again, solveSkipped }) {
 
 // ---------------------------------------------------------------- Practice
 /** Lesson select: "الدرس" shown until a choice, then "كل الدروس" + each lesson with its question count. */
-const lessonOptions = (subject) => `<option value="" disabled selected hidden>الدرس</option><option value="all">كل الدروس</option>${
+const lessonOptions = (subject) => `<option value="all">كل الدروس</option>${
   (subject?.lessons || []).map((l) => `<option value="${l.id}">${esc(l.name)} (${l.questions})</option>`).join('')}`;
 
 Views.practice = async (el) => {
@@ -368,10 +368,9 @@ Views.practice = async (el) => {
     el.innerHTML = `<div class="card">
       <h1>التدريب</h1>
       <form id="f" class="form grid3">
-        <label>المادة<select name="subject_id" required>
-          <option value="" disabled selected hidden>المادة</option>
-          ${subjects.map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select></label>
-        <label>الدرس<select name="lesson_id" required>${lessonOptions(null)}</select></label>
+        <label>المادة<span class="select-ph" data-ph="المادة"><select name="subject_id" required>
+          ${subjects.map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select></span></label>
+        <label>الدرس<span class="select-ph" data-ph="الدرس"><select name="lesson_id" required>${lessonOptions(null)}</select></span></label>
         <label>النوع<select name="category"><option value="">الكل</option><option value="lesson">دروس</option><option value="past_exam">امتحانات سابقة</option></select></label>
         <label>عدد الأسئلة<select name="limit">${[10, 20, 30, 40, 50].map((n) => `<option ${n === 10 ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
         <label class="check"><input type="checkbox" name="unsolved_only"> أسئلة جديدة بس (محلتهاش قبل كده)</label>
@@ -383,10 +382,19 @@ Views.practice = async (el) => {
     const msg = $('#practice-msg', el);
     // Any change to the choices clears a previous "all solved" message.
     form.addEventListener('change', () => { msg.innerHTML = ''; });
+    // "المادة" / "الدرس" are drawn over an empty select (no placeholder option), so they never appear
+    // inside the dropdown list — on iPhone too, where hidden <option>s are still listed.
+    const blank = (sel) => { sel.selectedIndex = -1; sel.parentElement.classList.remove('filled'); };
+    form.addEventListener('change', (e) => {
+      if (e.target.tagName === 'SELECT') e.target.parentElement.classList.toggle('filled', e.target.selectedIndex >= 0);
+    });
     form.subject_id.addEventListener('change', () => {
       const s = subjects.find((x) => String(x.id) === form.subject_id.value);
       form.lesson_id.innerHTML = lessonOptions(s);
+      blank(form.lesson_id);
     });
+    blank(form.subject_id);
+    blank(form.lesson_id);
     onSubmit(form, async (v) => {
       const qs = new URLSearchParams();
       for (const [k, val] of Object.entries(v)) if (val !== undefined && val !== false && val !== 'all') qs.set(k, String(val));
@@ -528,13 +536,22 @@ Views.competition = async (el, { id }) => {
           el.innerHTML = `<div class="card center"><h2>${esc(err.message)}</h2><a class="btn primary" href="#/team">صفحة التيم</a></div>`;
           return undefined;
         }
+        if (err.code === 'TIME_UP') {
+          // Time ran out while the student was away: the server already submitted the saved answers.
+          c.my_submitted_at = new Date().toISOString();
+          toast(err.message, 'warn');
+          await showBoard();
+          return undefined;
+        }
         throw err;
       }
       const key = `comp-${entry.entry_id}`;
-      let saved = {};
-      try { saved = JSON.parse(sessionStorage.getItem(key) || '{}'); } catch { saved = {}; }
+      let local = {};
+      try { local = JSON.parse(sessionStorage.getItem(key) || '{}'); } catch { local = {}; }
+      // Answers saved on the server (e.g. from another device) + anything newer in this tab.
+      const saved = { ...entry.saved_answers, ...local };
 
-      el.innerHTML = `<div class="timer-bar"><div class="timer-row"><span>${esc(c.title)}</span><b id="timer">--:--</b><span id="answered"></span></div>
+      el.innerHTML = `<div class="timer-bar"><div class="timer-row"><span>${esc(c.title)}</span><b id="timer">--:--</b><span id="answered"></span><span id="sync" class="sync"></span></div>
           <nav class="qnav" aria-label="أرقام الأسئلة">${entry.questions.map((q) => `<a href="#" data-goto="${q.question_id}" class="${saved[q.question_id] ? 'done' : ''}">${q.number}</a>`).join('')}</nav></div>
         <form id="cf">${entry.questions.map((q) => `<div class="card qcard" id="cq-${q.question_id}">
           <div class="q-meta"><span>سؤال ${q.number}</span><span class="unanswered-tag">لم تُجب بعد</span></div>${q.question ? `<h2 class="q-text">${rich(q.question)}</h2>` : ''}${qImage(q.image, 'صورة السؤال')}
@@ -559,11 +576,29 @@ Views.competition = async (el, { id }) => {
         card.classList.add('flash');
         setTimeout(() => card.classList.remove('flash'), 1200);
       };
+      // Autosave to the server shortly after each change, so nothing is lost if the tab closes or the connection drops.
+      let syncTimer = null;
+      const sync = $('#sync', el);
+      const pushDraft = async () => {
+        try {
+          await API.req('PUT', `/competitions/${id}/answers`, { answers: answers() });
+          sync.textContent = '✓ اتحفظ';
+          sync.className = 'sync ok';
+        } catch {
+          sync.textContent = '⚠ مش متحفظ — اتأكد من النت';
+          sync.className = 'sync bad';
+        }
+      };
       form.addEventListener('change', (e) => {
         saved[e.target.name.slice(1)] = e.target.value;
         sessionStorage.setItem(key, JSON.stringify(saved));
         updateCount();
+        sync.textContent = '…';
+        sync.className = 'sync';
+        clearTimeout(syncTimer);
+        syncTimer = setTimeout(pushDraft, 1200);
       });
+      Cleanup.push(() => clearTimeout(syncTimer));
       $('.qnav', el).addEventListener('click', (e) => {
         const a = e.target.closest('[data-goto]');
         if (!a) return;
@@ -748,7 +783,7 @@ Views.planner = async (el, params, query) => {
 
 // ---------------------------------------------------------------- Subscribe & payments
 Views.subscribe = async (el) => {
-  const [{ plans, manual_payment: mp }, mine] = await Promise.all([API.get('/payments/plans'), API.get('/payments/me')]);
+  const [{ plans, gateways = {}, manual_payment: mp }, mine] = await Promise.all([API.get('/payments/plans'), API.get('/payments/me')]);
   const cur = mine.current;
   el.innerHTML = `<h1 class="page-head">الاشتراك</h1>
     ${cur ? `<div class="notice good">اشتراكك الحالي: <b>${esc(cur.name_ar)}</b> — ساري حتى ${fmtDay(cur.ends_at)}. التجديد بيتضاف على المدة.</div>` : ''}
@@ -757,8 +792,11 @@ Views.subscribe = async (el) => {
       <h2>${esc(p.name_ar)}</h2>
       <div class="price">${Number(p.price_egp)} <small>جنيه / ${p.duration_days} يوم</small></div>
       <ul class="features">${Object.entries(LABELS.feature).map(([k, label]) => `<li class="${p.features[k] ? '' : 'off'}">${p.features[k] ? '✓' : '✕'} ${esc(label)}</li>`).join('')}</ul>
-      <div class="col"><button class="btn primary" data-action="pay" data-plan="${p.code}" data-provider="paymob">ادفع بالكارت / المحفظة</button>
-      <button class="btn ghost" data-action="pay" data-plan="${p.code}" data-provider="fawry">ادفع بفوري</button></div>
+      <div class="col">
+        ${gateways.paymob ? `<button class="btn primary" data-action="pay" data-plan="${p.code}" data-provider="paymob">ادفع بالكارت / المحفظة</button>` : ''}
+        ${gateways.fawry ? `<button class="btn ghost" data-action="pay" data-plan="${p.code}" data-provider="fawry">ادفع بفوري</button>` : ''}
+        ${!gateways.paymob && !gateways.fawry ? '<button class="btn primary" data-action="toManual">ادفع بفودافون كاش / انستاباي ↓</button>' : ''}
+      </div>
     </div>`).join('')}</div>
 
     <section class="card"><h2>تحويل فودافون كاش / انستاباي</h2>
@@ -778,6 +816,7 @@ Views.subscribe = async (el) => {
 
   const reload = () => Views.subscribe(el);
   onAction(el, {
+    toManual: () => $('#mf', el).scrollIntoView({ behavior: 'smooth', block: 'start' }),
     pay: (b) => run(b, async () => {
       const r = await API.post('/payments/checkout', { plan_code: b.dataset.plan, provider: b.dataset.provider });
       if (r.checkout_url) { location.href = r.checkout_url; return; }
