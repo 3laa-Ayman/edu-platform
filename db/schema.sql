@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS users (
   student_code   VARCHAR(20) UNIQUE,                 -- STU-2026-0001 (NULL for admins)
   full_name      VARCHAR(120) NOT NULL,
   email          VARCHAR(255) NOT NULL UNIQUE,       -- stored lower-cased
-  password_hash  VARCHAR(100) NOT NULL,              -- bcrypt
+  password_hash  VARCHAR(100),                       -- bcrypt; NULL until the student sets it after OTP
   phone          VARCHAR(20)  NOT NULL,
   parent_phone   VARCHAR(20)  NOT NULL,
   parent_email   VARCHAR(255),
@@ -29,6 +29,9 @@ CREATE TABLE IF NOT EXISTS users (
   created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Registration flow: details → email OTP → set password → student code. Existing DBs: allow NULL until then.
+ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL;
 
 CREATE TABLE IF NOT EXISTS otp_codes (
   id           BIGSERIAL PRIMARY KEY,

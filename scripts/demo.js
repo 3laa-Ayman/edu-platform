@@ -19,18 +19,20 @@ async function call(method, url, { token, body, form } = {}) {
 }
 
 async function student(name, email, phone, parentPhone, parentEmail) {
-  const r = await call('POST', '/api/auth/register', { body: { full_name: name, email, password: 'Passw0rd123', phone, parent_phone: parentPhone, parent_email: parentEmail } });
-  show(`تسجيل ${name}`, `${r.status} → ${r.data.message} | الكود: ${r.data.student_code} | OTP (تجريبي): ${r.data.dev_otp}`);
+  const r = await call('POST', '/api/auth/register', { body: { full_name: name, email, phone, parent_phone: parentPhone, parent_email: parentEmail } });
+  show(`تسجيل ${name}`, `${r.status} → ${r.data.message} | OTP (تجريبي): ${r.data.dev_otp}`);
   const v = await call('POST', '/api/auth/verify-otp', { body: { email, code: r.data.dev_otp } });
   show('تأكيد OTP', `${v.status} → ${v.data.message}`);
-  return { name, email, code: r.data.student_code, token: v.data.token, id: v.data.user.id };
+  const p = await call('POST', '/api/auth/set-password', { body: { setup_token: v.data.setup_token, password: 'Passw0rd123' } });
+  show('تعيين كلمة المرور', `${p.status} → ${p.data.message}`);
+  return { name, email, code: p.data.student_code, token: p.data.token, id: p.data.user.id };
 }
 
 (async () => {
   step('1) التسجيل و OTP');
   const ahmed = await student('أحمد محمد علي', 'ahmed@demo.com', '01011112222', '01233334444', 'father.ahmed@demo.com');
   const sara = await student('سارة حسن', 'sara@demo.com', '01155556666', '01077778888');
-  const wrongOtp = await call('POST', '/api/auth/register', { body: { full_name: 'حساب اختبار', email: 'x@demo.com', password: 'Passw0rd123', phone: '01099990000', parent_phone: '01099990001' } });
+  const wrongOtp = await call('POST', '/api/auth/register', { body: { full_name: 'حساب اختبار', email: 'x@demo.com', phone: '01099990000', parent_phone: '01099990001' } });
   const bad = await call('POST', '/api/auth/verify-otp', { body: { email: 'x@demo.com', code: wrongOtp.data.dev_otp === '123456' ? '654321' : '123456' } });
   show('OTP غلط', `${bad.status} → ${bad.data.error.message}`);
   const login = await call('POST', '/api/auth/login', { body: { identifier: ahmed.code, password: 'Passw0rd123' } });

@@ -75,8 +75,8 @@ templates/questions-template.xlsx   نموذج شيت الأسئلة
 
 | المتطلب | التنفيذ |
 |---|---|
-| **التسجيل + OTP + bcrypt** | `POST /api/auth/register` (إيميل، باسورد، هاتف، رقم ولي الأمر، إيميل ولي الأمر اختياري). الباسورد bcrypt (12 rounds). OTP من 6 أرقام بـ `crypto.randomInt`، يتخزن hash فقط. الدخول ممنوع قبل التأكيد. |
-| **ID الطالب** | `STU-2026-0001` من عداد سنوي ذري (`student_code_counters`) — مفيش تكرار حتى مع تسجيلات متزامنة. الدخول بالإيميل أو بالكود. |
+| **التسجيل (3 خطوات)** | ① `POST /api/auth/register`: الاسم، الإيميل، رقم الطالب، رقم ولي الأمر (وإيميل ولي الأمر اختياري) — **من غير باسورد** ← OTP على الإيميل (أرخص من SMS). ② `POST /api/auth/verify-otp` ← `setup_token` صالح 30 دقيقة ولمرة واحدة. ③ `POST /api/auth/set-password` ← الباسورد يتشفر bcrypt (12 rounds) ويتعمل الـ ID ويدخل على حسابه. الـ OTP من 6 أرقام بـ `crypto.randomInt` ويتخزن hash فقط. التسجيلات اللي مكملتش بتتمسح بعد 7 أيام. |
+| **ID الطالب** | `STU-2026-0001` من عداد سنوي ذري (`student_code_counters`) — **بيتعمل بعد تعيين الباسورد بس**، فالأرقام متسلسلة ومفيش أرقام ضايعة على تسجيلات ناقصة. الدخول بالإيميل أو بالكود. |
 | **رفع Excel** | `POST /api/admin/questions/upload` (حقل `file`). يقبل عناوين عربي أو إنجليزي، الإجابة `A/B/C/D` أو `أ/ب/ج/د` أو نص الاختيار نفسه. التصنيف: `درس` / `امتحان سابق`. يُنشئ المواد والدروس تلقائياً، يتجاهل الأسئلة المكررة، ويرجع تقرير بالأخطاء لكل صف. `?dry_run=true` للفحص بدون حفظ. |
 | **بنك الأخطاء** | أي إجابة خاطئة (تدريب أو مسابقة) تُضاف تلقائياً مع `wrong_count`، مصنفة بالمادة والدرس. `POST /api/mistakes/:id/retry` — لو صح يتحذف تلقائياً. |
 | **Gemini + حد 100 جنيه** | الترتيب: شرح محفوظ في البنك (مجاني) ← شرح AI اتولد قبل كده لنفس السؤال (مجاني للكل) ← Gemini. التكلفة تُحسب من `usageMetadata` الفعلي. السقف محمي ضد الطلبات المتزامنة: يتم **حجز** أقصى تكلفة متوقعة بـ UPDATE ذري قبل الطلب ثم التسوية بالتكلفة الفعلية (أو الاسترداد لو فشل). عند الوصول للحد: `402 AI_LIMIT_REACHED`، وتنبيه لما يتبقى أقل من 20%. |
@@ -94,7 +94,7 @@ templates/questions-template.xlsx   نموذج شيت الأسئلة
 
 كل المسارات تحت `/api`. المحمية تحتاج `Authorization: Bearer <token>`.
 
-**Auth** — `POST /auth/register` · `/auth/verify-otp` · `/auth/resend-otp` · `/auth/login` `{identifier, password}` · `/auth/forgot-password` · `/auth/reset-password` · `/auth/logout-all` · `GET /auth/me`
+**Auth** — `POST /auth/register` · `/auth/verify-otp` · `/auth/set-password` · `/auth/resend-otp` · `/auth/login` `{identifier, password}` · `/auth/forgot-password` · `/auth/reset-password` · `/auth/logout-all` · `GET /auth/me`
 
 **الأسئلة والتدريب** — `GET /catalog/subjects` · `GET /catalog/questions?subject_id&lesson_id&category&unsolved_only&limit` · `POST /catalog/answer {question_id, choice}` · `GET /catalog/questions/:id/explanation` (مجاني فقط)
 

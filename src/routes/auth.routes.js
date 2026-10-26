@@ -3,7 +3,7 @@ const bcrypt = require('bcrypt');
 const env = require('../config/env');
 const db = require('../config/db');
 const { validate, z } = require('../middleware/validate');
-const { authenticate, signToken } = require('../middleware/auth');
+const { authenticate, signToken, signSetupToken, verifySetupToken } = require('../middleware/auth');
 const { authLimiter, otpLimiter } = require('../middleware/rateLimit');
 const { getActiveSubscription } = require('../middleware/subscription');
 const { nextStudentCode } = require('../utils/ids');
@@ -19,11 +19,17 @@ const otpCode = z.string().trim().regex(/^\d{6}$/, 'رمز التحقق 6 أرق
 const DUMMY_HASH = bcrypt.hashSync('timing-equalizer', 10);
 const devOtp = (code) => (env.otp.devEcho ? { dev_otp: code } : {});
 
+/**
+ * Registration (3 steps):
+ *   1. POST /register      — name, email, phone, parent phone (no password) → OTP sent to the email (cheaper than SMS)
+ *   2. POST /verify-otp    — email + code → short-lived setup_token
+ *   3. POST /set-password  — setup_token + password → student code (STU-2026-XXXX) assigned, logged in
+ * Codes are only assigned to completed registrations, so abandoned sign-ups never consume an ID.
+ */
 router.post('/register', authLimiter, validate({
   body: z.object({
     full_name: fullName,
     email,
-    password,
     phone: egyptPhone,
     parent_phone: egyptPhone,
     parent_email: email.optional(),
@@ -31,28 +37,29 @@ router.post('/register', authLimiter, validate({
 }), async (req, res) => {
   const b = req.body;
   if (b.phone === b.parent_phone) throw badRequest('رقم ولي الأمر يجب أن يكون مختلفاً عن رقم الطالب');
-  const passwordHash = await bcrypt.hash(b.password, env.bcryptRounds);
   const { default_ai_limit_egp: aiLimit } = await getSettings();
 
   const { user, code } = await db.withTransaction(async (c) => {
-    const exists = await c.query(`SELECT 1 FROM users WHERE email = $1`, [b.email]);
-    if (exists.rowCount) throw conflict('هذا البريد الإلكتروني مسجل بالفعل');
-    const studentCode = await nextStudentCode(c);
-    const { rows: [u] } = await c.query(
-      `INSERT INTO users (student_code, full_name, email, password_hash, phone, parent_phone, parent_email, ai_limit_egp)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-       RETURNING id, student_code, full_name, email`,
-      [studentCode, b.full_name, b.email, passwordHash, b.phone, b.parent_phone, b.parent_email || null, aiLimit],
-    );
+    const { rows: [existing] } = await c.query(`SELECT id, password_hash FROM users WHERE email = $1 FOR UPDATE`, [b.email]);
+    if (existing?.password_hash) throw conflict('هذا البريد الإلكتروني مسجل بالفعل — سجّل الدخول أو استخدم "نسيت كلمة المرور"');
+    let u;
+    if (existing) {
+      // Unfinished registration with this email: update the details and send a fresh code.
+      ({ rows: [u] } = await c.query(
+        `UPDATE users SET full_name = $2, phone = $3, parent_phone = $4, parent_email = $5, updated_at = now()
+          WHERE id = $1 RETURNING id, email`,
+        [existing.id, b.full_name, b.phone, b.parent_phone, b.parent_email || null]));
+    } else {
+      ({ rows: [u] } = await c.query(
+        `INSERT INTO users (full_name, email, phone, parent_phone, parent_email, ai_limit_egp)
+         VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, email`,
+        [b.full_name, b.email, b.phone, b.parent_phone, b.parent_email || null, aiLimit]));
+    }
     return { user: u, code: await issueOtp(c, u.id, 'verify_email') };
   });
   await sendOtpEmail(user.email, code, 'verify_email');
 
-  res.status(201).json({
-    message: 'تم إنشاء الحساب. أرسلنا رمز تحقق إلى بريدك الإلكتروني.',
-    student_code: user.student_code,
-    ...devOtp(code),
-  });
+  res.status(201).json({ message: 'أرسلنا رمز تحقق إلى بريدك الإلكتروني', ...devOtp(code) });
 });
 
 async function findByEmail(e) {
@@ -63,22 +70,45 @@ async function findByEmail(e) {
 router.post('/verify-otp', authLimiter, validate({ body: z.object({ email, code: otpCode }) }), async (req, res) => {
   const user = await findByEmail(req.body.email);
   if (!user) throw badRequest('رمز التحقق غير صالح');
-  if (user.is_verified) throw badRequest('الحساب مفعل بالفعل، سجّل الدخول');
+  if (user.password_hash) throw badRequest('الحساب مفعل بالفعل، سجّل الدخول');
   await consumeOtp(user.id, 'verify_email', req.body.code);
-  const { rows: [u] } = await db.query(
-    `UPDATE users SET is_verified = TRUE, updated_at = now() WHERE id = $1 RETURNING *`, [user.id]);
-  res.json({ message: 'تم تفعيل الحساب بنجاح', token: signToken(u), user: profile(u) });
+  await db.query(`UPDATE users SET is_verified = TRUE, updated_at = now() WHERE id = $1`, [user.id]);
+  res.json({ message: 'تم تأكيد البريد الإلكتروني — عيّن كلمة المرور', setup_token: signSetupToken(user) });
+});
+
+router.post('/set-password', authLimiter, validate({
+  body: z.object({ setup_token: z.string().min(10).max(1000), password }),
+}), async (req, res) => {
+  const { sub } = verifySetupToken(req.body.setup_token);
+  const hash = await bcrypt.hash(req.body.password, env.bcryptRounds);
+  const user = await db.withTransaction(async (c) => {
+    const { rows: [u] } = await c.query(`SELECT * FROM users WHERE id = $1 FOR UPDATE`, [sub]);
+    if (!u || !u.is_verified) throw badRequest('أكّد بريدك الإلكتروني أولاً');
+    // Single use: once a password exists, this step is closed (changes go through "forgot password").
+    if (u.password_hash) throw conflict('تم تعيين كلمة المرور بالفعل، سجّل الدخول');
+    const studentCode = u.student_code || await nextStudentCode(c);
+    const { rows: [done] } = await c.query(
+      `UPDATE users SET password_hash = $2, student_code = $3, updated_at = now() WHERE id = $1 RETURNING *`,
+      [u.id, hash, studentCode]);
+    return done;
+  });
+  res.status(201).json({
+    message: `تم إنشاء حسابك بنجاح — كود الطالب الخاص بك: ${user.student_code}`,
+    student_code: user.student_code,
+    token: signToken(user),
+    user: profile(user),
+  });
 });
 
 router.post('/resend-otp', otpLimiter, validate({ body: z.object({ email }) }), async (req, res) => {
   const user = await findByEmail(req.body.email);
   let code;
-  if (user && !user.is_verified) {
+  if (user && !user.password_hash) {
     code = await issueOtp(db, user.id, 'verify_email');
     await sendOtpEmail(user.email, code, 'verify_email');
   }
   // Same answer whether or not the account exists (prevents email enumeration).
-  res.json({ message: 'إذا كان الحساب موجوداً وغير مفعل فسيصلك رمز جديد', ...(code ? devOtp(code) : {}) });
+  res.json({ message: 'إذا كان التسجيل غير مكتمل فسيصلك رمز جديد', ...(code ? devOtp(code) : {}) });
 });
 
 router.post('/login', authLimiter, validate({
@@ -88,8 +118,8 @@ router.post('/login', authLimiter, validate({
   const { rows } = await db.query(
     `SELECT * FROM users WHERE email = $1 OR student_code = UPPER($1)`, [id]);
   const user = rows[0];
-  const ok = await bcrypt.compare(req.body.password, user ? user.password_hash : DUMMY_HASH);
-  if (!user || !ok) throw unauthorized('البريد/الكود أو كلمة المرور غير صحيحة');
+  const ok = await bcrypt.compare(req.body.password, user?.password_hash || DUMMY_HASH);
+  if (!user?.password_hash || !ok) throw unauthorized('البريد/الكود أو كلمة المرور غير صحيحة');
   if (!user.is_active) throw forbidden('تم إيقاف هذا الحساب، تواصل مع الدعم', 'ACCOUNT_DISABLED');
   if (!user.is_verified) throw forbidden('يجب تأكيد البريد الإلكتروني أولاً', 'EMAIL_NOT_VERIFIED');
   res.json({ token: signToken(user), user: profile(user) });
@@ -98,7 +128,7 @@ router.post('/login', authLimiter, validate({
 router.post('/forgot-password', otpLimiter, validate({ body: z.object({ email }) }), async (req, res) => {
   const user = await findByEmail(req.body.email);
   let code;
-  if (user && user.is_active) {
+  if (user && user.is_active && user.password_hash) {
     code = await issueOtp(db, user.id, 'reset_password');
     await sendOtpEmail(user.email, code, 'reset_password');
   }
@@ -107,7 +137,7 @@ router.post('/forgot-password', otpLimiter, validate({ body: z.object({ email })
 
 router.post('/reset-password', authLimiter, validate({ body: z.object({ email, code: otpCode, new_password: password }) }), async (req, res) => {
   const user = await findByEmail(req.body.email);
-  if (!user) throw badRequest('رمز التحقق غير صالح');
+  if (!user?.password_hash) throw badRequest('رمز التحقق غير صالح');
   await consumeOtp(user.id, 'reset_password', req.body.code);
   const hash = await bcrypt.hash(req.body.new_password, env.bcryptRounds);
   // token_version++ logs out every existing session.

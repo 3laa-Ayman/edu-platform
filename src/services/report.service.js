@@ -84,7 +84,7 @@ async function sendParentReport(userId, days = 7) {
 }
 
 async function sendWeeklyReportsToAll() {
-  const { rows } = await db.query(`SELECT id FROM users WHERE role = 'student' AND is_verified AND is_active`);
+  const { rows } = await db.query(`SELECT id FROM users WHERE role = 'student' AND is_verified AND is_active AND student_code IS NOT NULL`);
   let sent = 0;
   let failed = 0;
   for (const { id } of rows) {

@@ -30,25 +30,30 @@ Views.login = async (el) => {
   });
 };
 
+/** Registration steps indicator: 1 details → 2 email code → 3 password. */
+const regSteps = (active) => `<ol class="steps">${['بياناتك', 'تأكيد الإيميل', 'كلمة المرور'].map((t, i) =>
+  `<li class="${i + 1 < active ? 'done' : i + 1 === active ? 'active' : ''}"><span>${i + 1 < active ? '✓' : i + 1}</span>${t}</li>`).join('')}</ol>`;
+
 Views.register = async (el) => {
   el.innerHTML = `<div class="auth card wide">
     <h1>إنشاء حساب طالب</h1>
+    ${regSteps(1)}
     <form id="f" class="form grid2">
-      <label class="span2">الاسم بالكامل<input name="full_name" required minlength="3"></label>
-      <label>البريد الإلكتروني<input name="email" type="email" required autocomplete="email"></label>
-      <label>كلمة المرور<input name="password" type="password" required minlength="8" autocomplete="new-password" placeholder="8 أحرف على الأقل، حروف وأرقام"></label>
+      <label class="span2">الاسم بالكامل<input name="full_name" required minlength="3" value="${esc(sessionStorage.getItem('regName') || '')}"></label>
+      <label class="span2">البريد الإلكتروني<input name="email" type="email" required autocomplete="email" value="${esc(sessionStorage.getItem('verifyEmail') || '')}"></label>
       <label>رقم الطالب<input name="phone" required inputmode="numeric" placeholder="01012345678"></label>
       <label>رقم ولي الأمر<input name="parent_phone" required inputmode="numeric" placeholder="01212345678"></label>
       <label class="span2">إيميل ولي الأمر (اختياري — لاستلام التقارير)<input name="parent_email" type="email"></label>
-      <button class="btn primary span2" type="submit">إنشاء الحساب</button>
+      <button class="btn primary span2" type="submit">إرسال رمز التأكيد على الإيميل</button>
     </form>
     <p class="links">عندك حساب؟ <a href="#/login">سجّل دخول</a></p>
   </div>`;
   onSubmit($('#f', el), async (v) => {
     const r = await API.post('/auth/register', v);
     sessionStorage.setItem('verifyEmail', v.email);
+    sessionStorage.setItem('regName', v.full_name);
     if (r.dev_otp) sessionStorage.setItem('devOtp', r.dev_otp);
-    sessionStorage.setItem('newCode', r.student_code);
+    else sessionStorage.removeItem('devOtp');
     location.hash = '#/verify';
   });
 };
@@ -56,26 +61,24 @@ Views.register = async (el) => {
 Views.verify = async (el) => {
   const email = sessionStorage.getItem('verifyEmail') || '';
   const devOtp = sessionStorage.getItem('devOtp');
-  const code = sessionStorage.getItem('newCode');
   el.innerHTML = `<div class="auth card">
     <h1>تأكيد البريد الإلكتروني</h1>
-    ${code ? `<p class="notice good">تم إنشاء حسابك! كود الطالب الخاص بك: <b class="mono">${esc(code)}</b></p>` : ''}
-    <p class="muted">أرسلنا رمز من 6 أرقام إلى بريدك.</p>
+    ${regSteps(2)}
+    <p class="muted">أرسلنا رمز من 6 أرقام إلى ${email ? `<b>${esc(email)}</b>` : 'بريدك'}. لو مش لاقيه، بص في الـ Spam.</p>
     ${devOtp ? `<p class="notice">وضع تجريبي — الرمز: <b class="mono">${esc(devOtp)}</b></p>` : ''}
     <form id="f" class="form">
-      <label>البريد الإلكتروني<input name="email" type="email" required value="${esc(email)}"></label>
+      <label ${email ? 'hidden' : ''}>البريد الإلكتروني<input name="email" type="email" required value="${esc(email)}"></label>
       <label>رمز التحقق<input name="code" required inputmode="numeric" maxlength="6" pattern="\\d{6}" class="otp" autocomplete="one-time-code"></label>
       <button class="btn primary" type="submit">تأكيد</button>
     </form>
-    <p class="links"><a href="#" data-action="resend">إعادة إرسال الرمز</a></p>
+    <p class="links"><a href="#" data-action="resend">إعادة إرسال الرمز</a> · <a href="#/register">تعديل البيانات</a></p>
   </div>`;
   onSubmit($('#f', el), async (v) => {
     const r = await API.post('/auth/verify-otp', v);
-    ['verifyEmail', 'devOtp', 'newCode'].forEach((k) => sessionStorage.removeItem(k));
-    API.setToken(r.token);
-    await State.refresh();
+    sessionStorage.removeItem('devOtp');
+    sessionStorage.setItem('setupToken', r.setup_token);
     toast(r.message);
-    location.hash = '#/';
+    location.hash = '#/set-password';
   });
   onAction(el, {
     resend: (b) => run(b, async () => {
@@ -86,6 +89,42 @@ Views.verify = async (el) => {
         Views.verify(el);
       }
     }),
+  });
+};
+
+Views.setPassword = async (el) => {
+  const setupToken = sessionStorage.getItem('setupToken');
+  if (!setupToken) { location.hash = '#/register'; return; }
+  el.innerHTML = `<div class="auth card">
+    <h1>عيّن كلمة المرور</h1>
+    ${regSteps(3)}
+    <p class="notice good">✓ تم تأكيد بريدك الإلكتروني</p>
+    <form id="f" class="form">
+      <label>كلمة المرور<input name="password" type="password" required minlength="8" autocomplete="new-password" placeholder="8 أحرف على الأقل، حروف وأرقام"></label>
+      <label>تأكيد كلمة المرور<input name="confirm" type="password" required minlength="8" autocomplete="new-password"></label>
+      <button class="btn primary" type="submit">إنشاء الحساب</button>
+    </form>
+  </div>`;
+  onSubmit($('#f', el), async (v) => {
+    if (v.password !== v.confirm) throw new Error('كلمتين المرور مش متطابقين');
+    let r;
+    try {
+      r = await API.post('/auth/set-password', { setup_token: setupToken, password: v.password });
+    } catch (err) {
+      if (err.status === 401) { sessionStorage.removeItem('setupToken'); location.hash = '#/verify'; }
+      throw err;
+    }
+    ['setupToken', 'verifyEmail', 'regName'].forEach((k) => sessionStorage.removeItem(k));
+    API.setToken(r.token);
+    await State.refresh();
+    renderTopbar('/');
+    el.innerHTML = `<div class="auth card center">
+      <h1>🎉 تم إنشاء حسابك</h1>
+      <p class="muted">ده كود الطالب الخاص بيك — احفظه، تقدر تدخل بيه وتشاركه مع أصحابك عشان يضيفوك للتيم:</p>
+      <div class="big mono">${esc(r.student_code)}</div>
+      <div class="row center"><button class="btn ghost" data-action="copy">نسخ الكود</button><a class="btn primary" href="#/">ادخل على حسابك</a></div>
+    </div>`;
+    onAction(el, { copy: () => navigator.clipboard?.writeText(r.student_code).then(() => toast('تم نسخ الكود')) });
   });
 };
 

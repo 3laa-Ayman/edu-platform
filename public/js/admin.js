@@ -11,7 +11,7 @@ const toLocalInput = (d) => { const x = new Date(d); return new Date(x.getTime()
 Admin.dashboard = async (el) => {
   const d = await API.get('/admin/dashboard');
   const tiles = [
-    ['الطلاب', d.students, `${d.verified_students} مفعّل`, '#/admin/students'],
+    ['الطلاب', d.students, d.pending_registrations ? `${d.pending_registrations} لم يكملوا التسجيل` : '', '#/admin/students'],
     ['المشتركين حالياً', d.active_subscribers, '', '#/admin/students'],
     ['الإيرادات', fmtMoney(d.revenue_egp), 'مدفوعات مؤكدة', '#/admin/payments?status=paid'],
     ['إيصالات للمراجعة', d.receipts_pending_review, '', '#/admin/payments'],
@@ -462,7 +462,7 @@ Admin.students = async (el, params, query) => {
   el.innerHTML = `<div class="page-head"><h1>الطلاب</h1><button class="btn primary" data-action="new">+ طالب جديد</button></div>
     <section class="card"><form id="sf" class="form inline"><input name="search" value="${esc(search)}" placeholder="كود الطالب، الإيميل أو الاسم"><button class="btn ghost" type="submit">بحث</button></form>
     ${items.length ? table(['الكود', 'الاسم', 'التواصل', 'الاشتراك', 'الحالة', ''],
-      items.map((s) => [`<span class="mono">${esc(s.student_code)}</span>`, esc(s.full_name),
+      items.map((s) => [s.student_code ? `<span class="mono">${esc(s.student_code)}</span>` : badge('لم يكمل التسجيل', 'mid'), esc(s.full_name),
         `${esc(s.email)}<br><small class="muted">طالب ${esc(s.phone)} · ولي أمر ${esc(s.parent_phone)}</small>`,
         s.current_plan ? badge(s.current_plan, 'good') : badge('بدون', ''),
         `${s.is_verified ? '' : badge('غير مفعّل', 'mid')} ${s.is_active ? badge('نشط', 'good') : badge('موقوف', 'bad')}`,
@@ -490,7 +490,7 @@ Admin.student = async (el, { id }) => {
   const s = d.student;
   const aiPct = s.ai_limit_egp ? (s.ai_spent_egp / s.ai_limit_egp) * 100 : 0;
   el.innerHTML = `<div class="page-head"><a class="btn ghost tiny" href="#/admin/students">→ الطلاب</a><h1>${esc(s.full_name)}</h1>
-      <span class="mono muted">${esc(s.student_code)}</span>${s.is_active ? badge('نشط', 'good') : badge('موقوف', 'bad')}</div>
+      ${s.student_code ? `<span class="mono muted">${esc(s.student_code)}</span>` : badge('لم يكمل التسجيل — عيّن له كلمة مرور لإكماله', 'mid')}${s.is_active ? badge('نشط', 'good') : badge('موقوف', 'bad')}</div>
 
     <section class="tiles">
       <div class="tile"><span class="tile-label">الأداء العام</span><b class="${percentTone(d.performance.overall.percent)}">${d.performance.overall.percent ?? '—'}%</b><small>${esc(d.performance.overall.rating)}</small></div>

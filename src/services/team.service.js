@@ -24,7 +24,7 @@ async function autoAssignTeams({ requireSubscription = true } = {}) {
 
     const { rows } = await c.query(
       `SELECT u.id FROM users u
-        WHERE u.role = 'student' AND u.is_verified AND u.is_active
+        WHERE u.role = 'student' AND u.is_verified AND u.is_active AND u.student_code IS NOT NULL
           AND NOT EXISTS (SELECT 1 FROM team_members tm WHERE tm.user_id = u.id)
           AND ($1::boolean = FALSE OR EXISTS (
                 SELECT 1 FROM subscriptions s

@@ -13,6 +13,24 @@ function signToken(user) {
   });
 }
 
+/**
+ * Short-lived token issued after the email OTP is verified. It can only be used to set the password
+ * (POST /auth/set-password) — never as a login token.
+ */
+const SETUP_AUDIENCE = 'set-password';
+function signSetupToken(user) {
+  return jwt.sign({ sub: user.id, purpose: SETUP_AUDIENCE }, env.jwtSecret, {
+    expiresIn: '30m', issuer: ISSUER, audience: SETUP_AUDIENCE, algorithm: 'HS256',
+  });
+}
+function verifySetupToken(token) {
+  try {
+    return jwt.verify(token, env.jwtSecret, { algorithms: ['HS256'], issuer: ISSUER, audience: SETUP_AUDIENCE });
+  } catch {
+    throw unauthorized('انتهت صلاحية خطوة التسجيل، اطلب رمز تحقق جديد');
+  }
+}
+
 /** Verifies the Bearer JWT and loads the user (so disabled accounts / revoked tokens are rejected immediately). */
 async function authenticate(req, res, next) {
   const [scheme, token] = (req.headers.authorization || '').split(' ');
@@ -24,6 +42,7 @@ async function authenticate(req, res, next) {
   } catch {
     throw unauthorized('انتهت الجلسة أو التوكن غير صالح، سجّل الدخول مرة أخرى');
   }
+  if (payload.purpose) throw unauthorized(); // setup tokens are not login tokens
 
   const { rows } = await db.query(
     `SELECT id, student_code, full_name, email, role, is_verified, is_active, token_version
@@ -41,4 +60,4 @@ const requireRole = (...roles) => (req, res, next) => {
   next();
 };
 
-module.exports = { signToken, authenticate, requireRole, requireAdmin: requireRole('admin') };
+module.exports = { signToken, signSetupToken, verifySetupToken, authenticate, requireRole, requireAdmin: requireRole('admin') };

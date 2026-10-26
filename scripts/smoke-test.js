@@ -33,15 +33,18 @@ async function call(method, url, { token, body, form } = {}) {
 const rnd = crypto.randomBytes(3).toString('hex');
 const phone = (i) => `010${String(Math.floor(Math.random() * 1e8)).padStart(8, '0')}`.slice(0, 11) || `0100000000${i}`;
 
+/** Registration: details → email OTP → set password → student code. */
 async function registerStudent(i) {
   const email = `s${i}-${rnd}@test.com`;
   const r = await call('POST', '/api/auth/register', {
-    body: { full_name: `طالب ${i} تجربة`, email, password: 'Passw0rd123', phone: phone(i), parent_phone: phone(i + 50), parent_email: i === 0 ? `p0-${rnd}@test.com` : undefined },
+    body: { full_name: `طالب ${i} تجربة`, email, phone: phone(i), parent_phone: phone(i + 50), parent_email: i === 0 ? `p0-${rnd}@test.com` : undefined },
   });
-  ok(r.status === 201 && /^STU-\d{4}-\d{4,}$/.test(r.data.student_code), `register student ${i} → ${r.data.student_code}`, r.data);
+  ok(r.status === 201 && r.data.dev_otp && !r.data.student_code, `register student ${i} (no password, no code yet)`, r.data);
   const v = await call('POST', '/api/auth/verify-otp', { body: { email, code: r.data.dev_otp } });
-  ok(v.status === 200 && v.data.token, `verify OTP student ${i}`, v.data);
-  return { email, code: r.data.student_code, token: v.data.token, id: v.data.user.id };
+  ok(v.status === 200 && v.data.setup_token && !v.data.token, `verify OTP student ${i} → setup token only`, v.data);
+  const p = await call('POST', '/api/auth/set-password', { body: { setup_token: v.data.setup_token, password: 'Passw0rd123' } });
+  ok(p.status === 201 && /^STU-\d{4}-\d{4,}$/.test(p.data.student_code) && p.data.token, `set password student ${i} → ${p.data.student_code}`, p.data);
+  return { email, code: p.data.student_code, token: p.data.token, id: p.data.user.id, setupToken: v.data.setup_token };
 }
 
 (async () => {
@@ -51,17 +54,27 @@ async function registerStudent(i) {
   const S = [];
   for (let i = 0; i < 7; i++) S.push(await registerStudent(i));
   const [A, B, C, D] = S;
+  const codeNum = (c) => Number(c.split('-')[2]);
+  ok(S.every((s, i) => i === 0 || codeNum(s.code) === codeNum(S[i - 1].code) + 1), 'student codes are sequential');
 
-  const dup = await call('POST', '/api/auth/register', { body: { full_name: 'dup user', email: A.email, password: 'Passw0rd123', phone: '01011111111', parent_phone: '01022222222' } });
+  const dup = await call('POST', '/api/auth/register', { body: { full_name: 'dup user', email: A.email, phone: '01011111111', parent_phone: '01022222222' } });
   ok(dup.status === 409, 'duplicate email rejected');
-  const weak = await call('POST', '/api/auth/register', { body: { full_name: 'weak', email: `w-${rnd}@t.com`, password: '123', phone: '123', parent_phone: '01022222222' } });
-  ok(weak.status === 400 && weak.data.error.code === 'VALIDATION_ERROR', 'weak password / bad phone rejected');
+  const weak = await call('POST', '/api/auth/register', { body: { full_name: 'weak', email: `w-${rnd}@t.com`, phone: '123', parent_phone: '01022222222' } });
+  ok(weak.status === 400 && weak.data.error.code === 'VALIDATION_ERROR', 'bad phone rejected');
+  ok((await call('POST', '/api/auth/set-password', { body: { setup_token: A.setupToken, password: 'Another123' } })).status === 409, 'setup token is single-use');
+  ok((await call('GET', '/api/auth/me', { token: A.setupToken })).status === 401, 'setup token cannot be used as login token');
 
-  const badOtp = await call('POST', '/api/auth/register', { body: { full_name: 'otp user', email: `o-${rnd}@t.com`, password: 'Passw0rd123', phone: '01033333333', parent_phone: '01044444444' } });
-  const wrong = await call('POST', '/api/auth/verify-otp', { body: { email: `o-${rnd}@t.com`, code: badOtp.data.dev_otp === '000000' ? '111111' : '000000' } });
+  const pending = await call('POST', '/api/auth/register', { body: { full_name: 'otp user', email: `o-${rnd}@t.com`, phone: '01033333333', parent_phone: '01044444444' } });
+  const wrong = await call('POST', '/api/auth/verify-otp', { body: { email: `o-${rnd}@t.com`, code: pending.data.dev_otp === '000000' ? '111111' : '000000' } });
   ok(wrong.status === 400, 'wrong OTP rejected');
-  const unverifiedLogin = await call('POST', '/api/auth/login', { body: { identifier: `o-${rnd}@t.com`, password: 'Passw0rd123' } });
-  ok(unverifiedLogin.status === 403 && unverifiedLogin.data.error.code === 'EMAIL_NOT_VERIFIED', 'unverified login blocked');
+  const noPassLogin = await call('POST', '/api/auth/login', { body: { identifier: `o-${rnd}@t.com`, password: 'Passw0rd123' } });
+  ok(noPassLogin.status === 401, 'unfinished registration cannot log in');
+  const ok2 = await call('POST', '/api/auth/verify-otp', { body: { email: `o-${rnd}@t.com`, code: pending.data.dev_otp } });
+  const weakPass = await call('POST', '/api/auth/set-password', { body: { setup_token: ok2.data.setup_token, password: '123' } });
+  ok(weakPass.status === 400, 'weak password rejected at set-password');
+  // Abandoned after OTP: registering again with the same email restarts the flow (no 409)
+  const again = await call('POST', '/api/auth/register', { body: { full_name: 'otp user 2', email: `o-${rnd}@t.com`, phone: '01033333334', parent_phone: '01044444445' } });
+  ok(again.status === 201 || again.status === 429, 'unfinished registration can restart with same email');
 
   const loginByCode = await call('POST', '/api/auth/login', { body: { identifier: A.code, password: 'Passw0rd123' } });
   ok(loginByCode.status === 200 && loginByCode.data.token, 'login with student code');
@@ -335,6 +348,11 @@ async function registerStudent(i) {
   await call('POST', `/api/admin/students/${nsId}/password`, { token: AT, body: { new_password: 'NewPassw0rd1' } });
   const nsLogin = await call('POST', '/api/auth/login', { body: { identifier: `adm-${rnd}@t.com`, password: 'NewPassw0rd1' } });
   ok(nsLogin.status === 200, 'admin-set password works');
+  const pendingStu = (await call('GET', `/api/admin/students?search=o-${rnd}`, { token: AT })).data.items[0];
+  ok(pendingStu && pendingStu.student_code === null, 'admin sees unfinished registration (no code)');
+  const fin = await call('POST', `/api/admin/students/${pendingStu.id}/password`, { token: AT, body: { new_password: 'Finish3dIt' } });
+  ok(/^STU-/.test(fin.data.student_code), `admin completes registration → ${fin.data.student_code}`);
+  ok((await call('POST', '/api/auth/login', { body: { identifier: fin.data.student_code, password: 'Finish3dIt' } })).status === 200, 'completed student can log in');
   const gift = await call('POST', `/api/admin/students/${nsId}/subscriptions`, { token: AT, body: { plan_code: 'premium', days: 7 } });
   ok(gift.status === 201, 'admin grants subscription');
   ok((await call('GET', '/api/auth/me', { token: nsLogin.data.token })).data.subscription?.plan_code === 'premium', 'granted subscription active');

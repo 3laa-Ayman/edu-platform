@@ -214,3 +214,9 @@ th { color: var(--muted); font-weight: 600; font-size: .82rem; white-space: nowr
 .page-head .btn { margin-inline-start: auto; }
 .page-head a.btn.tiny:first-child { margin-inline-start: 0; }
 .modal-box { width: min(680px, 100%); }
+.steps { list-style: none; display: flex; gap: 6px; padding: 0; margin: 4px 0 18px; counter-reset: none; }
+.steps li { flex: 1; display: flex; align-items: center; gap: 6px; font-size: .85rem; color: var(--muted); }
+.steps li span { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: var(--surface-2); font-weight: 700; flex: none; }
+.steps li.active { color: var(--primary); font-weight: 600; }
+.steps li.active span { background: var(--primary); color: var(--primary-ink); }
+.steps li.done span { background: var(--good-soft); color: var(--good); }

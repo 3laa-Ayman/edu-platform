@@ -15,8 +15,8 @@ const { badRequest, notFound, conflict } = require('../utils/errors');
 router.get('/dashboard', async (req, res) => {
   const { rows: [d] } = await db.query(`
     SELECT
-      (SELECT COUNT(*) FROM users WHERE role = 'student')::int AS students,
-      (SELECT COUNT(*) FROM users WHERE role = 'student' AND is_verified)::int AS verified_students,
+      (SELECT COUNT(*) FROM users WHERE role = 'student' AND student_code IS NOT NULL)::int AS students,
+      (SELECT COUNT(*) FROM users WHERE role = 'student' AND student_code IS NULL)::int AS pending_registrations,
       (SELECT COUNT(DISTINCT user_id) FROM subscriptions WHERE status = 'active' AND now() BETWEEN starts_at AND ends_at)::int AS active_subscribers,
       (SELECT COALESCE(SUM(amount_egp), 0) FROM payments WHERE status = 'paid')::float AS revenue_egp,
       (SELECT COUNT(*) FROM payments WHERE status = 'under_review')::int AS receipts_pending_review,

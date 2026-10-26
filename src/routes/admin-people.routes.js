@@ -93,11 +93,17 @@ router.patch('/students/:id', validate({
 /** Set a new password for a student (logs them out of all devices). */
 router.post('/students/:id/password', validate({ params: idParam, body: z.object({ new_password: password }) }), async (req, res) => {
   const hash = await bcrypt.hash(req.body.new_password, env.bcryptRounds);
-  const r = await db.query(
-    `UPDATE users SET password_hash = $2, token_version = token_version + 1, updated_at = now() WHERE id = $1 AND role = 'student'`,
-    [req.p.id, hash]);
-  if (!r.rowCount) throw notFound('الطالب غير موجود');
-  res.json({ message: 'تم تغيير كلمة مرور الطالب' });
+  const u = await db.withTransaction(async (c) => {
+    const { rows: [cur] } = await c.query(`SELECT id, student_code FROM users WHERE id = $1 AND role = 'student' FOR UPDATE`, [req.p.id]);
+    if (!cur) throw notFound('الطالب غير موجود');
+    // A student who never finished registering gets verified + a student code here.
+    const code = cur.student_code || await nextStudentCode(c);
+    const { rows: [done] } = await c.query(
+      `UPDATE users SET password_hash = $2, student_code = $3, is_verified = TRUE, token_version = token_version + 1, updated_at = now()
+        WHERE id = $1 RETURNING student_code`, [cur.id, hash, code]);
+    return done;
+  });
+  res.json({ message: 'تم تغيير كلمة مرور الطالب', student_code: u.student_code });
 });
 
 /** Grant a subscription manually (gift / cash payment / compensation). */

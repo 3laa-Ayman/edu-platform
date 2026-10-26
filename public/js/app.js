@@ -4,6 +4,7 @@ const ROUTES = [
   ['/register', Views.register, 'guest'],
   ['/verify', Views.verify, 'guest'],
   ['/forgot', Views.forgot, 'guest'],
+  ['/set-password', Views.setPassword, 'guest'],
   ['/', Views.home, 'student'],
   ['/practice', Views.practice, 'student'],
   ['/mistakes', Views.mistakes, 'student'],
