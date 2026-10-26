@@ -55,15 +55,31 @@ async function loadSiteSettings() {
   } catch { /* keep default */ }
 }
 
+/** Current theme: the student's choice, otherwise the device setting. */
+const isDark = () => {
+  const t = document.documentElement.getAttribute('data-theme');
+  return t ? t === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
+};
+const themeButton = () => `<button class="theme-toggle" id="theme" type="button" aria-label="${isDark() ? 'الوضع الفاتح' : 'الوضع الداكن'}" title="${isDark() ? 'الوضع الفاتح' : 'الوضع الداكن'}">${isDark() ? '☀️' : '🌙'}</button>`;
+function toggleTheme() {
+  const next = isDark() ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  store.set('theme', next);
+  const b = $('#theme');
+  if (b) b.outerHTML = themeButton();
+  $('#theme')?.addEventListener('click', toggleTheme);
+}
+
 function renderTopbar(path) {
   const u = State.user;
   const links = u ? NAV[u.role === 'admin' ? 'admin' : 'student'] : [];
   $('#topbar').innerHTML = `<div class="container topbar-inner">
     <a class="brand" href="#/">📚 ${esc(Site.name)}</a>
     ${u ? `<nav class="nav">${links.map(([href, label]) => `<a href="#${href}" class="${href === path || (path.startsWith('/admin/student/') && href === '/admin/students') ? 'active' : ''}">${label}</a>`).join('')}</nav>
-      <div class="user"><span class="mono">${esc(u.student_code || 'Admin')}</span><button class="btn tiny ghost" id="logout">خروج</button></div>`
-    : '<nav class="nav"><a href="#/login">دخول</a><a href="#/register">حساب جديد</a></nav>'}
+      <div class="user">${themeButton()}<span class="mono">${esc(u.student_code || 'Admin')}</span><button class="btn tiny ghost" id="logout">خروج</button></div>`
+    : `<nav class="nav"><a href="#/login">دخول</a><a href="#/register">حساب جديد</a></nav><div class="user">${themeButton()}</div>`}
   </div>`;
+  $('#theme')?.addEventListener('click', toggleTheme);
   $('#logout')?.addEventListener('click', () => {
     API.setToken(null);
     State.user = null;
