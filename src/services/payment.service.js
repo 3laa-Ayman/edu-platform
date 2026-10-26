@@ -28,24 +28,33 @@ async function activatePayment(client, paymentId, { providerTxnId = null, rawPay
   if (!rows.length) return null; // already processed
 
   const payment = rows[0];
-  const { rows: [plan] } = await client.query(`SELECT * FROM plans WHERE code = $1`, [payment.plan_code]);
+  const subscription = await grantSubscription(client, { userId: payment.user_id, planCode: payment.plan_code, paymentId: payment.id });
+  return { payment, subscription };
+}
 
+/**
+ * Creates a subscription period. Renewing the same plan extends from the current end date;
+ * a different plan (upgrade) starts now. `days` defaults to the plan's duration.
+ * Must be called inside a transaction.
+ */
+async function grantSubscription(client, { userId, planCode, paymentId = null, days = null }) {
+  const { rows: [plan] } = await client.query(`SELECT * FROM plans WHERE code = $1`, [planCode]);
+  if (!plan) throw new AppError(400, 'الباقة غير موجودة', 'BAD_REQUEST');
   // Serialize per user so two concurrent activations compute the extension correctly.
-  await client.query(`SELECT id FROM users WHERE id = $1 FOR UPDATE`, [payment.user_id]);
-  // Renewing the same plan extends from the current end date; a different plan (upgrade) starts now.
+  await client.query(`SELECT id FROM users WHERE id = $1 FOR UPDATE`, [userId]);
   const { rows: [current] } = await client.query(
     `SELECT MAX(ends_at) AS ends_at FROM subscriptions
       WHERE user_id = $1 AND plan_code = $2 AND status = 'active' AND ends_at > now()`,
-    [payment.user_id, payment.plan_code],
+    [userId, planCode],
   );
   const startsAt = current.ends_at || new Date();
   const { rows: [subscription] } = await client.query(
     `INSERT INTO subscriptions (user_id, plan_code, payment_id, starts_at, ends_at)
      VALUES ($1, $2, $3, $4, $4::timestamptz + make_interval(days => $5))
      RETURNING *`,
-    [payment.user_id, plan.code, payment.id, startsAt, plan.duration_days],
+    [userId, plan.code, paymentId, startsAt, days ?? plan.duration_days],
   );
-  return { payment, subscription };
+  return subscription;
 }
 
 // ------------------------------------------------------------------ Paymob
@@ -157,6 +166,7 @@ function devMock(payment, provider) {
 
 module.exports = {
   activatePayment,
+  grantSubscription,
   paymobHmac,
   verifyPaymobHmac,
   createPaymobCheckout,

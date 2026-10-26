@@ -2,6 +2,7 @@ const router = require('express').Router();
 const db = require('../config/db');
 const { validate, z, pagination } = require('../middleware/validate');
 const { recordAnswer, publicQuestion } = require('../services/answer.service');
+const { requireSubscription } = require('../middleware/subscription');
 const { normalizeChoice } = require('../utils/choices');
 const { badRequest, notFound } = require('../utils/errors');
 
@@ -53,7 +54,7 @@ router.get('/', validate({ query: z.object({ ...filters, ...pagination }) }), as
 });
 
 /** A re-solve quiz drawn from the mistakes bank (answers hidden). */
-router.get('/quiz', validate({ query: z.object({ ...filters, limit: z.coerce.number().int().min(1).max(50).default(10) }) }), async (req, res) => {
+router.get('/quiz', requireSubscription('mistakes_bank'), validate({ query: z.object({ ...filters, limit: z.coerce.number().int().min(1).max(50).default(10) }) }), async (req, res) => {
   const { subject_id, lesson_id, limit } = req.q;
   const { rows } = await db.query(
     `SELECT q.*, s.name AS subject_name, l.name AS lesson_name
@@ -69,7 +70,7 @@ router.get('/quiz', validate({ query: z.object({ ...filters, limit: z.coerce.num
 });
 
 /** Re-solve one mistake. Correct → removed from the bank automatically. */
-router.post('/:questionId/retry', validate({
+router.post('/:questionId/retry', requireSubscription('mistakes_bank'), validate({
   params: z.object({ questionId: z.coerce.number().int().positive() }),
   body: z.object({ choice: z.string().max(3) }),
 }), async (req, res) => {

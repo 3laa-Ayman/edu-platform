@@ -283,5 +283,87 @@ async function registerStudent(i) {
   ok(rs.status === 200, 'password reset via OTP');
   ok((await call('GET', '/api/auth/me', { token: B.token })).status === 401, 'old tokens revoked after reset');
 
+  // ---------------- Admin management (no developer needed)
+  const subj = await call('POST', '/api/admin/subjects', { token: AT, body: { name: `أحياء ${rnd}` } });
+  ok(subj.status === 201, 'admin adds a subject');
+  const sid = subj.data.subject.id;
+  ok((await call('PATCH', `/api/admin/subjects/${sid}`, { token: AT, body: { name: `الأحياء ${rnd}` } })).data.subject.name === `الأحياء ${rnd}`, 'admin renames subject');
+  const les = await call('POST', `/api/admin/subjects/${sid}/lessons`, { token: AT, body: { name: 'الخلية', lesson_type: 'نظري' } });
+  ok(les.status === 201, 'admin adds a lesson');
+  const qBody = { subject_id: sid, lesson_id: les.data.lesson.id, question_text: `وحدة بناء الكائن الحي هي ${rnd}`, option_a: 'الخلية', option_b: 'النسيج', option_c: 'العضو', option_d: 'الجهاز', correct_option: 'A', explanation: 'الخلية هي الوحدة الأساسية' };
+  const nq = await call('POST', '/api/admin/questions', { token: AT, body: qBody });
+  ok(nq.status === 201 && nq.data.question.lesson_id === les.data.lesson.id, 'admin adds a single question');
+  ok((await call('POST', '/api/admin/questions', { token: AT, body: qBody })).status === 409, 'duplicate single question rejected');
+  const otherSubj = (await call('POST', '/api/admin/subjects', { token: AT, body: { name: `جيولوجيا ${rnd}` } })).data.subject;
+  ok((await call('PATCH', `/api/admin/questions/${nq.data.question.id}`, { token: AT, body: { lesson_id: les.data.lesson.id, subject_id: otherSubj.id } })).status === 400, 'lesson must belong to subject');
+  const moved = await call('PATCH', `/api/admin/questions/${nq.data.question.id}`, { token: AT, body: { subject_id: otherSubj.id, correct_option: 'A', exam_year: 2024, category: 'past_exam' } });
+  ok(moved.data.question.subject_id === otherSubj.id && moved.data.question.lesson_id === null && moved.data.question.exam_year === 2024, 'admin moves question to another subject');
+  ok((await call('DELETE', `/api/admin/subjects/${otherSubj.id}`, { token: AT })).status === 409, 'cannot delete subject that has questions');
+  const delQ = await call('DELETE', `/api/admin/questions/${nq.data.question.id}`, { token: AT });
+  ok(delQ.data.deleted === true, 'unused question deleted');
+  const usedDel = await call('DELETE', `/api/admin/questions/${qWithExp.id}`, { token: AT });
+  ok(usedDel.data.hidden === true, 'answered question hidden instead of deleted');
+  await call('PATCH', `/api/admin/questions/${qWithExp.id}`, { token: AT, body: { is_active: true } });
+  ok((await call('DELETE', `/api/admin/subjects/${otherSubj.id}`, { token: AT })).status === 204, 'empty subject deleted');
+  ok((await call('DELETE', `/api/admin/lessons/${les.data.lesson.id}`, { token: AT })).status === 204, 'lesson deleted');
+
+  // Plans: price change + feature toggle is enforced immediately
+  const plansAdm = await call('GET', '/api/admin/plans', { token: AT });
+  ok(plansAdm.data.plans.length >= 2 && plansAdm.data.features.includes('past_exams'), 'admin lists plans');
+  await call('PATCH', '/api/admin/plans/standard', { token: AT, body: { price_egp: 159, features: { ...plansAdm.data.plans.find((p) => p.code === 'standard').features, practice: false } } });
+  ok((await call('GET', '/api/payments/plans', { token: D.token })).data.plans.find((p) => p.code === 'standard').price_egp === 159, 'new plan price visible to students');
+  const blockedPractice = await call('GET', '/api/catalog/questions', { token: D.token });
+  ok(blockedPractice.status === 403 && blockedPractice.data.error.code === 'PLAN_UPGRADE_REQUIRED', 'disabled plan feature is enforced');
+  await call('PATCH', '/api/admin/plans/standard', { token: AT, body: { price_egp: 149, features: plansAdm.data.plans.find((p) => p.code === 'standard').features } });
+  ok((await call('GET', '/api/catalog/questions', { token: D.token })).status === 200, 'feature re-enabled');
+  const newPlan = await call('POST', '/api/admin/plans', { token: AT, body: { code: `p${rnd}`, name_ar: 'باقة الامتحانات', price_egp: 99, duration_days: 14, rank: 0, features: { practice: true }, is_active: false } });
+  ok(newPlan.status === 201, 'admin creates a new plan');
+
+  // Settings
+  const set = await call('PATCH', '/api/admin/settings', { token: AT, body: { vodafone_cash_number: '01099998888', site_name: 'منصة التفوق', default_ai_limit_egp: 50 } });
+  ok(set.data.settings.vodafone_cash_number === '01099998888', 'admin updates settings');
+  ok((await call('GET', '/api/settings/public')).data.site_name === 'منصة التفوق', 'public site name updated');
+  ok((await call('GET', '/api/payments/plans', { token: D.token })).data.manual_payment.vodafone_cash === '01099998888', 'students see new payment number');
+  ok((await call('PATCH', '/api/admin/settings', { token: AT, body: { usd_to_egp: -5 } })).status === 400, 'invalid setting rejected');
+  await call('PATCH', '/api/admin/settings', { token: AT, body: { site_name: 'منصة المذاكرة', default_ai_limit_egp: 100 } });
+
+  // Students: create, edit, password, grant subscription, cancel
+  const ns = await call('POST', '/api/admin/students', { token: AT, body: { full_name: 'طالب من الأدمن', email: `adm-${rnd}@t.com`, password: 'Passw0rd123', phone: '01023456789', parent_phone: '01123456789' } });
+  ok(ns.status === 201 && /^STU-/.test(ns.data.student.student_code), 'admin adds a verified student');
+  const nsId = ns.data.student.id;
+  ok((await call('PATCH', `/api/admin/students/${nsId}`, { token: AT, body: { full_name: 'طالب معدّل', parent_email: `pp-${rnd}@t.com` } })).data.student.full_name === 'طالب معدّل', 'admin edits student');
+  await call('POST', `/api/admin/students/${nsId}/password`, { token: AT, body: { new_password: 'NewPassw0rd1' } });
+  const nsLogin = await call('POST', '/api/auth/login', { body: { identifier: `adm-${rnd}@t.com`, password: 'NewPassw0rd1' } });
+  ok(nsLogin.status === 200, 'admin-set password works');
+  const gift = await call('POST', `/api/admin/students/${nsId}/subscriptions`, { token: AT, body: { plan_code: 'premium', days: 7 } });
+  ok(gift.status === 201, 'admin grants subscription');
+  ok((await call('GET', '/api/auth/me', { token: nsLogin.data.token })).data.subscription?.plan_code === 'premium', 'granted subscription active');
+  const det = await call('GET', `/api/admin/students/${nsId}`, { token: AT });
+  ok(det.data.subscriptions.length === 1 && det.data.performance, 'admin student details');
+  await call('POST', `/api/admin/subscriptions/${gift.data.subscription.id}/cancel`, { token: AT });
+  ok((await call('GET', '/api/auth/me', { token: nsLogin.data.token })).data.subscription === null, 'admin cancels subscription');
+
+  // Teams
+  const tl = await call('GET', `/api/admin/teams?search=${encodeURIComponent('فريق النجوم')}`, { token: AT });
+  const star = tl.data.teams[0];
+  ok(star && star.members.length === 2, 'admin lists teams');
+  ok((await call('POST', `/api/admin/teams/${star.id}/members`, { token: AT, body: { student_code: ns.data.student.student_code } })).status === 201, 'admin adds member to team');
+  ok((await call('PATCH', `/api/admin/teams/${star.id}`, { token: AT, body: { name: 'النجوم المعدّل', captain_id: nsId } })).data.team.captain_id === nsId, 'admin renames team + changes captain');
+  ok((await call('DELETE', `/api/admin/teams/${star.id}/members/${nsId}`, { token: AT })).status === 200, 'admin removes member (captain reassigned)');
+
+  // Competitions
+  ok((await call('PATCH', `/api/admin/competitions/${cid}`, { token: AT, body: { title: 'مسابقة الجمعة (معدلة)' } })).data.competition.title === 'مسابقة الجمعة (معدلة)', 'admin edits competition');
+  ok((await call('DELETE', `/api/admin/competitions/${monthly.data.competition.id}`, { token: AT })).status === 204, 'admin deletes competition');
+
+  // Admin accounts
+  const na = await call('POST', '/api/admin/admins', { token: AT, body: { full_name: 'مساعد', email: `admin2-${rnd}@t.com`, password: 'Assist4nt99' } });
+  ok(na.status === 201, 'admin adds another admin');
+  const a2 = await call('POST', '/api/auth/login', { body: { identifier: `admin2-${rnd}@t.com`, password: 'Assist4nt99' } });
+  ok(a2.data.user.role === 'admin', 'new admin can log in');
+  ok((await call('PATCH', `/api/admin/admins/${admin.data.user.id}`, { token: AT, body: { is_active: false } })).status === 403, 'admin cannot disable self');
+  ok((await call('POST', '/api/admin/me/password', { token: a2.data.token, body: { current_password: 'wrong', new_password: 'Another99x' } })).status === 400, 'change password needs current password');
+  ok((await call('PATCH', `/api/admin/admins/${na.data.admin.id}`, { token: AT, body: { is_active: false } })).data.admin.is_active === false, 'admin disables another admin');
+  ok((await call('GET', '/api/admin/dashboard', { token: a2.data.token })).status === 401, 'disabled admin logged out');
+
   console.log(`\n🎉 All ${passed} checks passed`);
 })().catch((e) => { console.error(e); process.exit(1); });

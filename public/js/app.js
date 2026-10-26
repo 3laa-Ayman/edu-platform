@@ -19,14 +19,20 @@ const ROUTES = [
   ['/admin/payments', Admin.payments, 'admin'],
   ['/admin/competitions', Admin.competitions, 'admin'],
   ['/admin/students', Admin.students, 'admin'],
+  ['/admin/student/:id', Admin.student, 'admin'],
+  ['/admin/subjects', Admin.subjects, 'admin'],
+  ['/admin/plans', Admin.plans, 'admin'],
+  ['/admin/teams', Admin.teams, 'admin'],
   ['/admin/products', Admin.products, 'admin'],
+  ['/admin/settings', Admin.settings, 'admin'],
 ];
 
 const NAV = {
   student: [['/', 'الرئيسية'], ['/practice', 'التدريب'], ['/mistakes', 'بنك الأخطاء'], ['/competitions', 'المسابقات'], ['/team', 'التيم'],
     ['/planner', 'المذاكرة'], ['/subscribe', 'الاشتراك'], ['/offers', 'العروض']],
-  admin: [['/admin', 'اللوحة'], ['/admin/questions', 'الأسئلة'], ['/admin/payments', 'المدفوعات'], ['/admin/competitions', 'المسابقات'],
-    ['/admin/students', 'الطلاب'], ['/admin/products', 'المنتجات']],
+  admin: [['/admin', 'اللوحة'], ['/admin/questions', 'الأسئلة'], ['/admin/subjects', 'المواد'], ['/admin/students', 'الطلاب'],
+    ['/admin/payments', 'المدفوعات'], ['/admin/plans', 'الباقات'], ['/admin/competitions', 'المسابقات'], ['/admin/teams', 'التيمات'],
+    ['/admin/products', 'المنتجات'], ['/admin/settings', 'الإعدادات']],
 };
 
 function matchRoute(path) {
@@ -39,12 +45,21 @@ function matchRoute(path) {
   return null;
 }
 
+const Site = { name: 'منصة المذاكرة' };
+async function loadSiteSettings() {
+  try {
+    const s = await API.get('/settings/public');
+    Site.name = s.site_name || Site.name;
+    document.title = Site.name;
+  } catch { /* keep default */ }
+}
+
 function renderTopbar(path) {
   const u = State.user;
   const links = u ? NAV[u.role === 'admin' ? 'admin' : 'student'] : [];
   $('#topbar').innerHTML = `<div class="container topbar-inner">
-    <a class="brand" href="#/">📚 منصة المذاكرة</a>
-    ${u ? `<nav class="nav">${links.map(([href, label]) => `<a href="#${href}" class="${href === path ? 'active' : ''}">${label}</a>`).join('')}</nav>
+    <a class="brand" href="#/">📚 ${esc(Site.name)}</a>
+    ${u ? `<nav class="nav">${links.map(([href, label]) => `<a href="#${href}" class="${href === path || (path.startsWith('/admin/student/') && href === '/admin/students') ? 'active' : ''}">${label}</a>`).join('')}</nav>
       <div class="user"><span class="mono">${esc(u.student_code || 'Admin')}</span><button class="btn tiny ghost" id="logout">خروج</button></div>`
     : '<nav class="nav"><a href="#/login">دخول</a><a href="#/register">حساب جديد</a></nav>'}
   </div>`;
@@ -94,4 +109,4 @@ async function render() {
 }
 
 window.addEventListener('hashchange', render);
-render();
+loadSiteSettings().finally(render);

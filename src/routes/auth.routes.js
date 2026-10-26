@@ -9,12 +9,10 @@ const { getActiveSubscription } = require('../middleware/subscription');
 const { nextStudentCode } = require('../utils/ids');
 const { issueOtp, consumeOtp } = require('../services/otp.service');
 const { sendOtpEmail } = require('../services/notify.service');
+const { getSettings } = require('../services/settings.service');
 const { badRequest, conflict, unauthorized, forbidden } = require('../utils/errors');
 
-const egyptPhone = z.string().trim().regex(/^01[0125]\d{8}$/, 'رقم هاتف مصري غير صحيح (مثال: 01012345678)');
-const email = z.string().trim().toLowerCase().email('بريد إلكتروني غير صحيح').max(255);
-const password = z.string().min(8, 'كلمة المرور 8 أحرف على الأقل').max(72)
-  .regex(/[A-Za-z]/, 'كلمة المرور يجب أن تحتوي على حروف').regex(/\d/, 'كلمة المرور يجب أن تحتوي على أرقام');
+const { egyptPhone, email, password, fullName } = require('../utils/schemas');
 const otpCode = z.string().trim().regex(/^\d{6}$/, 'رمز التحقق 6 أرقام');
 
 // Used when the email is unknown, so response time does not reveal whether an account exists.
@@ -23,7 +21,7 @@ const devOtp = (code) => (env.otp.devEcho ? { dev_otp: code } : {});
 
 router.post('/register', authLimiter, validate({
   body: z.object({
-    full_name: z.string().trim().min(3).max(120),
+    full_name: fullName,
     email,
     password,
     phone: egyptPhone,
@@ -34,6 +32,7 @@ router.post('/register', authLimiter, validate({
   const b = req.body;
   if (b.phone === b.parent_phone) throw badRequest('رقم ولي الأمر يجب أن يكون مختلفاً عن رقم الطالب');
   const passwordHash = await bcrypt.hash(b.password, env.bcryptRounds);
+  const { default_ai_limit_egp: aiLimit } = await getSettings();
 
   const { user, code } = await db.withTransaction(async (c) => {
     const exists = await c.query(`SELECT 1 FROM users WHERE email = $1`, [b.email]);
@@ -43,7 +42,7 @@ router.post('/register', authLimiter, validate({
       `INSERT INTO users (student_code, full_name, email, password_hash, phone, parent_phone, parent_email, ai_limit_egp)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING id, student_code, full_name, email`,
-      [studentCode, b.full_name, b.email, passwordHash, b.phone, b.parent_phone, b.parent_email || null, env.aiLimitEgp],
+      [studentCode, b.full_name, b.email, passwordHash, b.phone, b.parent_phone, b.parent_email || null, aiLimit],
     );
     return { user: u, code: await issueOtp(c, u.id, 'verify_email') };
   });

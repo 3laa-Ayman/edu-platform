@@ -1,8 +1,9 @@
 const env = require('../config/env');
 const db = require('../config/db');
 const { AppError } = require('../utils/errors');
+const { getSettings } = require('./settings.service');
 
-const { model, inputUsdPerM, outputUsdPerM, usdToEgp, maxOutputTokens } = env.gemini;
+const { model, inputUsdPerM, outputUsdPerM, maxOutputTokens } = env.gemini;
 
 function buildPrompt(q) {
   const correctText = q[`option_${q.correct_option.toLowerCase()}`];
@@ -20,11 +21,11 @@ function buildPrompt(q) {
   ].join('\n');
 }
 
-const costEgp = (inputTokens, outputTokens) =>
+const costEgp = (inputTokens, outputTokens, usdToEgp) =>
   ((inputTokens * inputUsdPerM + outputTokens * outputUsdPerM) / 1e6) * usdToEgp;
 
 /** Conservative worst-case cost reserved BEFORE calling the model (Arabic ≈ 1 token per 1–2 chars). */
-const reserveFor = (prompt) => costEgp(Math.ceil(prompt.length / 1.5) + 50, maxOutputTokens);
+const reserveFor = (prompt, usdToEgp) => costEgp(Math.ceil(prompt.length / 1.5) + 50, maxOutputTokens, usdToEgp);
 
 async function callGemini(prompt) {
   if (!env.gemini.apiKey) {
@@ -78,7 +79,8 @@ async function logUsage(row) {
  */
 async function explainWithBudget(userId, question) {
   const prompt = buildPrompt(question);
-  const reserve = reserveFor(prompt);
+  const { usd_to_egp: usdToEgp } = await getSettings();
+  const reserve = reserveFor(prompt, usdToEgp);
 
   const reserved = await db.query(
     `UPDATE users SET ai_spent_egp = ai_spent_egp + $2
@@ -104,7 +106,7 @@ async function explainWithBudget(userId, question) {
     throw new AppError(502, 'تعذر الحصول على الشرح حالياً، لم يتم خصم أي تكلفة. حاول مرة أخرى.', 'AI_UPSTREAM_ERROR');
   }
 
-  const actualEgp = costEgp(result.usage.input, result.usage.output);
+  const actualEgp = costEgp(result.usage.input, result.usage.output, usdToEgp);
   const { rows } = await db.query(
     `UPDATE users SET ai_spent_egp = GREATEST(ai_spent_egp - $2 + $3, 0) WHERE id = $1
      RETURNING ai_spent_egp, ai_limit_egp`,

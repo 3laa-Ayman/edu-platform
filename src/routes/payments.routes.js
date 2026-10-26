@@ -5,6 +5,7 @@ const { validate, z } = require('../middleware/validate');
 const { receiptUpload } = require('../middleware/upload');
 const { uploadLimiter } = require('../middleware/rateLimit');
 const { getActiveSubscription } = require('../middleware/subscription');
+const { getSettings } = require('../services/settings.service');
 const pay = require('../services/payment.service');
 const { badRequest, notFound, conflict } = require('../utils/errors');
 
@@ -20,13 +21,16 @@ const publicPayment = (p) => ({
 });
 
 router.get('/plans', async (req, res) => {
-  const { rows } = await db.query(`SELECT code, name_ar, price_egp, duration_days, features FROM plans WHERE is_active ORDER BY rank`);
+  const [{ rows }, s] = await Promise.all([
+    db.query(`SELECT code, name_ar, price_egp, duration_days, features FROM plans WHERE is_active ORDER BY rank`),
+    getSettings(),
+  ]);
   res.json({
     plans: rows,
     manual_payment: {
-      vodafone_cash: env.manualPayment.vodafoneCashNumber,
-      instapay: env.manualPayment.instapayAddress,
-      instructions: 'حوّل المبلغ ثم ارفع صورة الإيصال مع رقم العملية، وسيتم التفعيل بعد مراجعة الإدارة.',
+      vodafone_cash: s.vodafone_cash_number,
+      instapay: s.instapay_address,
+      instructions: s.manual_payment_instructions,
     },
   });
 });

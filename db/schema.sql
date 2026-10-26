@@ -347,3 +347,13 @@ CREATE TABLE IF NOT EXISTS products (
   is_active         BOOLEAN NOT NULL DEFAULT TRUE,
   created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- ---------------------------------------------------------------------
+-- 8) Platform settings (editable by admins from the dashboard)
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS settings (
+  key         VARCHAR(60) PRIMARY KEY,
+  value       JSONB NOT NULL,
+  updated_by  BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);

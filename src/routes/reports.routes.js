@@ -4,6 +4,7 @@ const { validate, z } = require('../middleware/validate');
 const { subjectPerformance, overall } = require('../services/stats.service');
 const { buildReport, formatReportText, sendParentReport } = require('../services/report.service');
 const { tooMany } = require('../utils/errors');
+const { requireSubscription } = require('../middleware/subscription');
 
 /** Student ratings: accuracy % per subject + overall rating. */
 router.get('/performance', async (req, res) => {
@@ -18,7 +19,7 @@ router.get('/parent/preview', validate({ query: z.object({ days: z.coerce.number
 });
 
 /** Send the report to the parent now (max once per 24h; the weekly job sends automatically). */
-router.post('/parent/send', async (req, res) => {
+router.post('/parent/send', requireSubscription('parent_reports'), async (req, res) => {
   const { rowCount } = await db.query(
     `SELECT 1 FROM parent_reports WHERE user_id = $1 AND status = 'sent' AND sent_at > now() - interval '24 hours'`, [req.user.id]);
   if (rowCount) throw tooMany('تم إرسال تقرير لولي الأمر خلال آخر 24 ساعة');

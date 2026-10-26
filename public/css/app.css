@@ -207,3 +207,10 @@ th { color: var(--muted); font-weight: 600; font-size: .82rem; white-space: nowr
 .modal-close { position: absolute; top: 10px; inset-inline-start: 10px; border: 0; background: none; font-size: 1.6rem; color: var(--muted); cursor: pointer; }
 .receipt { max-width: 100%; border-radius: 10px; }
 .option.radio { flex-direction: row; color: var(--text); font-size: 1rem; }
+.features-box { border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; margin: 0; display: grid; gap: 6px; }
+.features-box legend { color: var(--muted); font-size: .9rem; padding: 0 6px; }
+.plans-admin .card { gap: 10px; }
+.tile b.small-b { font-size: 1.1rem; }
+.page-head .btn { margin-inline-start: auto; }
+.page-head a.btn.tiny:first-child { margin-inline-start: 0; }
+.modal-box { width: min(680px, 100%); }

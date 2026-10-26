@@ -78,30 +78,6 @@ router.get('/questions', validate({
   res.json({ total: rows[0]?.total ?? 0, items: rows.map(({ total, ...q }) => q) });
 });
 
-router.patch('/questions/:id', validate({
-  params: idParam,
-  body: z.object({
-    question_text: z.string().min(1).max(5000).optional(),
-    option_a: z.string().min(1).optional(), option_b: z.string().min(1).optional(),
-    option_c: z.string().min(1).optional(), option_d: z.string().min(1).optional(),
-    correct_option: z.enum(['A', 'B', 'C', 'D']).optional(),
-    explanation: z.string().max(5000).nullable().optional(),
-    law_note: z.string().max(5000).nullable().optional(),
-    category: z.enum(['lesson', 'past_exam']).optional(),
-    is_active: z.boolean().optional(),
-  }),
-}), async (req, res) => {
-  const allowed = ['question_text', 'option_a', 'option_b', 'option_c', 'option_d', 'correct_option', 'explanation', 'law_note', 'category', 'is_active'];
-  const keys = allowed.filter((k) => k in req.body);
-  if (!keys.length) throw badRequest('لا توجد حقول للتعديل');
-  // Column names come from the fixed whitelist above — values are still parameterized.
-  const sets = keys.map((k, i) => `${k} = $${i + 2}`).join(', ');
-  const { rows: [q] } = await db.query(
-    `UPDATE questions SET ${sets}, updated_at = now() WHERE id = $1 RETURNING *`, [req.p.id, ...keys.map((k) => req.body[k])]);
-  if (!q) throw notFound('السؤال غير موجود');
-  res.json({ question: q });
-});
-
 // ------------------------------------------------------------------ Payments review
 router.get('/payments', validate({
   query: z.object({ status: z.enum(['pending', 'under_review', 'paid', 'failed', 'rejected']).default('under_review'), ...pagination }),
@@ -154,32 +130,17 @@ router.post('/payments/:id/reject', validate({ params: idParam, body: z.object({
 router.get('/students', validate({ query: z.object({ search: z.string().max(100).optional(), ...pagination }) }), async (req, res) => {
   const { search, page, limit } = req.q;
   const { rows } = await db.query(
-    `SELECT id, student_code, full_name, email, phone, parent_phone, is_verified, is_active, ai_spent_egp, ai_limit_egp, created_at
-       FROM users
-      WHERE role = 'student' AND ($1::text IS NULL OR student_code ILIKE $1 || '%' OR email ILIKE $1 || '%' OR full_name ILIKE '%' || $1 || '%')
-      ORDER BY id DESC LIMIT $2 OFFSET $3`,
+    `SELECT u.id, u.student_code, u.full_name, u.email, u.phone, u.parent_phone, u.is_verified, u.is_active,
+            u.ai_spent_egp, u.ai_limit_egp, u.created_at,
+            (SELECT p.name_ar FROM subscriptions s JOIN plans p ON p.code = s.plan_code
+              WHERE s.user_id = u.id AND s.status = 'active' AND now() BETWEEN s.starts_at AND s.ends_at
+              ORDER BY p.rank DESC LIMIT 1) AS current_plan
+       FROM users u
+      WHERE u.role = 'student' AND ($1::text IS NULL OR u.student_code ILIKE $1 || '%' OR u.email ILIKE $1 || '%' OR u.full_name ILIKE '%' || $1 || '%')
+      ORDER BY u.id DESC LIMIT $2 OFFSET $3`,
     [search ? search.replace(/[%_\\]/g, (m) => `\\${m}`) : null, limit, (page - 1) * limit],
   );
   res.json({ items: rows });
-});
-
-router.patch('/students/:id', validate({
-  params: idParam,
-  body: z.object({ is_active: z.boolean().optional(), ai_limit_egp: z.number().min(0).max(10000).optional(), reset_ai_spent: z.boolean().optional() }),
-}), async (req, res) => {
-  const b = req.body;
-  const { rows: [u] } = await db.query(
-    `UPDATE users SET
-        is_active = COALESCE($2, is_active),
-        ai_limit_egp = COALESCE($3, ai_limit_egp),
-        ai_spent_egp = CASE WHEN $4 THEN 0 ELSE ai_spent_egp END,
-        token_version = CASE WHEN $2 IS FALSE THEN token_version + 1 ELSE token_version END,
-        updated_at = now()
-      WHERE id = $1 AND role = 'student'
-      RETURNING id, student_code, is_active, ai_spent_egp, ai_limit_egp`,
-    [req.p.id, b.is_active ?? null, b.ai_limit_egp ?? null, b.reset_ai_spent === true]);
-  if (!u) throw notFound('الطالب غير موجود');
-  res.json({ student: u });
 });
 
 // ------------------------------------------------------------------ Competitions & teams
@@ -251,6 +212,11 @@ const productBody = z.object({
   coupon_code: z.string().max(40).optional().nullable(),
   external_url: z.string().url().optional().nullable(),
   is_active: z.boolean().default(true),
+});
+
+router.get('/products', async (req, res) => {
+  const { rows } = await db.query(`SELECT * FROM products ORDER BY is_active DESC, created_at DESC`);
+  res.json({ products: rows });
 });
 
 router.post('/products', validate({ body: productBody }), async (req, res) => {

@@ -32,7 +32,7 @@ router.get('/subjects', async (req, res) => {
   res.json({ subjects: rows });
 });
 
-router.get('/questions', requireSubscription(), validate({
+router.get('/questions', requireSubscription('practice'), validate({
   query: z.object({
     subject_id: z.coerce.number().int().positive().optional(),
     lesson_id: z.coerce.number().int().positive().optional(),
@@ -62,7 +62,7 @@ router.get('/questions', requireSubscription(), validate({
   res.json({ questions: rows.map(publicQuestion) });
 });
 
-router.post('/answer', requireSubscription(), validate({
+router.post('/answer', requireSubscription('practice'), validate({
   body: z.object({
     question_id: z.coerce.number().int().positive(),
     choice: z.string().max(3),

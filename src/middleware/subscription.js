@@ -22,7 +22,7 @@ const requireSubscription = (feature) => async (req, res, next) => {
   const sub = await getActiveSubscription(req.user.id);
   if (!sub) throw forbidden('هذه الميزة تتطلب اشتراكاً فعالاً', 'SUBSCRIPTION_REQUIRED');
   if (feature && !sub.features?.[feature]) {
-    throw forbidden('هذه الميزة متاحة في اشتراك البريميم فقط', 'PLAN_UPGRADE_REQUIRED');
+    throw forbidden('هذه الميزة غير متاحة في باقتك الحالية — قم بالترقية', 'PLAN_UPGRADE_REQUIRED');
   }
   req.subscription = sub;
   next();

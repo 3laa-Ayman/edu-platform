@@ -195,4 +195,4 @@ async function importQuestions({ valid, errors }, { adminId, filename }) {
   });
 }
 
-module.exports = { parseQuestionSheet, importQuestions, HEADER_ALIASES };
+module.exports = { parseQuestionSheet, importQuestions, hashQuestion, HEADER_ALIASES };
