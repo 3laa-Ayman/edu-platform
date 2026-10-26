@@ -4,6 +4,8 @@
  *  - correct            → remove from mistakes if it was there
  */
 async function recordAnswer(client, { userId, question, selected, source, entryId = null, timeSpentMs = null }) {
+  // A skipped question is never recorded (and so never counted wrong / added to the mistakes bank).
+  if (!selected) throw new Error('recordAnswer called without a selected option');
   const isCorrect = selected === question.correct_option;
 
   await client.query(

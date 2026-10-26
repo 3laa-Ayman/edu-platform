@@ -279,10 +279,16 @@ async function registerStudent(i) {
   const subA = await call('POST', `/api/competitions/${cid}/submit`, { token: A.token, body: { answers: answersA } });
   ok(subA.data.score === N && subA.data.percent === 100, `A scored ${N}/${N} (un-shuffling works)`, subA.data);
   ok((await call('POST', `/api/competitions/${cid}/submit`, { token: A.token, body: { answers: answersA } })).status === 409, 'double submit blocked');
+  const mistakesBefore = (await call('GET', '/api/mistakes/summary', { token: B.token })).data.total;
+  const perfBefore = (await call('GET', '/api/reports/performance', { token: B.token })).data.overall;
   const subB = await call('POST', `/api/competitions/${cid}/submit`, { token: B.token, body: { answers: [] } });
-  ok(subB.data.score === 0, 'B submitted empty → 0');
+  ok(subB.data.score === 0 && subB.data.skipped === N && subB.data.wrong === 0, `B submitted empty → 0 points, ${N} skipped, 0 wrong`, subB.data);
+  ok((await call('GET', '/api/mistakes/summary', { token: B.token })).data.total === mistakesBefore, 'skipped questions NOT added to mistakes bank');
+  const perfAfter = (await call('GET', '/api/reports/performance', { token: B.token })).data.overall;
+  ok(perfAfter.attempts === perfBefore.attempts && perfAfter.percent === perfBefore.percent, 'skipped questions do not lower the performance %');
   const eC = await call('POST', `/api/competitions/${cid}/start`, { token: C.token });
-  await call('POST', `/api/competitions/${cid}/submit`, { token: C.token, body: { answers: eC.data.questions.slice(0, 3).map((q) => ({ question_id: q.question_id, choice: correctKey(q) })) } });
+  const subC = await call('POST', `/api/competitions/${cid}/submit`, { token: C.token, body: { answers: eC.data.questions.slice(0, 3).map((q) => ({ question_id: q.question_id, choice: correctKey(q) })) } });
+  ok(subC.data.correct === 3 && subC.data.skipped === N - 3 && subC.data.wrong === 0, 'partial submit: correct / skipped split');
   const lb = await call('GET', `/api/competitions/${cid}/leaderboard`, { token: D.token });
   ok(lb.data.individuals[0].score === N && lb.data.teams.length >= 2 && lb.data.teams[0].team === 'فريق النجوم', 'leaderboard (individual + teams)', lb.data);
   console.log('   ', JSON.stringify(lb.data.teams));

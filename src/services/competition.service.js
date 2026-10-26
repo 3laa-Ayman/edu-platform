@@ -98,13 +98,24 @@ async function submitEntry(competitionId, user, answers) {
     const byId = new Map(rows.map((q) => [q.id, q]));
 
     let score = 0;
+    let wrong = 0;
+    let skipped = 0;
     for (const { qid, perm } of entry.question_order) {
       const q = byId.get(qid);
       if (!q) continue;
       const shown = given.get(qid);
       const original = shown ? perm[LETTERS.indexOf(shown)] : null; // un-shuffle
+      if (!original) {
+        // Unanswered: no points, but NOT a mistake — no attempt recorded, nothing added to the mistakes bank.
+        skipped++;
+        await c.query(
+          `INSERT INTO competition_answers (entry_id, question_id, selected_option, is_correct) VALUES ($1, $2, NULL, FALSE)`,
+          [entry.id, qid]);
+        continue;
+      }
       const { isCorrect } = await recordAnswer(c, { userId: user.id, question: q, selected: original, source: 'competition', entryId: entry.id });
       if (isCorrect) score++;
+      else wrong++;
       await c.query(
         `INSERT INTO competition_answers (entry_id, question_id, selected_option, is_correct) VALUES ($1, $2, $3, $4)`,
         [entry.id, qid, original, isCorrect],
@@ -117,7 +128,7 @@ async function submitEntry(competitionId, user, answers) {
         WHERE id = $1 RETURNING score, total_questions, duration_seconds, submitted_at`,
       [entry.id, score],
     );
-    return { ...done, percent: Math.round((done.score / done.total_questions) * 100) };
+    return { ...done, correct: score, wrong, skipped, percent: Math.round((done.score / done.total_questions) * 100) };
   });
 }
 

@@ -19,7 +19,7 @@ async function subjectPerformance(userId, { from = null, to = null } = {}) {
        FROM attempts a
        JOIN questions q ON q.id = a.question_id
        JOIN subjects s ON s.id = q.subject_id
-      WHERE a.user_id = $1
+      WHERE a.user_id = $1 AND a.selected_option IS NOT NULL   -- skipped questions are never counted as wrong
         AND ($2::timestamptz IS NULL OR a.created_at >= $2)
         AND ($3::timestamptz IS NULL OR a.created_at < $3)
       GROUP BY s.id, s.name

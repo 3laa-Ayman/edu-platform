@@ -373,3 +373,8 @@ CREATE TABLE IF NOT EXISTS question_media (
   created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (question_id, slot)
 );
+
+-- Skipped questions are no longer mistakes: remove bank entries that were created ONLY by an unanswered
+-- competition question (never actually answered wrong), and stop counting old unanswered attempts.
+DELETE FROM mistakes WHERE last_selected_option IS NULL AND wrong_count = 1;
+DELETE FROM attempts WHERE selected_option IS NULL;

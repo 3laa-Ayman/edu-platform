@@ -216,6 +216,7 @@ function questionCard(q, idx, total) {
       ${['A', 'B', 'C', 'D'].map((k, i) => `<button class="option" data-action="choose" data-key="${k}"><span class="opt-key">${'أبجد'[i]}</span>
         <span class="opt-body">${q.options[k] ? `<span>${rich(q.options[k])}</span>` : ''}${optImage(q.option_images?.[k], `الاختيار ${'أبجد'[i]}`)}</span></button>`).join('')}
     </div>
+    <div class="q-skip"><button class="btn ghost tiny" data-action="skip">تخطي السؤال ←</button></div>
     <div class="feedback" hidden></div>
     <div class="explain" hidden></div>
     <div class="q-actions" hidden>
@@ -263,16 +264,27 @@ async function askAI(card, qid) {
   }
 }
 
-/** Runs a list of questions one by one. answerFn(q, key) → { is_correct, correct_option, note }. */
+/**
+ * Runs a list of questions one by one. answerFn(q, key) → { is_correct, correct_option, note }.
+ * Skipped questions are never sent to the server, so they are not counted wrong; onDone gets
+ * { correct, wrong, skipped: [questions] } so the student can come back to them.
+ */
 function runQuiz(el, questions, { answerFn, onDone, allowExplain = true }) {
   let i = 0;
   let correct = 0;
+  let wrong = 0;
+  const skipped = [];
   let shownAt = 0;
   const show = () => {
     el.innerHTML = questionCard(questions[i], i, questions.length);
     shownAt = Date.now();
   };
   const card = () => $('.qcard', el);
+  const advance = () => {
+    i++;
+    if (i < questions.length) show();
+    else onDone({ correct, wrong, skipped });
+  };
   onAction(el, {
     choose: (b) => run(null, async () => {
       if (b.disabled) return;
@@ -286,7 +298,9 @@ function runQuiz(el, questions, { answerFn, onDone, allowExplain = true }) {
         throw err;
       }
       if (r.is_correct) correct++;
+      else wrong++;
       markOptions(card(), b.dataset.key, r.correct_option);
+      $('.q-skip', card())?.remove();
       const fb = $('.feedback', card());
       fb.hidden = false;
       fb.className = `feedback ${r.is_correct ? 'good' : 'bad'}`;
@@ -294,29 +308,43 @@ function runQuiz(el, questions, { answerFn, onDone, allowExplain = true }) {
       $('.q-actions', card()).hidden = false;
       if (!allowExplain) $('[data-action=explain]', card())?.remove();
     }),
+    skip: () => {
+      skipped.push(questions[i]);
+      toast(`⚠️ تخطيت السؤال ${i + 1} — مش هيتحسب غلط، وهتقدر ترجعله في الآخر`, 'warn');
+      advance();
+    },
     explain: (b) => run(b, () => showExplanation(card(), questions[i].id, b)),
     ai: (b) => run(b, async () => {
       b.textContent = 'جاري التوليد…';
       await askAI(card(), questions[i].id);
     }),
-    next: () => {
-      i++;
-      if (i < questions.length) show();
-      else onDone(correct, questions.length);
-    },
+    next: advance,
   });
   show();
 }
 
-function quizResult(el, correct, total, again) {
-  const p = Math.round((correct / total) * 100);
-  el.innerHTML = `<div class="card center">
-    <h2>خلصت! 🎯</h2>
-    <div class="big ${percentTone(p)}">${correct}/${total}</div>
-    <p class="muted">${p}% إجابات صحيحة — الأسئلة الغلط اتضافت لبنك الأخطاء تلقائياً</p>
-    <div class="row center"><button class="btn primary" data-action="again">جولة جديدة</button><a class="btn ghost" href="#/mistakes">بنك الأخطاء</a></div>
+/** End-of-quiz summary: correct / wrong / skipped, with a warning + shortcut back to the skipped questions. */
+function quizSummary({ correct, wrong, skipped }, { title, note, actions = '' }) {
+  const answered = correct + wrong;
+  const p = answered ? Math.round((correct / answered) * 100) : 0;
+  return `<div class="card center">
+    <h2>${title}</h2>
+    ${answered ? `<div class="big ${percentTone(p)}">${correct}/${answered}</div><p class="muted">${p}% من الأسئلة اللي جاوبتها${note ? ` — ${note}` : ''}</p>` : ''}
+    <div class="score-split"><span class="good">✅ صح: ${correct}</span><span class="bad">❌ غلط: ${wrong}</span><span class="mid">⏭ متروك: ${skipped.length}</span></div>
+    ${skipped.length ? `<div class="notice mid">⚠️ فوّت <b>${skipped.length}</b> سؤال — مش متحسبين غلط ومش في بنك الأخطاء، بس لسه محتاج تحلهم.</div>
+      <button class="btn primary" data-action="solveSkipped">حل الأسئلة اللي فوّتها (${skipped.length})</button>` : ''}
+    <div class="row center wrap">${actions}</div>
   </div>`;
+}
+
+function quizResult(el, result, { again, solveSkipped }) {
+  el.innerHTML = quizSummary(result, {
+    title: result.skipped.length ? 'خلصت الجولة — بس فيه أسئلة فاتتك' : 'خلصت! 🎯',
+    note: 'الغلط اتضاف لبنك الأخطاء',
+    actions: `<button class="btn ${result.skipped.length ? 'ghost' : 'primary'}" data-action="again">جولة جديدة</button><a class="btn ghost" href="#/mistakes">بنك الأخطاء</a>`,
+  });
   $('[data-action=again]', el).addEventListener('click', again);
+  $('[data-action=solveSkipped]', el)?.addEventListener('click', solveSkipped);
 }
 
 // ---------------------------------------------------------------- Practice
@@ -352,13 +380,14 @@ Views.practice = async (el) => {
         throw err;
       }
       if (!r.questions.length) return toast('مفيش أسئلة بالاختيارات دي', 'err');
-      runQuiz(el, r.questions, {
+      const start = (questions) => runQuiz(el, questions, {
         answerFn: async (q, key, ms) => {
           const a = await API.post('/catalog/answer', { question_id: q.id, choice: key, time_spent_ms: ms });
           return { ...a, note: a.added_to_mistakes ? 'اتضاف لبنك الأخطاء' : a.removed_from_mistakes ? 'اتشال من بنك الأخطاء' : '' };
         },
-        onDone: (c, t) => quizResult(el, c, t, setup),
+        onDone: (res) => quizResult(el, res, { again: setup, solveSkipped: () => start(res.skipped) }),
       });
+      start(r.questions);
     });
   };
   if (!State.subscription && State.user.role !== 'admin') {
@@ -386,17 +415,21 @@ Views.mistakes = async (el) => {
       const { questions } = await API.get(`/mistakes/quiz?${qs}`);
       const host = document.createElement('div');
       el.replaceChildren(host);
-      runQuiz(host, questions, {
+      const start = (qs) => runQuiz(host, qs, {
         answerFn: async (q, key) => {
           const r = await API.post(`/mistakes/${q.id}/retry`, { choice: key });
           return { ...r, note: r.message };
         },
-        onDone: (c, t) => {
-          host.innerHTML = `<div class="card center"><h2>${c} من ${t} اتحلوا صح واتشالوا من البنك</h2>
-            <button class="btn primary" data-action="back">رجوع لبنك الأخطاء</button></div>`;
+        onDone: (res) => {
+          host.innerHTML = quizSummary(res, {
+            title: `${res.correct} سؤال اتحلوا صح واتشالوا من البنك`,
+            actions: `<button class="btn ${res.skipped.length ? 'ghost' : 'primary'}" data-action="back">رجوع لبنك الأخطاء</button>`,
+          });
           $('[data-action=back]', host).addEventListener('click', () => Views.mistakes(el));
+          $('[data-action=solveSkipped]', host)?.addEventListener('click', () => start(res.skipped));
         },
       });
+      start(questions);
     }),
   });
 };
@@ -429,7 +462,7 @@ Views.competition = async (el, { id }) => {
     let review = '';
     if (c.status === 'finished' && c.my_submitted_at) {
       const { answers } = await API.get(`/competitions/${id}/review`);
-      review = `<section class="card"><h2>إجاباتك</h2><ol class="review">${answers.map((a) => `<li class="${a.is_correct ? 'good' : 'bad'}">
+      review = `<section class="card"><h2>إجاباتك</h2><ol class="review">${answers.map((a) => `<li class="${a.is_correct ? 'good' : a.selected_option ? 'bad' : 'skip'}">
         <p>${rich(a.question_text)}</p>${qImage(a.media.question, 'صورة السؤال')}
         <small>إجابتك: ${a.selected_option ? `${letterAr(a.selected_option)} ${rich(a[`option_${a.selected_option.toLowerCase()}`])}` : 'لم تُجب'} · الصحيحة: <b>${letterAr(a.correct_option)} ${rich(a[`option_${a.correct_option.toLowerCase()}`])}</b></small></li>`).join('')}</ol></section>`;
     }
@@ -468,20 +501,41 @@ Views.competition = async (el, { id }) => {
       let saved = {};
       try { saved = JSON.parse(sessionStorage.getItem(key) || '{}'); } catch { saved = {}; }
 
-      el.innerHTML = `<div class="timer-bar"><span>${esc(c.title)}</span><b id="timer">--:--</b><span id="answered"></span></div>
-        <form id="cf">${entry.questions.map((q) => `<div class="card qcard">
-          <div class="q-meta"><span>سؤال ${q.number}</span></div>${q.question ? `<h2 class="q-text">${rich(q.question)}</h2>` : ''}${qImage(q.image, 'صورة السؤال')}
+      el.innerHTML = `<div class="timer-bar"><div class="timer-row"><span>${esc(c.title)}</span><b id="timer">--:--</b><span id="answered"></span></div>
+          <nav class="qnav" aria-label="أرقام الأسئلة">${entry.questions.map((q) => `<a href="#" data-goto="${q.question_id}" class="${saved[q.question_id] ? 'done' : ''}">${q.number}</a>`).join('')}</nav></div>
+        <form id="cf">${entry.questions.map((q) => `<div class="card qcard" id="cq-${q.question_id}">
+          <div class="q-meta"><span>سؤال ${q.number}</span><span class="unanswered-tag">لم تُجب بعد</span></div>${q.question ? `<h2 class="q-text">${rich(q.question)}</h2>` : ''}${qImage(q.image, 'صورة السؤال')}
           <div class="options">${q.options.map((o) => `<label class="option radio"><input type="radio" name="q${q.question_id}" value="${o.key}" ${saved[q.question_id] === o.key ? 'checked' : ''}><span class="opt-body">${o.text ? `<span>${rich(o.text)}</span>` : ''}${optImage(o.image, 'اختيار')}</span></label>`).join('')}</div>
         </div>`).join('')}
         <button class="btn primary block" type="submit">تسليم الإجابات</button></form>`;
 
       const form = $('#cf', el);
       const answers = () => entry.questions.map((q) => ({ question_id: q.question_id, choice: form[`q${q.question_id}`].value || null }));
-      const updateCount = () => { $('#answered', el).textContent = `${answers().filter((a) => a.choice).length}/${entry.questions.length} مُجاب`; };
+      const unanswered = () => entry.questions.filter((q) => !form[`q${q.question_id}`].value);
+      const updateCount = () => {
+        $('#answered', el).textContent = `${entry.questions.length - unanswered().length}/${entry.questions.length} مُجاب`;
+        for (const q of entry.questions) {
+          const done = Boolean(form[`q${q.question_id}`].value);
+          $(`[data-goto="${q.question_id}"]`, el).classList.toggle('done', done);
+          $(`#cq-${q.question_id}`, el).classList.toggle('answered', done);
+        }
+      };
+      const goTo = (qid) => {
+        const card = $(`#cq-${qid}`, el);
+        card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        card.classList.add('flash');
+        setTimeout(() => card.classList.remove('flash'), 1200);
+      };
       form.addEventListener('change', (e) => {
         saved[e.target.name.slice(1)] = e.target.value;
         sessionStorage.setItem(key, JSON.stringify(saved));
         updateCount();
+      });
+      $('.qnav', el).addEventListener('click', (e) => {
+        const a = e.target.closest('[data-goto]');
+        if (!a) return;
+        e.preventDefault();
+        goTo(a.dataset.goto);
       });
       updateCount();
 
@@ -490,25 +544,44 @@ Views.competition = async (el, { id }) => {
         if (submitting) return;
         submitting = true;
         clearInterval(compTimer);
+        closeModal();
         try {
           const r = await API.post(`/competitions/${id}/submit`, { answers: answers() });
           sessionStorage.removeItem(key);
           c.my_submitted_at = r.submitted_at;
           toast(`تم التسليم — درجتك ${r.score}/${r.total_questions}`);
           await showBoard();
-          el.insertAdjacentHTML('afterbegin', `<div class="card center"><h2>درجتك</h2><div class="big ${percentTone(r.percent)}">${r.score}/${r.total_questions}</div></div>`);
+          el.insertAdjacentHTML('afterbegin', `<div class="card center"><h2>درجتك</h2><div class="big ${percentTone(r.percent)}">${r.score}/${r.total_questions}</div>
+            <div class="score-split"><span class="good">✅ صح: ${r.correct}</span><span class="bad">❌ غلط: ${r.wrong}</span><span class="mid">⏭ متروك: ${r.skipped}</span></div>
+            ${r.skipped ? '<p class="muted">الأسئلة المتروكة مش متحسبة غلط ومش في بنك الأخطاء.</p>' : ''}</div>`);
         } catch (err) {
           submitting = false;
           toast(errorText(err), 'err');
         }
       };
+      // Before submitting: warn about unanswered questions, list them and let the student jump back.
       form.addEventListener('submit', (e) => {
         e.preventDefault();
-        const left = answers().filter((a) => !a.choice).length;
-        if (left && !confirm(`فيه ${left} سؤال من غير إجابة. تسلّم برضه؟`)) return;
-        submit();
+        const left = unanswered();
+        if (!left.length) { submit(); return; }
+        form.classList.add('show-missing');
+        const m = modal(`<h2>⚠️ فيه ${left.length} سؤال مجاوبتش عليهم</h2>
+          <p class="muted">اضغط على رقم السؤال عشان ترجعله:</p>
+          <div class="qnav big-nav">${left.map((q) => `<a href="#" data-jump="${q.question_id}">${q.number}</a>`).join('')}</div>
+          <p class="notice mid">لو سلّمت دلوقتي، الأسئلة دي <b>مش هتتحسب غلط</b> ومش هتتضاف لبنك الأخطاء — بس مش هتاخد درجتها.</p>
+          <div class="row wrap"><button class="btn primary" data-back>ارجع وكمّل</button><button class="btn ghost" data-force>سلّم كده</button></div>`);
+        $('[data-back]', m).addEventListener('click', () => { closeModal(); goTo(left[0].question_id); });
+        $('[data-force]', m).addEventListener('click', submit);
+        $('.qnav', m).addEventListener('click', (ev) => {
+          const a = ev.target.closest('[data-jump]');
+          if (!a) return;
+          ev.preventDefault();
+          closeModal();
+          goTo(a.dataset.jump);
+        });
       });
 
+      let warnedLastMinute = false;
       const deadline = new Date(entry.deadline_at).getTime();
       const tick = () => {
         const s = Math.max(0, Math.round((deadline - Date.now()) / 1000));
@@ -516,6 +589,14 @@ Views.competition = async (el, { id }) => {
         if (!t) return clearInterval(compTimer);
         t.textContent = `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
         t.classList.toggle('bad', s < 60);
+        if (s <= 60 && !warnedLastMinute) {
+          warnedLastMinute = true;
+          const left = unanswered().length;
+          if (left) {
+            toast(`⏰ باقي دقيقة — وفيه ${left} سؤال من غير إجابة`, 'warn');
+            form.classList.add('show-missing');
+          }
+        }
         if (s === 0) submit();
         return undefined;
       };
