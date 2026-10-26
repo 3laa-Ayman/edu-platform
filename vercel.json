@@ -1,6 +1,14 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "rewrites": [{ "source": "/(.*)", "destination": "/api" }],
+  "regions": [
+    "fra1"
+  ],
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/api"
+    }
+  ],
   "functions": {
     "api/index.js": {
       "includeFiles": "{public,templates,db}/**",
@@ -8,8 +16,17 @@
     }
   },
   "crons": [
-    { "path": "/api/cron/auto-assign-teams", "schedule": "0 18 * * 4" },
-    { "path": "/api/cron/parent-reports", "schedule": "0 7 * * 6" },
-    { "path": "/api/cron/cleanup", "schedule": "0 1 * * *" }
+    {
+      "path": "/api/cron/auto-assign-teams",
+      "schedule": "0 18 * * 4"
+    },
+    {
+      "path": "/api/cron/parent-reports",
+      "schedule": "0 7 * * 6"
+    },
+    {
+      "path": "/api/cron/cleanup",
+      "schedule": "0 1 * * *"
+    }
   ]
 }
