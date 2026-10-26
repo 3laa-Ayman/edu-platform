@@ -276,3 +276,6 @@ select:invalid { color: var(--muted); }
 select option { color: var(--text); }
 .all-solved { margin-top: 14px; }
 .all-solved p { margin: 6px 0 10px; color: var(--text); }
+/* Brand logo */
+.brand { display: inline-flex; align-items: center; gap: 9px; font-weight: 800; letter-spacing: .2px; }
+.brand-logo { width: 30px; height: 30px; border-radius: 9px; box-shadow: 0 2px 10px rgba(99, 102, 241, .35); flex: none; }

@@ -75,7 +75,7 @@ function renderTopbar(path) {
   const u = State.user;
   const links = u ? NAV[u.role === 'admin' ? 'admin' : 'student'] : [];
   $('#topbar').innerHTML = `<div class="container topbar-inner">
-    <a class="brand" href="#/">📚 ${esc(Site.name)}</a>
+    <a class="brand" href="#/"><img class="brand-logo" src="/img/logo.svg" alt="" width="30" height="30">${esc(Site.name)}</a>
     ${u ? `<nav class="nav">${links.map(([href, label]) => `<a href="#${href}" class="${href === path || (path.startsWith('/admin/student/') && href === '/admin/students') ? 'active' : ''}">${label}</a>`).join('')}</nav>
       <div class="user">${themeButton()}<span class="mono">${esc(u.student_code || 'Admin')}</span><button class="btn tiny ghost" id="logout">خروج</button></div>`
     : `<nav class="nav"><a href="#/login">دخول</a><a href="#/register">حساب جديد</a></nav><div class="user">${themeButton()}</div>`}
