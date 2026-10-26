@@ -271,3 +271,6 @@ sup, sub { font-size: .72em; line-height: 0; }
 .theme-toggle { width: 36px; height: 36px; border-radius: 50%; border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; font-size: 1.05rem; display: grid; place-items: center; flex: none; padding: 0; }
 .theme-toggle:hover { background: var(--surface-2); }
 body { transition: background-color .2s, color .2s; }
+/* Placeholder look for a select that has no choice yet ("المادة") */
+select:invalid { color: var(--muted); }
+select option { color: var(--text); }

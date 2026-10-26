@@ -364,6 +364,7 @@ Views.practice = async (el) => {
       <h1>التدريب</h1>
       <form id="f" class="form grid3">
         <label>المادة<select name="subject_id" required>
+          <option value="" disabled selected hidden>المادة</option>
           ${subjects.map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select></label>
         <label>الدرس<select name="lesson_id"><option value="">كل الدروس</option></select></label>
         <label>النوع<select name="category"><option value="">الكل</option><option value="lesson">دروس</option><option value="past_exam">امتحانات سابقة</option></select></label>
@@ -378,7 +379,6 @@ Views.practice = async (el) => {
       form.lesson_id.innerHTML = '<option value="">كل الدروس</option>'
         + (s ? s.lessons.map((l) => `<option value="${l.id}">${esc(l.name)} (${l.questions})</option>`).join('') : '');
     });
-    form.subject_id.dispatchEvent(new Event('change')); // fill the lessons of the pre-selected (first) subject
     onSubmit(form, async (v) => {
       const qs = new URLSearchParams();
       for (const [k, val] of Object.entries(v)) if (val !== undefined && val !== false) qs.set(k, String(val));
