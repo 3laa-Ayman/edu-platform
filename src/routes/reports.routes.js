@@ -1,4 +1,5 @@
 const router = require('express').Router();
+const env = require('../config/env');
 const db = require('../config/db');
 const { validate, z } = require('../middleware/validate');
 const { subjectPerformance, overall } = require('../services/stats.service');
@@ -8,8 +9,17 @@ const { requireSubscription } = require('../middleware/subscription');
 
 /** Student ratings: accuracy % per subject + overall rating. */
 router.get('/performance', async (req, res) => {
-  const subjects = await subjectPerformance(req.user.id);
-  res.json({ overall: overall(subjects), subjects });
+  const [subjects, { rows: [today] }] = await Promise.all([
+    subjectPerformance(req.user.id),
+    // Answers given today (Cairo time) — skipped questions are never recorded, so they don't count.
+    db.query(
+      `SELECT COUNT(*)::int AS answered, COUNT(*) FILTER (WHERE is_correct)::int AS correct
+         FROM attempts
+        WHERE user_id = $1 AND selected_option IS NOT NULL
+          AND created_at >= (date_trunc('day', now() AT TIME ZONE $2) AT TIME ZONE $2)`,
+      [req.user.id, env.tz]),
+  ]);
+  res.json({ overall: overall(subjects), subjects, today });
 });
 
 /** Preview what the parent will receive. */
