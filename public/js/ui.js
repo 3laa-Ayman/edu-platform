@@ -3,6 +3,25 @@ const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
+/**
+ * Math-aware text: escapes HTML, then turns  10^8 / 10^{-19}  into superscripts and  H_2O / x_{12}  into subscripts.
+ * Each formula run is wrapped in an LTR isolate so it reads correctly inside Arabic (RTL) sentences.
+ */
+const MATH_RUN = /[0-9A-Za-z(][0-9A-Za-z.,×·*/+\-−=()]*(?:[\^_](?:\{[^{}<>]*\}|[-−+]?(?:[0-9]+(?:\.[0-9]+)?|[A-Za-z]))[0-9A-Za-z.,×·*/+\-−=()]*)+/g;
+// Exponent/index: {anything} or a signed number or ONE letter (so H_2O → H₂O, not H₂ₒ).
+const MATH_OP = /([\^_])(?:\{([^{}<>]*)\}|([-−+]?(?:[0-9٠-٩]+(?:\.[0-9٠-٩]+)?|[A-Za-zء-ي])))/g;
+const supSub = (op, v) => (op === '^' ? `<sup>${v}</sup>` : `<sub>${v}</sub>`);
+function rich(text) {
+  return esc(text)
+    // Latin/number formulas: render + keep them left-to-right inside Arabic text.
+    .replace(MATH_RUN, (match) => {
+      const [, run, tail] = match.match(/^(.*?)([.,]*)$/); // sentence punctuation stays outside the LTR formula
+      return `<bdi dir="ltr" class="math">${run.replace(MATH_OP, (_, op, b, r) => supSub(op, b ?? r))}</bdi>${tail}`;
+    })
+    // Arabic bases (م^2, س^2): only the exponent is converted, the word order is left to the browser.
+    .replace(/(\S)([\^_])(?:\{([^{}<>]*)\}|([-−+]?(?:[0-9٠-٩]+(?:\.[0-9٠-٩]+)?|[A-Za-zء-ي])))/g, (_, pre, op, b, r) => pre + supSub(op, b ?? r));
+}
+
 const fmtDate = (d) => (d ? new Date(d).toLocaleString('ar-EG-u-nu-latn', { dateStyle: 'medium', timeStyle: 'short' }) : '—');
 const fmtDay = (d) => (d ? new Date(d).toLocaleDateString('ar-EG-u-nu-latn', { dateStyle: 'medium' }) : '—');
 const fmtMoney = (n, digits = 2) => `${Number(n || 0).toLocaleString('ar-EG-u-nu-latn', { maximumFractionDigits: digits })} ج`;

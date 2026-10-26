@@ -50,7 +50,15 @@ function cellText(cell) {
   const v = cell.value;
   if (v === null || v === undefined) return '';
   if (typeof v === 'object') {
-    if (v.richText) return v.richText.map((t) => t.text).join('').trim();
+    // Keep Excel superscript/subscript formatting as ^{..} / _{..} (rendered as real exponents on the platform).
+    if (v.richText) {
+      return v.richText.map((t) => {
+        const va = t.font?.vertAlign;
+        if (va === 'superscript' && t.text.trim()) return `^{${t.text.trim()}}`;
+        if (va === 'subscript' && t.text.trim()) return `_{${t.text.trim()}}`;
+        return t.text;
+      }).join('').trim();
+    }
     if (v.text !== undefined) return String(v.text).trim();
     if (v.result !== undefined) return String(v.result ?? '').trim();
     if (v instanceof Date) return v.toISOString();

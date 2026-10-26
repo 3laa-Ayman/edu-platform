@@ -107,6 +107,8 @@ function questionForm(q, subjects) {
       <label>الدرس<select name="lesson_id"><option value="">بدون درس</option>${(subj?.lessons || []).map((l) => opt(l.id, l.name, q?.lesson_id)).join('')}</select></label>
     </div>
     <label>نص السؤال<textarea name="question_text" rows="3">${esc(q?.question_text || '')}</textarea></label>
+    <p class="muted hint">✏️ الأس: اكتب <code>10^8</code> أو <code>10^{-19}</code> ← 10<sup>8</sup> · الرقم الصغير تحت: <code>H_2O</code> ← H<sub>2</sub>O</p>
+    <div class="math-preview" aria-live="polite"></div>
     <div class="grid2">${['a', 'b', 'c', 'd'].map((k, i) => `<label>${'أبجد'[i]}<input name="option_${k}" value="${esc(q?.[`option_${k}`] || '')}"></label>`).join('')}</div>
     <fieldset class="features-box"><legend>الصور (اختياري — ممكن السؤال أو الاختيار يبقى صورة بس)</legend>
       <div class="media-grid">${MEDIA_SLOTS.map(([slot, label]) => `<div class="media-slot" data-slot="${slot}">
@@ -154,6 +156,16 @@ function openQuestionModal(q, subjects, onSaved) {
     const s = subjects.find((x) => String(x.id) === f.subject_id.value);
     f.lesson_id.innerHTML = '<option value="">بدون درس</option>' + (s?.lessons || []).map((l) => opt(l.id, l.name)).join('');
   });
+  // Live preview of formulas (superscript/subscript) while typing
+  const preview = $('.math-preview', m);
+  const renderPreview = () => {
+    const parts = [f.question_text.value, ...['a', 'b', 'c', 'd'].map((k) => f[`option_${k}`].value)];
+    preview.innerHTML = parts.some((t) => /[\^_]/.test(t))
+      ? `${rich(parts[0])}${parts.slice(1).some(Boolean) ? ` — ${parts.slice(1).map((t, i) => `${'أبجد'[i]}) ${rich(t)}`).join('  ')}` : ''}`
+      : '';
+  };
+  f.addEventListener('input', renderPreview);
+  renderPreview();
   // Live preview of a newly chosen image
   f.addEventListener('change', (e) => {
     if (e.target.type !== 'file' || !e.target.files[0]) return;
@@ -231,7 +243,7 @@ Admin.questions = async (el, params, query) => {
       ${list.items.length ? table(['#', 'السؤال', 'المادة / الدرس', 'التصنيف', 'الإجابة', 'الشرح', ''],
         list.items.map((q) => [q.id,
           (q.media?.question ? `<img class="thumb" src="${esc(q.media.question)}" alt=""> ` : '')
-            + esc(q.question_text.length > 70 ? `${q.question_text.slice(0, 70)}…` : q.question_text)
+            + rich(q.question_text.length > 70 ? `${q.question_text.slice(0, 70)}…` : q.question_text)
             + (Object.keys(q.media || {}).length ? ` ${badge(`🖼 ${Object.keys(q.media).length}`)}` : '')
             + (q.is_active ? '' : ` ${badge('مخفي', 'bad')}`),
           `${esc(q.subject)}<br><small class="muted">${esc(q.lesson || '')}</small>`,
