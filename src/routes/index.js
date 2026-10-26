@@ -32,6 +32,7 @@ router.use('/teams', require('./teams.routes'));
 router.use('/competitions', require('./competitions.routes'));
 router.use('/planner', require('./planner.routes'));
 router.use('/reports', require('./reports.routes'));
+router.use('/announcements', require('./announcements.routes'));
 router.use('/admin', requireAdmin, require('./admin.routes'), require('./admin-content.routes'), require('./admin-people.routes'));
 
 module.exports = router;

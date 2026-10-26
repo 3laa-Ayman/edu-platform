@@ -25,6 +25,7 @@ Admin.dashboard = async (el) => {
       <a class="btn primary" href="#/admin/questions">إضافة أسئلة</a>
       <a class="btn ghost" href="#/admin/subjects">المواد والدروس</a>
       <a class="btn ghost" href="#/admin/payments">مراجعة الإيصالات</a>
+      <a class="btn ghost" href="#/admin/announcements">إعلان للطلاب</a>
       <a class="btn ghost" href="#/admin/competitions">إنشاء مسابقة</a>
       <a class="btn ghost" href="#/admin/plans">الباقات والأسعار</a>
       <a class="btn ghost" href="#/admin/settings">الإعدادات</a>
@@ -674,6 +675,67 @@ Admin.products = async (el) => {
       onSubmit($('#ef', m), async (v) => { await API.put(`/admin/products/${p.id}`, productPayload(v)); closeModal(); toast('تم الحفظ'); reload(); });
     },
     del: (b) => run(b, async () => { if (confirm('حذف المنتج؟')) { await API.del(`/admin/products/${b.dataset.id}`); reload(); } }),
+  });
+};
+
+// ---------------------------------------------------------------- Announcements
+const AUDIENCE = { all: 'كل الطلاب', subscribers: 'المشتركين بس', free: 'غير المشتركين بس' };
+const TONES = { info: '📢 عادي', success: '🎉 خبر حلو', warning: '⚠️ تنبيه مهم' };
+const options = (map, sel) => Object.entries(map).map(([k, v]) => `<option value="${k}"${k === sel ? ' selected' : ''}>${v}</option>`).join('');
+const announcementFields = (a = {}) => `
+  <label class="span3">العنوان<input name="title" required minlength="2" maxlength="200" value="${esc(a.title || '')}"></label>
+  <label class="span3">التفاصيل<textarea name="body" rows="4" maxlength="5000">${esc(a.body || '')}</textarea></label>
+  <label>النوع<select name="tone">${options(TONES, a.tone || 'info')}</select></label>
+  <label>يظهر لـ<select name="audience">${options(AUDIENCE, a.audience || 'all')}</select></label>
+  <label>رابط (اختياري)<input type="url" name="link_url" value="${esc(a.link_url || '')}" placeholder="https://"></label>
+  <label>يبدأ يظهر<input type="datetime-local" name="starts_at" value="${a.starts_at ? toLocalInput(a.starts_at) : ''}"><small class="muted">فاضي = دلوقتي</small></label>
+  <label>يختفي في<input type="datetime-local" name="expires_at" value="${a.expires_at ? toLocalInput(a.expires_at) : ''}"><small class="muted">فاضي = مايختفيش</small></label>
+  <div class="span3 row wrap">
+    <label class="check"><input type="checkbox" name="pinned" ${a.pinned ? 'checked' : ''}> 📌 مثبت (يفضل ظاهر في الرئيسية)</label>
+    <label class="check"><input type="checkbox" name="is_active" ${a.is_active === false ? '' : 'checked'}> ظاهر للطلاب</label>
+  </div>`;
+const announcementPayload = (v) => ({
+  title: v.title, body: v.body ?? '', tone: v.tone, audience: v.audience, link_url: v.link_url ?? null,
+  pinned: v.pinned, is_active: v.is_active,
+  starts_at: v.starts_at ? new Date(v.starts_at).toISOString() : null,
+  expires_at: v.expires_at ? new Date(v.expires_at).toISOString() : null,
+});
+const announcementStatus = (a) => {
+  const now = Date.now();
+  if (!a.is_active) return badge('مخفي', 'bad');
+  if (new Date(a.starts_at) > now) return badge(`يبدأ ${fmtDate(a.starts_at)}`, 'mid');
+  if (a.expires_at && new Date(a.expires_at) <= now) return badge('انتهى', '');
+  return badge('ظاهر', 'good');
+};
+
+Admin.announcements = async (el) => {
+  const { announcements } = await API.get('/admin/announcements');
+  el.innerHTML = `<h1 class="page-head">الإعلانات</h1>
+    <section class="card"><h2>إعلان جديد</h2>
+      <p class="muted">بيظهر للطلاب في الصفحة الرئيسية وعلى علامة 🔔 فوق لحد ما يقروه.</p>
+      <form id="af" class="form grid3">${announcementFields()}
+      <button class="btn primary span3" type="submit">نشر الإعلان</button></form></section>
+    <section class="card">${announcements.length ? table(['الإعلان', 'يظهر لـ', 'الحالة', 'اتقرا', ''],
+      announcements.map((a) => [`${a.pinned ? '📌 ' : ''}<b>${esc(a.title)}</b><br><small class="muted">${fmtDate(a.starts_at)}${a.expires_at ? ` ← ${fmtDate(a.expires_at)}` : ''}</small>`,
+        AUDIENCE[a.audience], announcementStatus(a), `${a.reads} طالب`,
+        `<div class="row"><button class="btn ghost tiny" data-action="edit" data-id="${a.id}">تعديل</button>
+          <button class="btn ghost tiny" data-action="toggle" data-id="${a.id}">${a.is_active ? 'إخفاء' : 'إظهار'}</button>
+          <button class="btn danger tiny" data-action="del" data-id="${a.id}">حذف</button></div>`])) : empty('مفيش إعلانات لسه')}</section>`;
+  const reload = () => Admin.announcements(el);
+  const find = (b) => announcements.find((x) => String(x.id) === b.dataset.id);
+  onSubmit($('#af', el), async (v) => { await API.post('/admin/announcements', announcementPayload(v)); toast('تم نشر الإعلان'); reload(); });
+  onAction(el, {
+    edit: (b) => {
+      const a = find(b);
+      const m = modal(`<h2>تعديل الإعلان</h2><form class="form grid3" id="ef">${announcementFields(a)}<button class="btn primary span3" type="submit">حفظ</button></form>`);
+      onSubmit($('#ef', m), async (v) => { await API.put(`/admin/announcements/${a.id}`, announcementPayload(v)); closeModal(); toast('تم الحفظ'); reload(); });
+    },
+    toggle: (b) => run(b, async () => {
+      const a = find(b);
+      await API.put(`/admin/announcements/${a.id}`, { ...announcementPayload({ ...a, starts_at: a.starts_at, expires_at: a.expires_at }), is_active: !a.is_active });
+      reload();
+    }),
+    del: (b) => run(b, async () => { if (confirm('حذف الإعلان؟')) { await API.del(`/admin/announcements/${b.dataset.id}`); reload(); } }),
   });
 };
 

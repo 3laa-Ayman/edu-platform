@@ -25,6 +25,7 @@ const ROUTES = [
   ['/admin/plans', Admin.plans, 'admin'],
   ['/admin/teams', Admin.teams, 'admin'],
   ['/admin/products', Admin.products, 'admin'],
+  ['/admin/announcements', Admin.announcements, 'admin'],
   ['/admin/settings', Admin.settings, 'admin'],
 ];
 
@@ -33,7 +34,7 @@ const NAV = {
     ['/planner', 'المذاكرة'], ['/subscribe', 'الاشتراك'], ['/offers', 'العروض']],
   admin: [['/admin', 'اللوحة'], ['/admin/questions', 'الأسئلة'], ['/admin/subjects', 'المواد'], ['/admin/students', 'الطلاب'],
     ['/admin/payments', 'المدفوعات'], ['/admin/plans', 'الباقات'], ['/admin/competitions', 'المسابقات'], ['/admin/teams', 'التيمات'],
-    ['/admin/products', 'المنتجات'], ['/admin/settings', 'الإعدادات']],
+    ['/admin/products', 'المنتجات'], ['/admin/announcements', 'الإعلانات'], ['/admin/settings', 'الإعدادات']],
 };
 
 function matchRoute(path) {
@@ -77,10 +78,14 @@ function renderTopbar(path) {
   $('#topbar').innerHTML = `<div class="container topbar-inner">
     <a class="brand" href="#/"><img class="brand-logo" src="/img/logo.svg" alt="" width="30" height="30">${esc(Site.name)}</a>
     ${u ? `<nav class="nav">${links.map(([href, label]) => `<a href="#${href}" class="${href === path || (path.startsWith('/admin/student/') && href === '/admin/students') ? 'active' : ''}">${label}</a>`).join('')}</nav>
-      <div class="user">${themeButton()}<span class="mono">${esc(u.student_code || 'Admin')}</span><button class="btn tiny ghost" id="logout">خروج</button></div>`
+      <div class="user">${u.role === 'admin' ? '' : '<button class="theme-toggle bell" id="bell" type="button" aria-label="الإعلانات" title="الإعلانات">🔔<span class="bell-count" hidden></span></button>'}${themeButton()}<span class="mono">${esc(u.student_code || 'Admin')}</span><button class="btn tiny ghost" id="logout">خروج</button></div>`
     : `<nav class="nav"><a href="#/login">دخول</a><a href="#/register">حساب جديد</a></nav><div class="user">${themeButton()}</div>`}
   </div>`;
   $('#theme')?.addEventListener('click', toggleTheme);
+  // The nav scrolls sideways when it doesn't fit: keep the current page's link visible.
+  $('.nav a.active')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  $('#bell')?.addEventListener('click', openAnnouncements);
+  refreshBell();
   $('#logout')?.addEventListener('click', () => {
     API.setToken(null);
     State.user = null;

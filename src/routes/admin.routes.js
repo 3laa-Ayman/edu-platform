@@ -248,4 +248,49 @@ router.delete('/products/:id', validate({ params: idParam }), async (req, res) =
   res.status(204).end();
 });
 
+// ------------------------------------------------------------------ Announcements
+const announcementBody = z.object({
+  title: z.string().trim().min(2).max(200),
+  body: z.string().trim().max(5000).default(''),
+  tone: z.enum(['info', 'success', 'warning']).default('info'),
+  audience: z.enum(['all', 'subscribers', 'free']).default('all'),
+  link_url: z.string().url().regex(/^https?:\/\//i, 'الرابط لازم يبدأ بـ https://').max(500).optional().nullable(),
+  pinned: z.boolean().default(false),
+  is_active: z.boolean().default(true),
+  starts_at: z.coerce.date().optional().nullable(),
+  expires_at: z.coerce.date().optional().nullable(),
+}).refine((b) => !b.expires_at || b.expires_at > (b.starts_at || new Date(0)), { message: 'تاريخ الانتهاء يجب أن يكون بعد البداية', path: ['expires_at'] });
+
+router.get('/announcements', async (req, res) => {
+  const { rows } = await db.query(
+    `SELECT a.*, (SELECT COUNT(*)::int FROM announcement_reads r WHERE r.announcement_id = a.id) AS reads
+       FROM announcements a ORDER BY a.pinned DESC, a.starts_at DESC LIMIT 200`);
+  res.json({ announcements: rows });
+});
+
+const announcementValues = (b) => [b.title, b.body, b.tone, b.audience, b.link_url ?? null, b.pinned, b.is_active, b.starts_at ?? null, b.expires_at ?? null];
+
+router.post('/announcements', validate({ body: announcementBody }), async (req, res) => {
+  const { rows: [a] } = await db.query(
+    `INSERT INTO announcements (title, body, tone, audience, link_url, pinned, is_active, starts_at, expires_at, created_by)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,COALESCE($8, now()),$9,$10) RETURNING *`,
+    [...announcementValues(req.body), req.user.id]);
+  res.status(201).json({ announcement: a });
+});
+
+router.put('/announcements/:id', validate({ params: idParam, body: announcementBody }), async (req, res) => {
+  const { rows: [a] } = await db.query(
+    `UPDATE announcements SET title=$2, body=$3, tone=$4, audience=$5, link_url=$6, pinned=$7, is_active=$8,
+            starts_at=COALESCE($9, starts_at), expires_at=$10 WHERE id=$1 RETURNING *`,
+    [req.p.id, ...announcementValues(req.body)]);
+  if (!a) throw notFound('الإعلان غير موجود');
+  res.json({ announcement: a });
+});
+
+router.delete('/announcements/:id', validate({ params: idParam }), async (req, res) => {
+  const r = await db.query(`DELETE FROM announcements WHERE id = $1`, [req.p.id]);
+  if (!r.rowCount) throw notFound('الإعلان غير موجود');
+  res.status(204).end();
+});
+
 module.exports = router;

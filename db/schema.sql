@@ -389,3 +389,30 @@ CREATE TABLE IF NOT EXISTS rate_limits (
   hits      INT NOT NULL,
   reset_at  TIMESTAMPTZ NOT NULL
 );
+
+-- ---------------------------------------------------------------------
+-- 11) Announcements from the admins to the students
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS announcements (
+  id          BIGSERIAL PRIMARY KEY,
+  title       VARCHAR(200) NOT NULL,
+  body        TEXT NOT NULL DEFAULT '',
+  tone        VARCHAR(10) NOT NULL DEFAULT 'info' CHECK (tone IN ('info', 'success', 'warning')),
+  audience    VARCHAR(14) NOT NULL DEFAULT 'all' CHECK (audience IN ('all', 'subscribers', 'free')),
+  link_url    TEXT,
+  pinned      BOOLEAN NOT NULL DEFAULT FALSE,
+  is_active   BOOLEAN NOT NULL DEFAULT TRUE,
+  starts_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  expires_at  TIMESTAMPTZ,
+  created_by  BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_announcements_live ON announcements (starts_at DESC) WHERE is_active;
+
+-- Who already read (dismissed) which announcement.
+CREATE TABLE IF NOT EXISTS announcement_reads (
+  announcement_id  BIGINT NOT NULL REFERENCES announcements(id) ON DELETE CASCADE,
+  user_id          BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  read_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (announcement_id, user_id)
+);

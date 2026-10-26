@@ -286,3 +286,20 @@ select option { color: var(--text); }
 .select-ph { position: relative; display: block; }
 .select-ph::after { content: attr(data-ph); position: absolute; inset-inline-start: 13px; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
 .select-ph.filled::after { display: none; }
+
+/* Announcements */
+.announcements { display: grid; gap: 10px; margin-bottom: 16px; }
+.announcements:empty { display: none; }
+.announce { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; border-radius: var(--radius); background: var(--surface);
+  border: 1px solid var(--border); border-inline-start: 4px solid var(--primary); box-shadow: var(--shadow); }
+.announce.success { border-inline-start-color: var(--good); }
+.announce.warning { border-inline-start-color: var(--mid); background: var(--mid-soft); }
+.announce.read { opacity: .85; }
+.announce-icon { font-size: 1.3rem; line-height: 1.4; flex: none; }
+.announce-main { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.announce-title { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.announce-main p { margin: .25rem 0 .4rem; }
+.announce > .btn { flex: none; }
+.bell { position: relative; }
+.bell-count { position: absolute; top: -4px; inset-inline-end: -4px; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 999px;
+  background: var(--bad); color: #fff; font-size: .7rem; font-weight: 700; line-height: 18px; text-align: center; }

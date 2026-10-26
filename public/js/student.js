@@ -161,9 +161,12 @@ Views.forgot = async (el) => {
 
 // ---------------------------------------------------------------- Home
 Views.home = async (el) => {
-  const [me, perf, mist, tasks, ai] = await Promise.all([
+  const [me, perf, mist, tasks, ai, ann] = await Promise.all([
     State.refresh(), API.get('/reports/performance'), API.get('/mistakes/summary'), API.get('/planner/tasks'), API.get('/ai/usage'),
+    API.get('/announcements').catch(() => ({ announcements: [], unread: 0 })),
   ]);
+  // Unread announcements (and pinned ones, always) on top of the home page.
+  const shown = ann.announcements.filter((a) => !a.is_read || a.pinned);
   const u = me.user;
   const sub = me.subscription;
   el.innerHTML = `
@@ -177,6 +180,8 @@ Views.home = async (el) => {
         ? `<div class="sub-chip good">${esc(sub.name_ar)}<small>ساري حتى ${fmtDay(sub.ends_at)}</small></div>`
         : '<a class="btn primary" href="#/subscribe">اشترك دلوقتي</a>'}
     </section>
+
+    <section class="announcements" id="home-ann">${shown.map((a) => announceCard(a, !a.is_read)).join('')}</section>
 
     <section class="tiles">
       <div class="tile"><span class="tile-label">الأداء العام</span><b class="${percentTone(perf.overall.percent)}">${perf.overall.percent ?? '—'}%</b><small>${esc(perf.overall.rating)}</small></div>
@@ -196,8 +201,61 @@ Views.home = async (el) => {
     </section>`;
   onAction(el, {
     copy: () => navigator.clipboard?.writeText(u.student_code).then(() => toast('تم نسخ الكود')),
+    readAnn: (b) => markAnnouncementRead(b),
   });
 };
+
+// ---------------------------------------------------------------- Announcements (from the admins)
+const TONE_ICON = { info: '📢', success: '🎉', warning: '⚠️' };
+const announceCard = (a, dismissable = false) => `<article class="announce ${esc(a.tone)}${a.is_read ? ' read' : ''}" data-ann="${a.id}">
+    <span class="announce-icon" aria-hidden="true">${TONE_ICON[a.tone] || '📢'}</span>
+    <div class="announce-main">
+      <div class="announce-title">${a.pinned ? '<span title="مثبت">📌</span> ' : ''}<b>${esc(a.title)}</b>
+        ${a.is_read ? '' : '<span class="badge bad">جديد</span>'}</div>
+      ${a.body ? `<p class="pre">${rich(a.body)}</p>` : ''}
+      <div class="row wrap"><small class="muted">${fmtDate(a.starts_at)}</small>
+        ${a.link_url ? `<a class="btn tiny ghost" href="${esc(a.link_url)}" target="_blank" rel="noopener">افتح الرابط ↗</a>` : ''}</div>
+    </div>
+    ${dismissable ? `<button class="btn tiny ghost" data-action="readAnn" data-id="${a.id}">تمام</button>` : ''}
+  </article>`;
+
+/** Marks one announcement read: the card leaves the home page (pinned ones stay, without the "new" tag). */
+async function markAnnouncementRead(b) {
+  await run(b, async () => {
+    await API.post(`/announcements/${b.dataset.id}/read`);
+    const card = b.closest('.announce');
+    if (card && !card.querySelector('[title="مثبت"]')) card.remove();
+    else if (card) { card.classList.add('read'); card.querySelector('.badge')?.remove(); b.remove(); }
+    refreshBell();
+  });
+}
+
+/** The 🔔 in the top bar: unread count, and a list of every current announcement. */
+async function refreshBell() {
+  const b = $('#bell');
+  if (!b) return null;
+  try {
+    const data = await API.get('/announcements');
+    const n = $('.bell-count', b);
+    n.textContent = data.unread > 9 ? '9+' : data.unread;
+    n.hidden = !data.unread;
+    b.setAttribute('aria-label', data.unread ? `الإعلانات (${data.unread} جديد)` : 'الإعلانات');
+    return data;
+  } catch { return null; }
+}
+async function openAnnouncements() {
+  const data = await refreshBell();
+  if (!data) return;
+  modal(`<h2>الإعلانات</h2>${data.announcements.length
+    ? `<div class="announcements">${data.announcements.map((a) => announceCard(a)).join('')}</div>`
+    : empty('مفيش إعلانات دلوقتي')}`);
+  if (data.unread) {
+    await API.post('/announcements/read-all').catch(() => {});
+    refreshBell();
+    // The home page no longer needs to show them as new.
+    $$('#home-ann .announce').forEach((c) => (c.querySelector('[title="مثبت"]') ? (c.classList.add('read'), c.querySelector('.badge')?.remove(), c.querySelector('[data-action=readAnn]')?.remove()) : c.remove()));
+  }
+}
 
 // ---------------------------------------------------------------- Images (served from /api/media, same origin)
 const qImage = (url, alt) => (url ? `<a href="${esc(url)}" target="_blank" rel="noopener" class="q-img-link"><img class="q-img" src="${esc(url)}" alt="${esc(alt)}" loading="lazy"></a>` : '');

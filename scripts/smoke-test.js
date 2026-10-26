@@ -419,6 +419,38 @@ async function registerStudent(i) {
   ok((await call('PATCH', `/api/admin/competitions/${cid}`, { token: AT, body: { title: 'مسابقة الجمعة (معدلة)' } })).data.competition.title === 'مسابقة الجمعة (معدلة)', 'admin edits competition');
   ok((await call('DELETE', `/api/admin/competitions/${monthly.data.competition.id}`, { token: AT })).status === 204, 'admin deletes competition');
 
+  // Announcements
+  const ann = (body) => call('POST', '/api/admin/announcements', { token: AT, body });
+  const aAll = await ann({ title: `إعلان للكل ${rnd}`, body: 'امتحان شامل يوم الجمعة' });
+  ok(aAll.status === 201 && aAll.data.announcement.audience === 'all', 'admin posts announcement');
+  const aSub = await ann({ title: `للمشتركين ${rnd}`, audience: 'subscribers', tone: 'success', pinned: true });
+  const aFree = await ann({ title: `لغير المشتركين ${rnd}`, audience: 'free', link_url: 'https://example.com/offer' });
+  const aLater = await ann({ title: `بعدين ${rnd}`, starts_at: new Date(Date.now() + 86400000).toISOString() });
+  const aOld = await ann({ title: `قديم ${rnd}`, starts_at: new Date(Date.now() - 2 * 86400000).toISOString(), expires_at: new Date(Date.now() - 86400000).toISOString() });
+  const aHidden = await ann({ title: `مخفي ${rnd}`, is_active: false });
+  ok((await ann({ title: 'رابط', link_url: 'javascript:alert(1)' })).status === 400, 'announcement link must be http(s)');
+  ok((await ann({ title: 'تواريخ', starts_at: new Date().toISOString(), expires_at: new Date(Date.now() - 1000).toISOString() })).status === 400, 'announcement expiry after start');
+  const titles = async (token) => (await call('GET', '/api/announcements', { token })).data.announcements.map((a) => a.title).filter((t) => t.includes(rnd));
+  const subT = await titles(A.token);
+  const freeT = await titles(outsider.token);
+  ok(subT.length === 2 && subT[0] === aSub.data.announcement.title && subT.includes(aAll.data.announcement.title), 'subscriber sees all + subscribers (pinned first)', subT);
+  ok(freeT.length === 2 && freeT.includes(aFree.data.announcement.title) && freeT.includes(aAll.data.announcement.title), 'free student sees all + free only', freeT);
+  ok(![aLater, aOld, aHidden].some((x) => subT.includes(x.data.announcement.title) || freeT.includes(x.data.announcement.title)), 'scheduled / expired / hidden announcements not shown');
+  const before = (await call('GET', '/api/announcements', { token: A.token })).data.unread;
+  ok((await call('POST', `/api/announcements/${aAll.data.announcement.id}/read`, { token: A.token })).status === 204, 'student marks announcement read');
+  const afterRead = await call('GET', '/api/announcements', { token: A.token });
+  ok(afterRead.data.unread === before - 1 && afterRead.data.announcements.find((a) => a.id === aAll.data.announcement.id).is_read, 'unread count drops');
+  ok((await call('POST', `/api/announcements/${aFree.data.announcement.id}/read`, { token: A.token })).status === 404, 'cannot read an announcement not meant for you');
+  ok((await call('POST', `/api/announcements/${aHidden.data.announcement.id}/read`, { token: A.token })).status === 404, 'cannot read a hidden announcement');
+  await call('POST', '/api/announcements/read-all', { token: A.token });
+  ok((await call('GET', '/api/announcements', { token: A.token })).data.unread === 0, 'read all');
+  const edited = await call('PUT', `/api/admin/announcements/${aHidden.data.announcement.id}`, { token: AT, body: { title: `مخفي ${rnd}`, is_active: true } });
+  ok(edited.data.announcement.is_active && (await titles(outsider.token)).includes(`مخفي ${rnd}`), 'admin shows a hidden announcement');
+  const adminList = await call('GET', '/api/admin/announcements', { token: AT });
+  ok(adminList.data.announcements.find((a) => a.id === aAll.data.announcement.id).reads === 1, 'admin sees read count');
+  ok((await call('GET', '/api/admin/announcements', { token: A.token })).status === 403, 'students cannot manage announcements');
+  ok((await call('DELETE', `/api/admin/announcements/${aOld.data.announcement.id}`, { token: AT })).status === 204, 'admin deletes announcement');
+
   // Admin accounts
   const na = await call('POST', '/api/admin/admins', { token: AT, body: { full_name: 'مساعد', email: `admin2-${rnd}@t.com`, password: 'Assist4nt99' } });
   ok(na.status === 201, 'admin adds another admin');
