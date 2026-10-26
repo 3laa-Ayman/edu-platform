@@ -14,6 +14,7 @@ const SCHEMA = z.object({
   manual_payment_instructions: z.string().trim().max(500),
   default_ai_limit_egp: z.number().min(0).max(10000),
   usd_to_egp: z.number().positive().max(10000),
+  ai_points_per_egp: z.number().int().min(1).max(100000),
 });
 
 const defaults = () => ({
@@ -24,6 +25,8 @@ const defaults = () => ({
   manual_payment_instructions: 'حوّل المبلغ ثم ارفع صورة الإيصال مع رقم العملية، وسيتم التفعيل بعد مراجعة الإدارة.',
   default_ai_limit_egp: env.aiLimitEgp,
   usd_to_egp: env.gemini.usdToEgp,
+  // Students see their AI budget in points: 100 points = 1 EGP of model cost (so 100 EGP = 10,000 points).
+  ai_points_per_egp: 100,
 });
 
 // Short cache: serverless instances pick up admin changes within a few seconds.
@@ -57,6 +60,9 @@ async function updateSettings(patch, adminId) {
 }
 
 /** Fields safe to expose without login. */
-const publicSettings = (s) => ({ site_name: s.site_name, support_phone: s.support_phone });
+const publicSettings = (s) => ({ site_name: s.site_name, support_phone: s.support_phone, ai_points_per_egp: s.ai_points_per_egp });
 
-module.exports = { getSettings, updateSettings, publicSettings, SETTINGS_SCHEMA: SCHEMA };
+/** EGP amount → points for display, to one decimal (so a 0.3-point request is visible in the balance). */
+const toPoints = (egp, rate) => Math.round(Number(egp) * rate * 10) / 10;
+
+module.exports = { getSettings, updateSettings, publicSettings, toPoints, SETTINGS_SCHEMA: SCHEMA };

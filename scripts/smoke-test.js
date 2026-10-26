@@ -225,11 +225,13 @@ async function registerStudent(i) {
   ok(ai2.data.source === 'ai_cache' && ai2.data.usage.cost_egp === 0, 'second student gets cached AI explanation free');
   const usage = await call('GET', '/api/ai/usage', { token: A.token });
   ok(usage.data.spent_egp > 0 && usage.data.limit_egp === 100 && usage.data.requests === 1, 'AI usage tracked per student', usage.data);
+  ok(usage.data.limit_points === 10000 && usage.data.points_per_egp === 100 && usage.data.remaining_points < 10000, `AI budget shown as points: ${usage.data.remaining_points} / ${usage.data.limit_points}`, usage.data);
+  ok(ai1.data.usage.cost_points > 0 && ai1.data.usage.limit_points === 10000, 'explanation reports cost in points');
 
   await call('PATCH', `/api/admin/students/${A.id}`, { token: AT, body: { ai_limit_egp: usage.data.spent_egp } });
   await call('POST', '/api/catalog/answer', { token: A.token, body: { question_id: qNoExp2.id, choice: 'A' } });
   const blocked = await call('POST', `/api/ai/explain/${qNoExp2.id}`, { token: A.token });
-  ok(blocked.status === 402 && blocked.data.error.code === 'AI_LIMIT_REACHED', 'AI blocked at spending cap');
+  ok(blocked.status === 402 && blocked.data.error.code === 'AI_LIMIT_REACHED' && blocked.data.error.message.includes('نقطة'), 'AI blocked at spending cap (message in points)');
   await call('PATCH', `/api/admin/students/${A.id}`, { token: AT, body: { ai_limit_egp: 100 } });
 
   // ---------------- Teams
@@ -372,6 +374,9 @@ async function registerStudent(i) {
   const set = await call('PATCH', '/api/admin/settings', { token: AT, body: { vodafone_cash_number: '01099998888', site_name: 'منصة التفوق', default_ai_limit_egp: 50 } });
   ok(set.data.settings.vodafone_cash_number === '01099998888', 'admin updates settings');
   ok((await call('GET', '/api/settings/public')).data.site_name === 'منصة التفوق', 'public site name updated');
+  await call('PATCH', '/api/admin/settings', { token: AT, body: { ai_points_per_egp: 50 } });
+  ok((await call('GET', '/api/ai/usage', { token: A.token })).data.limit_points === 5000, 'points rate is an admin setting (50/EGP → 5,000 points)');
+  await call('PATCH', '/api/admin/settings', { token: AT, body: { ai_points_per_egp: 100 } });
   ok((await call('GET', '/api/payments/plans', { token: D.token })).data.manual_payment.vodafone_cash === '01099998888', 'students see new payment number');
   ok((await call('PATCH', '/api/admin/settings', { token: AT, body: { usd_to_egp: -5 } })).status === 400, 'invalid setting rejected');
   await call('PATCH', '/api/admin/settings', { token: AT, body: { site_name: 'منصة المذاكرة', default_ai_limit_egp: 100 } });

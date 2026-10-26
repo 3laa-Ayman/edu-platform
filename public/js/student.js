@@ -182,7 +182,7 @@ Views.home = async (el) => {
       <div class="tile"><span class="tile-label">الأداء العام</span><b class="${percentTone(perf.overall.percent)}">${perf.overall.percent ?? '—'}%</b><small>${esc(perf.overall.rating)}</small></div>
       <a class="tile" href="#/mistakes"><span class="tile-label">بنك الأخطاء</span><b>${mist.total}</b><small>سؤال محتاج مراجعة</small></a>
       <a class="tile" href="#/planner"><span class="tile-label">مهام النهارده</span><b>${tasks.summary.done}/${tasks.summary.total}</b><small>${tasks.summary.planned_minutes} دقيقة مذاكرة</small></a>
-      <div class="tile"><span class="tile-label">رصيد الذكاء الاصطناعي</span><b>${fmtMoney(ai.remaining_egp)}</b><small>من ${fmtMoney(ai.limit_egp)}</small>${bar(100 - ai.used_percent, ai.used_percent > 80 ? 'bad' : 'good')}</div>
+      <div class="tile"><span class="tile-label">نقاط الذكاء الاصطناعي</span><b>${fmtPoints(ai.remaining_points)}</b><small>متبقي من ${fmtPoints(ai.limit_points)}</small>${bar(100 - ai.used_percent, ai.used_percent > 80 ? 'bad' : 'good')}</div>
     </section>
 
     <section class="card">
@@ -255,7 +255,7 @@ async function askAI(card, qid) {
   try {
     const r = await API.post(`/ai/explain/${qid}`);
     const cost = r.usage?.cost_egp
-      ? `<div class="src">Gemini · ${r.usage.input_tokens + r.usage.output_tokens} توكن · التكلفة ${fmtMoney(r.usage.cost_egp, 4)} · المتبقي ${fmtMoney(r.usage.remaining_egp, 3)}</div>`
+      ? `<div class="src">✨ شرح بالذكاء الاصطناعي · استهلك ${fmtPoints(r.usage.cost_points)} · متبقي ${fmtPoints(r.usage.remaining_points)}</div>`
       : '<div class="src">شرح محفوظ — مجاني</div>';
     box.innerHTML = `${cost}<p class="pre">${rich(r.explanation)}</p>${r.law_note ? `<p class="law">📐 ${rich(r.law_note)}</p>` : ''}
       ${r.warning ? `<p class="notice bad">${esc(r.warning)}</p>` : ''}`;

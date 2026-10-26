@@ -1,7 +1,7 @@
 const env = require('../config/env');
 const db = require('../config/db');
 const { AppError } = require('../utils/errors');
-const { getSettings } = require('./settings.service');
+const { getSettings, toPoints } = require('./settings.service');
 const { mediaForAi } = require('./media.service');
 
 const { model, inputUsdPerM, outputUsdPerM, maxOutputTokens } = env.gemini;
@@ -95,7 +95,7 @@ async function explainWithBudget(userId, question) {
   // GIF is not accepted by Gemini; other formats are sent so the model can read diagrams/figures.
   const images = (await mediaForAi(question.id)).filter((m) => m.mime !== 'image/gif');
   const prompt = buildPrompt(question) + (images.length ? '\nملحوظة: السؤال يحتوي على صور مرفقة، اعتمد عليها في الشرح.' : '');
-  const { usd_to_egp: usdToEgp } = await getSettings();
+  const { usd_to_egp: usdToEgp, ai_points_per_egp: rate } = await getSettings();
   const reserve = reserveFor(prompt, usdToEgp, images.length);
 
   const reserved = await db.query(
@@ -107,8 +107,12 @@ async function explainWithBudget(userId, question) {
   if (!reserved.rowCount) {
     await logUsage({ userId, questionId: question.id, status: 'blocked' });
     const { rows } = await db.query(`SELECT ai_spent_egp, ai_limit_egp FROM users WHERE id = $1`, [userId]);
-    throw new AppError(402, `لقد وصلت للحد الأقصى لاستهلاك الذكاء الاصطناعي (${rows[0].ai_limit_egp} جنيه). تم إيقاف طلبات الشرح الإضافية.`,
-      'AI_LIMIT_REACHED', { spent_egp: rows[0].ai_spent_egp, limit_egp: rows[0].ai_limit_egp });
+    const left = toPoints(Math.max(rows[0].ai_limit_egp - rows[0].ai_spent_egp, 0), rate);
+    throw new AppError(402, `رصيد نقاط الذكاء الاصطناعي خلص (متبقي ${left.toLocaleString('en')} من ${toPoints(rows[0].ai_limit_egp, rate).toLocaleString('en')} نقطة). تم إيقاف طلبات الشرح الإضافية.`,
+      'AI_LIMIT_REACHED', {
+        spent_points: toPoints(rows[0].ai_spent_egp, rate), limit_points: toPoints(rows[0].ai_limit_egp, rate),
+        spent_egp: rows[0].ai_spent_egp, limit_egp: rows[0].ai_limit_egp,
+      });
   }
 
   let result;
@@ -152,8 +156,12 @@ async function explainWithBudget(userId, question) {
       total_spent_egp: Number(spent.toFixed(4)),
       limit_egp: limit,
       remaining_egp: Number(remaining.toFixed(4)),
+      cost_points: toPoints(actualEgp, rate),
+      spent_points: toPoints(spent, rate),
+      limit_points: toPoints(limit, rate),
+      remaining_points: toPoints(remaining, rate),
     },
-    warning: remaining / limit < 0.2 ? `تنبيه: متبقي ${remaining.toFixed(2)} جنيه فقط من رصيد الذكاء الاصطناعي` : null,
+    warning: remaining / limit < 0.2 ? `تنبيه: متبقي ${toPoints(remaining, rate).toLocaleString('en')} نقطة فقط من رصيد الذكاء الاصطناعي` : null,
   };
 }
 

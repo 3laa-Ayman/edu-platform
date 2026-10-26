@@ -6,6 +6,7 @@ const { requireSubscription } = require('../middleware/subscription');
 const { getQuestion } = require('./practice.routes');
 const { explainWithBudget } = require('../services/ai.service');
 const { badRequest } = require('../utils/errors');
+const { getSettings, toPoints } = require('../services/settings.service');
 
 /**
  * Explanation flow (cheapest first):
@@ -38,7 +39,12 @@ router.get('/usage', async (req, res) => {
     [req.user.id],
   );
   const remaining = Math.max(u.ai_limit_egp - u.ai_spent_egp, 0);
+  const { ai_points_per_egp: rate } = await getSettings();
   res.json({
+    spent_points: toPoints(u.ai_spent_egp, rate),
+    limit_points: toPoints(u.ai_limit_egp, rate),
+    remaining_points: toPoints(remaining, rate),
+    points_per_egp: rate,
     spent_egp: Number(u.ai_spent_egp.toFixed(4)),
     limit_egp: u.ai_limit_egp,
     remaining_egp: Number(remaining.toFixed(4)),

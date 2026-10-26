@@ -46,11 +46,12 @@ function matchRoute(path) {
   return null;
 }
 
-const Site = { name: 'منصة المذاكرة' };
+const Site = { name: 'منصة المذاكرة', pointsPerEgp: 100 };
 async function loadSiteSettings() {
   try {
     const s = await API.get('/settings/public');
     Site.name = s.site_name || Site.name;
+    Site.pointsPerEgp = s.ai_points_per_egp || Site.pointsPerEgp;
     document.title = Site.name;
   } catch { /* keep default */ }
 }

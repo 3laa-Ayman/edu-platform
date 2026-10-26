@@ -25,6 +25,10 @@ function rich(text) {
 const fmtDate = (d) => (d ? new Date(d).toLocaleString('ar-EG-u-nu-latn', { dateStyle: 'medium', timeStyle: 'short' }) : '—');
 const fmtDay = (d) => (d ? new Date(d).toLocaleDateString('ar-EG-u-nu-latn', { dateStyle: 'medium' }) : '—');
 const fmtMoney = (n, digits = 2) => `${Number(n || 0).toLocaleString('ar-EG-u-nu-latn', { maximumFractionDigits: digits })} ج`;
+/** AI budget is shown in points (rate from platform settings; default 100 points = 1 EGP). */
+const pointsRate = () => (typeof Site !== 'undefined' && Site.pointsPerEgp) || 100;
+const egpToPoints = (egp) => Math.round(Number(egp || 0) * pointsRate() * 10) / 10;
+const fmtPoints = (points) => `${Number(points || 0).toLocaleString('ar-EG-u-nu-latn', { maximumFractionDigits: 1 })} نقطة`;
 const todayStr = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;

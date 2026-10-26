@@ -568,7 +568,7 @@ Admin.student = async (el, { id }) => {
       <div class="tile"><span class="tile-label">الأداء العام</span><b class="${percentTone(d.performance.overall.percent)}">${d.performance.overall.percent ?? '—'}%</b><small>${esc(d.performance.overall.rating)}</small></div>
       <div class="tile"><span class="tile-label">بنك الأخطاء</span><b>${d.open_mistakes}</b><small>سؤال مفتوح</small></div>
       <div class="tile"><span class="tile-label">التيم</span><b class="small-b">${d.team ? esc(d.team.name) : '—'}</b><small>${d.team ? `<a href="#/admin/teams?search=${encodeURIComponent(d.team.name)}">إدارة التيم</a>` : ''}</small></div>
-      <div class="tile"><span class="tile-label">استهلاك AI</span><b>${fmtMoney(s.ai_spent_egp, 3)}</b><small>من ${fmtMoney(s.ai_limit_egp)}</small>${bar(aiPct, aiPct > 80 ? 'bad' : 'good')}</div>
+      <div class="tile"><span class="tile-label">نقاط AI المستهلكة</span><b>${fmtPoints(egpToPoints(s.ai_spent_egp))}</b><small>من ${fmtPoints(egpToPoints(s.ai_limit_egp))} · تكلفة فعلية ${fmtMoney(s.ai_spent_egp, 3)}</small>${bar(aiPct, aiPct > 80 ? 'bad' : 'good')}</div>
     </section>
 
     <section class="card"><h2>بيانات الطالب</h2>
@@ -590,8 +590,9 @@ Admin.student = async (el, { id }) => {
 
     <div class="grid-cards">
       <section class="card"><h2>الذكاء الاصطناعي</h2><form id="af" class="form">
-        <label>الحد الأقصى (جنيه)<input type="number" name="ai_limit_egp" min="0" max="10000" step="0.5" value="${s.ai_limit_egp}"></label>
-        <label class="check"><input type="checkbox" name="reset_ai_spent"> تصفير الاستهلاك الحالي (${fmtMoney(s.ai_spent_egp, 3)})</label>
+        <label>رصيد النقاط (الحد الأقصى)<input type="number" name="ai_limit_points" min="0" step="1" value="${Math.round(s.ai_limit_egp * pointsRate())}"></label>
+        <p class="muted">= ${fmtMoney(s.ai_limit_egp)} من تكلفة الموديل (${pointsRate()} نقطة = 1 جنيه)</p>
+        <label class="check"><input type="checkbox" name="reset_ai_spent"> تصفير الاستهلاك الحالي (${fmtPoints(egpToPoints(s.ai_spent_egp))})</label>
         <button class="btn primary" type="submit">حفظ</button></form></section>
       <section class="card"><h2>كلمة المرور</h2><form id="wf" class="form">
         <label>كلمة مرور جديدة للطالب<input name="new_password" required minlength="8" autocomplete="new-password"></label>
@@ -615,7 +616,7 @@ Admin.student = async (el, { id }) => {
     reload();
   });
   onSubmit($('#af', el), async (v) => {
-    await API.patch(`/admin/students/${id}`, { ai_limit_egp: Number(v.ai_limit_egp), reset_ai_spent: v.reset_ai_spent });
+    await API.patch(`/admin/students/${id}`, { ai_limit_egp: Number(v.ai_limit_points) / pointsRate(), reset_ai_spent: v.reset_ai_spent });
     toast('تم الحفظ');
     reload();
   });
@@ -686,7 +687,9 @@ Admin.settings = async (el) => {
       <label>رقم فودافون كاش (للتحويل)<input name="vodafone_cash_number" value="${esc(s.vodafone_cash_number)}"></label>
       <label>عنوان انستاباي<input name="instapay_address" value="${esc(s.instapay_address)}"></label>
       <label class="span2">تعليمات الدفع اليدوي<textarea name="manual_payment_instructions" rows="2">${esc(s.manual_payment_instructions)}</textarea></label>
-      <label>حد الذكاء الاصطناعي للطالب الجديد (جنيه)<input type="number" name="default_ai_limit_egp" min="0" max="10000" step="0.5" value="${s.default_ai_limit_egp}"></label>
+      <label>رصيد نقاط الذكاء الاصطناعي للطالب الجديد<input type="number" name="default_ai_limit_points" min="0" step="1" value="${Math.round(s.default_ai_limit_egp * s.ai_points_per_egp)}"></label>
+      <label>كام نقطة = 1 جنيه من تكلفة الموديل<input type="number" name="ai_points_per_egp" min="1" step="1" value="${s.ai_points_per_egp}"></label>
+      <p class="muted span2" id="ai-equiv"></p>
       <label>سعر الدولار بالجنيه (لحساب تكلفة Gemini)<input type="number" name="usd_to_egp" min="1" step="0.01" value="${s.usd_to_egp}"></label>
       <button class="btn primary span2" type="submit">حفظ الإعدادات</button></form>
       <p class="muted">حد الذكاء الاصطناعي بيتطبق على الطلاب الجدد. <button class="btn ghost tiny" data-action="applyAi">طبّقه على كل الطلاب الحاليين</button></p>
@@ -709,10 +712,20 @@ Admin.settings = async (el) => {
       <button class="btn primary span2" type="submit">تغيير</button></form></section>`;
 
   const reload = () => Admin.settings(el);
+  const sf = $('#sf', el);
+  const showEquiv = () => {
+    const pts = Number(sf.default_ai_limit_points.value || 0);
+    const rate = Number(sf.ai_points_per_egp.value || 1);
+    $('#ai-equiv', el).textContent = `${fmtPoints(pts)} = ${fmtMoney(pts / rate)} من تكلفة الموديل لكل طالب (النقطة = ${fmtMoney(1 / rate, 3)})`;
+  };
+  sf.addEventListener('input', showEquiv);
+  showEquiv();
   onSubmit($('#sf', el), async (v) => {
-    await API.patch('/admin/settings', { ...v, support_phone: v.support_phone ?? '', vodafone_cash_number: v.vodafone_cash_number ?? '',
+    const { default_ai_limit_points: _p, ...rest } = v;
+    await API.patch('/admin/settings', { ...rest, support_phone: v.support_phone ?? '', vodafone_cash_number: v.vodafone_cash_number ?? '',
       instapay_address: v.instapay_address ?? '', manual_payment_instructions: v.manual_payment_instructions ?? '',
-      default_ai_limit_egp: Number(v.default_ai_limit_egp), usd_to_egp: Number(v.usd_to_egp) });
+      default_ai_limit_egp: Number(v.default_ai_limit_points) / Number(v.ai_points_per_egp),
+      ai_points_per_egp: Number(v.ai_points_per_egp), usd_to_egp: Number(v.usd_to_egp) });
     await loadSiteSettings();
     renderTopbar(location.hash.slice(1).split('?')[0]);
     toast('تم حفظ الإعدادات');
@@ -729,7 +742,7 @@ Admin.settings = async (el) => {
     applyAi: (b) => run(b, async () => {
       if (!confirm('تطبيق الحد الافتراضي على كل الطلاب؟')) return;
       const r = await API.post('/admin/settings/apply-ai-limit');
-      toast(`تم تحديث ${r.updated} طالب إلى ${r.limit_egp} جنيه`);
+      toast(`تم تحديث ${r.updated} طالب إلى ${fmtPoints(egpToPoints(r.limit_egp))}`);
     }),
     toggleAdmin: (b) => run(b, async () => {
       await API.patch(`/admin/admins/${b.dataset.id}`, { is_active: b.dataset.active !== 'true' });
