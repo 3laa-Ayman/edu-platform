@@ -360,3 +360,16 @@ CREATE TABLE IF NOT EXISTS settings (
   updated_by  BIGINT REFERENCES users(id) ON DELETE SET NULL,
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- ---------------------------------------------------------------------
+-- 9) Question images (question / each option / explanation)
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS question_media (
+  question_id  BIGINT NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
+  slot         VARCHAR(12) NOT NULL CHECK (slot IN ('question', 'option_a', 'option_b', 'option_c', 'option_d', 'explanation')),
+  mime         VARCHAR(30) NOT NULL,
+  data         BYTEA NOT NULL,
+  hash         CHAR(64) NOT NULL,          -- sha256 of the bytes; part of the image URL (cache-busting + unguessable)
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (question_id, slot)
+);

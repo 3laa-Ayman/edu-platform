@@ -3,6 +3,7 @@
  *   API_URL=http://localhost:4000 PAYMOB_HMAC_SECRET=... node scripts/smoke-test.js
  * Requires: NODE_ENV != production, OTP_DEV_ECHO=true, AUTH_RATE_LIMIT high enough (~100).
  */
+const fs = require('fs');
 const ExcelJS = require('exceljs');
 const path = require('path');
 const crypto = require('crypto');
@@ -92,14 +93,15 @@ async function registerStudent(i) {
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.readFile(path.join(__dirname, '../templates/questions-template.xlsx'));
   wb.worksheets[0].eachRow((row, n) => { if (n > 1) row.getCell(1).value = `${row.getCell(1).value} [${rnd}]`; });
+  const N = wb.worksheets[0].actualRowCount - 1; // questions in the template
   const xlsx = Buffer.from(await wb.xlsx.writeBuffer());
   const form = () => { const f = new FormData(); f.append('file', new Blob([xlsx], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), 'q.xlsx'); return f; };
   const dry = await call('POST', '/api/admin/questions/upload?dry_run=true', { token: AT, form: form() });
-  ok(dry.status === 200 && dry.data.valid_rows === 6, 'excel dry run: 6 valid rows', dry.data);
+  ok(dry.status === 200 && dry.data.valid_rows === N && dry.data.images === 5, `excel dry run: ${N} valid rows, 5 images`, dry.data);
   const up = await call('POST', '/api/admin/questions/upload', { token: AT, form: form() });
-  ok(up.status === 201 && up.data.inserted === 6, 'excel import: 6 inserted', up.data);
+  ok(up.status === 201 && up.data.inserted === N && up.data.images === 5, `excel import: ${N} inserted + 5 images`, up.data);
   const up2 = await call('POST', '/api/admin/questions/upload', { token: AT, form: form() });
-  ok(up2.data.inserted === 0 && up2.data.duplicates === 6, 're-upload → all duplicates skipped');
+  ok(up2.data.inserted === 0 && up2.data.duplicates === N, 're-upload → all duplicates skipped');
   const badFile = new FormData(); badFile.append('file', new Blob(['hello'], { type: 'text/plain' }), 'x.txt');
   ok((await call('POST', '/api/admin/questions/upload', { token: AT, form: badFile })).status === 400, 'non-xlsx rejected');
 
@@ -174,6 +176,26 @@ async function registerStudent(i) {
   const qNoExp2 = byText('غاز نبيل');
   const wrongOf = (q) => ['A', 'B', 'C', 'D'].find((l) => l !== q.correct_option);
 
+  // ---------------- Question images
+  const triQ = byText('طول الوتر');
+  const graphAdm = byText('علاقة طردية');
+  ok(triQ.media.question && graphAdm.media.option_a && graphAdm.media.option_d && !graphAdm.media.question, 'images attached to question / options from Excel');
+  const imgRes = await fetch(API + triQ.media.question);
+  ok(imgRes.status === 200 && imgRes.headers.get('content-type') === 'image/png' && /immutable/.test(imgRes.headers.get('cache-control')), 'image served (png, cached)');
+  ok((await fetch(API + triQ.media.question.replace(/[0-9a-f]{16}$/, '0000000000000000'))).status === 404, 'wrong image hash → 404');
+  const practiceAll = await call('GET', '/api/catalog/questions?limit=50', { token: A.token });
+  const pTri = practiceAll.data.questions.find((q) => q.id === triQ.id);
+  ok(pTri && pTri.image === triQ.media.question, 'students get question image in practice');
+  const pinned = await (async () => {
+    const fd = new FormData();
+    fd.append('image', new Blob([fs.readFileSync(path.join(__dirname, '../templates/images/graph-b.png'))], { type: 'image/png' }), 'x.png');
+    return call('PUT', `/api/admin/questions/${qWithExp.id}/media/explanation`, { token: AT, form: fd });
+  })();
+  ok(pinned.status === 200 && pinned.data.url.includes('/explanation/'), 'admin uploads explanation image');
+  const fakeImg = new FormData(); fakeImg.append('image', new Blob(['not an image at all'], { type: 'image/png' }), 'x.png');
+  ok((await call('PUT', `/api/admin/questions/${qWithExp.id}/media/question`, { token: AT, form: fakeImg })).status === 400, 'fake image rejected (content check)');
+  ok((await call('PUT', `/api/admin/questions/${qWithExp.id}/media/question`, { token: A.token, form: fakeImg })).status === 403, 'students cannot upload images');
+
   const ans1 = await call('POST', '/api/catalog/answer', { token: A.token, body: { question_id: qWithExp.id, choice: wrongOf(qWithExp) } });
   ok(ans1.data.is_correct === false && ans1.data.added_to_mistakes, 'wrong answer → added to mistakes bank');
   await call('POST', '/api/catalog/answer', { token: A.token, body: { question_id: qNoExp.id, choice: wrongOf(qNoExp) } });
@@ -193,6 +215,7 @@ async function registerStudent(i) {
   // ---------------- Explanations & AI cost
   const free = await call('GET', `/api/catalog/questions/${qWithExp.id}/explanation`, { token: A.token });
   ok(free.data.source === 'question_bank' && free.data.cost_egp === 0, 'saved explanation served free');
+  ok(free.data.explanation_image && free.data.explanation_image.includes('/explanation/'), 'explanation image returned with the explanation');
   const none = await call('GET', `/api/catalog/questions/${qNoExp.id}/explanation`, { token: A.token });
   ok(none.data.source === null && none.data.ai_available, 'no saved explanation → offers AI');
   const ai1 = await call('POST', `/api/ai/explain/${qNoExp.id}`, { token: A.token });
@@ -233,28 +256,35 @@ async function registerStudent(i) {
   const comp = await call('POST', '/api/admin/competitions', { token: AT, body: {
     title: 'مسابقة الجمعة', type: 'team_weekly', starts_at: new Date(now - 60000).toISOString(), ends_at: new Date(now + 3600000).toISOString(),
     duration_minutes: 20, question_ids: allQ.data.items.filter((q) => q.question_text.includes(rnd)).map((q) => q.id) } });
-  ok(comp.status === 201 && comp.data.competition.question_count === 6, 'admin created team competition');
+  ok(comp.status === 201 && comp.data.competition.question_count === N, 'admin created team competition');
   const cid = comp.data.competition.id;
   const eA = await call('POST', `/api/competitions/${cid}/start`, { token: A.token });
   const eB = await call('POST', `/api/competitions/${cid}/start`, { token: B.token });
-  ok(eA.data.questions.length === 6, 'A started competition');
+  ok(eA.data.questions.length === N, 'A started competition');
+  const graphQ = eA.data.questions.find((q) => q.question.includes('علاقة طردية'));
+  ok(graphQ && graphQ.options.every((o) => o.image && !o.text), 'competition options can be images (shuffled with them)');
   const sig = (e) => e.data.questions.map((q) => q.question_id + q.options.map((o) => o.text).join('')).join('|');
   ok(sig(eA) !== sig(eB), 'questions/options shuffled differently per student');
   const eA2 = await call('POST', `/api/competitions/${cid}/start`, { token: A.token });
   ok(sig(eA2) === sig(eA), 'resume returns the same order');
 
   // Answer everything correctly for A by mapping displayed text back to the right option
-  const correctText = (qid) => { const q = allQ.data.items.find((x) => x.id === qid); return q[`option_${q.correct_option.toLowerCase()}`]; };
-  const answersA = eA.data.questions.map((q) => ({ question_id: q.question_id, choice: q.options.find((o) => o.text === correctText(q.question_id)).key }));
+  // Identify the correct displayed option by its text AND image (image-only options have empty text).
+  const correctKey = (dq) => {
+    const q = allQ.data.items.find((x) => x.id === dq.question_id);
+    const slot = `option_${q.correct_option.toLowerCase()}`;
+    return dq.options.find((o) => o.text === q[slot] && (o.image || null) === (q.media[slot] || null)).key;
+  };
+  const answersA = eA.data.questions.map((q) => ({ question_id: q.question_id, choice: correctKey(q) }));
   const subA = await call('POST', `/api/competitions/${cid}/submit`, { token: A.token, body: { answers: answersA } });
-  ok(subA.data.score === 6 && subA.data.percent === 100, 'A scored 6/6 (un-shuffling works)', subA.data);
+  ok(subA.data.score === N && subA.data.percent === 100, `A scored ${N}/${N} (un-shuffling works)`, subA.data);
   ok((await call('POST', `/api/competitions/${cid}/submit`, { token: A.token, body: { answers: answersA } })).status === 409, 'double submit blocked');
   const subB = await call('POST', `/api/competitions/${cid}/submit`, { token: B.token, body: { answers: [] } });
   ok(subB.data.score === 0, 'B submitted empty → 0');
   const eC = await call('POST', `/api/competitions/${cid}/start`, { token: C.token });
-  await call('POST', `/api/competitions/${cid}/submit`, { token: C.token, body: { answers: eC.data.questions.slice(0, 3).map((q) => ({ question_id: q.question_id, choice: q.options.find((o) => o.text === correctText(q.question_id)).key })) } });
+  await call('POST', `/api/competitions/${cid}/submit`, { token: C.token, body: { answers: eC.data.questions.slice(0, 3).map((q) => ({ question_id: q.question_id, choice: correctKey(q) })) } });
   const lb = await call('GET', `/api/competitions/${cid}/leaderboard`, { token: D.token });
-  ok(lb.data.individuals[0].score === 6 && lb.data.teams.length >= 2 && lb.data.teams[0].team === 'فريق النجوم', 'leaderboard (individual + teams)', lb.data);
+  ok(lb.data.individuals[0].score === N && lb.data.teams.length >= 2 && lb.data.teams[0].team === 'فريق النجوم', 'leaderboard (individual + teams)', lb.data);
   console.log('   ', JSON.stringify(lb.data.teams));
   ok((await call('GET', `/api/competitions/${cid}/review`, { token: A.token })).status === 403, 'answers hidden until competition ends');
 

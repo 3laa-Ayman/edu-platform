@@ -6,6 +6,7 @@ const { validate, idParam, pagination, z } = require('../middleware/validate');
 const { excelUpload } = require('../middleware/upload');
 const { uploadLimiter } = require('../middleware/rateLimit');
 const { parseQuestionSheet, importQuestions } = require('../services/excel.service');
+const { mediaMap } = require('../services/media.service');
 const { activatePayment } = require('../services/payment.service');
 const { autoAssignTeams } = require('../services/team.service');
 const { sendWeeklyReportsToAll } = require('../services/report.service');
@@ -37,7 +38,7 @@ router.post('/questions/upload', uploadLimiter, excelUpload.single('file'), asyn
   const defaultSubject = typeof req.body?.default_subject === 'string' ? req.body.default_subject.trim().slice(0, 120) : undefined;
   const parsed = await parseQuestionSheet(req.file.buffer, { defaultSubject });
   if (req.query.dry_run === 'true') {
-    return res.json({ dry_run: true, valid_rows: parsed.valid.length, failed: parsed.errors.length, errors: parsed.errors });
+    return res.json({ dry_run: true, valid_rows: parsed.valid.length, images: parsed.images, failed: parsed.errors.length, errors: parsed.errors });
   }
   if (!parsed.valid.length) throw badRequest('لا يوجد أي صف صالح في الملف', { errors: parsed.errors });
   res.status(201).json(await importQuestions(parsed, { adminId: req.user.id, filename: req.file.originalname }));
@@ -75,7 +76,8 @@ router.get('/questions', validate({
     [f.subject_id ?? null, f.lesson_id ?? null, f.category ?? null, f.missing_explanation === 'true',
       f.search ? f.search.replace(/[%_\\]/g, (m) => `\\${m}`) : null, f.limit, (f.page - 1) * f.limit],
   );
-  res.json({ total: rows[0]?.total ?? 0, items: rows.map(({ total, ...q }) => q) });
+  const media = await mediaMap(rows.map((q) => q.id));
+  res.json({ total: rows[0]?.total ?? 0, items: rows.map(({ total, ...q }) => ({ ...q, media: media[q.id] || {} })) });
 });
 
 // ------------------------------------------------------------------ Payments review

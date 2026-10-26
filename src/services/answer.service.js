@@ -29,8 +29,8 @@ async function recordAnswer(client, { userId, question, selected, source, entryI
   return { isCorrect, removedFromMistakes: false, addedToMistakes: true };
 }
 
-/** Public projection of a question — never includes the correct answer or explanation. */
-const publicQuestion = (q) => ({
+/** Public projection of a question — never includes the correct answer or explanation (nor its image). */
+const publicQuestion = (q, media = {}) => ({
   id: q.id,
   subject_id: q.subject_id,
   subject: q.subject_name,
@@ -40,6 +40,15 @@ const publicQuestion = (q) => ({
   exam_year: q.exam_year,
   question: q.question_text,
   options: { A: q.option_a, B: q.option_b, C: q.option_c, D: q.option_d },
+  image: media.question || null,
+  option_images: { A: media.option_a || null, B: media.option_b || null, C: media.option_c || null, D: media.option_d || null },
 });
 
-module.exports = { recordAnswer, publicQuestion };
+/** Adds image URLs to a list of questions (one query for the whole list). */
+async function publicQuestions(rows) {
+  const { mediaMap } = require('./media.service');
+  const m = await mediaMap(rows.map((q) => q.id));
+  return rows.map((q) => publicQuestion(q, m[q.id]));
+}
+
+module.exports = { recordAnswer, publicQuestion, publicQuestions };

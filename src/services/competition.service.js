@@ -4,6 +4,7 @@ const { LETTERS, normalizeChoice, optionText } = require('../utils/choices');
 const { badRequest, conflict, forbidden, notFound } = require('../utils/errors');
 const { recordAnswer } = require('./answer.service');
 const { getTeamOf } = require('./team.service');
+const { mediaMap } = require('./media.service');
 
 const SUBMIT_GRACE_MS = 30_000;
 
@@ -21,6 +22,7 @@ async function renderEntry(entry, client = db) {
     [ids],
   );
   const byId = new Map(rows.map((q) => [q.id, q]));
+  const media = await mediaMap(ids);
   return {
     entry_id: entry.id,
     started_at: entry.started_at,
@@ -29,7 +31,14 @@ async function renderEntry(entry, client = db) {
     questions: entry.question_order.map(({ qid, perm }, idx) => {
       const q = byId.get(qid);
       // Displayed label LETTERS[i] shows the original option perm[i].
-      return { number: idx + 1, question_id: qid, question: q.question_text, options: LETTERS.map((L, i) => ({ key: L, text: optionText(q, perm[i]) })) };
+      const m = media[qid] || {};
+      return {
+        number: idx + 1,
+        question_id: qid,
+        question: q.question_text,
+        image: m.question || null,
+        options: LETTERS.map((L, i) => ({ key: L, text: optionText(q, perm[i]), image: m[`option_${perm[i].toLowerCase()}`] || null })),
+      };
     }),
   };
 }
@@ -156,7 +165,8 @@ async function review(competitionId, userId) {
       WHERE e.competition_id = $1 AND e.user_id = $2`,
     [competitionId, userId],
   );
-  return rows;
+  const media = await mediaMap(rows.map((r) => r.question_id));
+  return rows.map((r) => ({ ...r, media: media[r.question_id] || {} }));
 }
 
 module.exports = { getCompetition, startEntry, submitEntry, leaderboard, review };

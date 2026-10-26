@@ -2,7 +2,8 @@ const router = require('express').Router();
 const db = require('../config/db');
 const { validate, idParam, z } = require('../middleware/validate');
 const { requireSubscription } = require('../middleware/subscription');
-const { recordAnswer, publicQuestion } = require('../services/answer.service');
+const { recordAnswer, publicQuestions } = require('../services/answer.service');
+const { mediaMap } = require('../services/media.service');
 const { normalizeChoice } = require('../utils/choices');
 const { badRequest, forbidden, notFound } = require('../utils/errors');
 
@@ -59,7 +60,7 @@ router.get('/questions', requireSubscription('practice'), validate({
     [f.subject_id ?? null, f.lesson_id ?? null, f.category ?? null, f.exam_year ?? null,
       f.unsolved_only === 'true', req.user.id, f.limit],
   );
-  res.json({ questions: rows.map(publicQuestion) });
+  res.json({ questions: await publicQuestions(rows) });
 });
 
 router.post('/answer', requireSubscription('practice'), validate({
@@ -74,7 +75,9 @@ router.post('/answer', requireSubscription('practice'), validate({
   const q = await getQuestion(req.body.question_id);
   const result = await db.withTransaction((c) =>
     recordAnswer(c, { userId: req.user.id, question: q, selected: choice, source: 'practice', timeSpentMs: req.body.time_spent_ms }));
-  const { rows: [ai] } = await db.query(`SELECT 1 AS x FROM ai_explanations WHERE question_id = $1`, [q.id]);
+  const { rows: [ai] } = await db.query(
+    `SELECT 1 AS x FROM ai_explanations WHERE question_id = $1
+     UNION ALL SELECT 1 FROM question_media WHERE question_id = $1 AND slot = 'explanation' LIMIT 1`, [q.id]);
   res.json({
     is_correct: result.isCorrect,
     correct_option: q.correct_option,
@@ -91,8 +94,9 @@ router.get('/questions/:id/explanation', validate({ params: idParam }), async (r
   const answered = await db.query(`SELECT 1 FROM attempts WHERE user_id = $1 AND question_id = $2 LIMIT 1`, [req.user.id, q.id]);
   if (!answered.rowCount && req.user.role !== 'admin') throw badRequest('أجب على السؤال أولاً لعرض الشرح');
 
-  if (q.explanation) {
-    return res.json({ source: 'question_bank', cost_egp: 0, correct_option: q.correct_option, explanation: q.explanation, law_note: q.law_note });
+  const explanationImage = (await mediaMap([q.id]))[q.id]?.explanation || null;
+  if (q.explanation || explanationImage) {
+    return res.json({ source: 'question_bank', cost_egp: 0, correct_option: q.correct_option, explanation: q.explanation, explanation_image: explanationImage, law_note: q.law_note });
   }
   const { rows: [cached] } = await db.query(`SELECT content FROM ai_explanations WHERE question_id = $1`, [q.id]);
   if (cached) {

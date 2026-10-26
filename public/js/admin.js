@@ -96,15 +96,25 @@ Admin.subjects = async (el) => {
 };
 
 // ---------------------------------------------------------------- Questions
+const MEDIA_SLOTS = [['question', 'صورة السؤال'], ['option_a', 'صورة أ'], ['option_b', 'صورة ب'], ['option_c', 'صورة ج'], ['option_d', 'صورة د'], ['explanation', 'صورة الشرح']];
+
 function questionForm(q, subjects) {
   const subj = subjects.find((s) => s.id === q?.subject_id) || subjects[0];
+  const media = q?.media || {};
   return `<form class="form" id="qf">
     <div class="grid2">
       <label>المادة<select name="subject_id" required>${subjects.map((s) => opt(s.id, s.name, subj?.id)).join('')}</select></label>
       <label>الدرس<select name="lesson_id"><option value="">بدون درس</option>${(subj?.lessons || []).map((l) => opt(l.id, l.name, q?.lesson_id)).join('')}</select></label>
     </div>
-    <label>نص السؤال<textarea name="question_text" rows="3" required>${esc(q?.question_text || '')}</textarea></label>
-    <div class="grid2">${['a', 'b', 'c', 'd'].map((k, i) => `<label>${'أبجد'[i]}<input name="option_${k}" required value="${esc(q?.[`option_${k}`] || '')}"></label>`).join('')}</div>
+    <label>نص السؤال<textarea name="question_text" rows="3">${esc(q?.question_text || '')}</textarea></label>
+    <div class="grid2">${['a', 'b', 'c', 'd'].map((k, i) => `<label>${'أبجد'[i]}<input name="option_${k}" value="${esc(q?.[`option_${k}`] || '')}"></label>`).join('')}</div>
+    <fieldset class="features-box"><legend>الصور (اختياري — ممكن السؤال أو الاختيار يبقى صورة بس)</legend>
+      <div class="media-grid">${MEDIA_SLOTS.map(([slot, label]) => `<div class="media-slot" data-slot="${slot}">
+        <b>${label}</b>
+        ${media[slot] ? `<img src="${esc(media[slot])}" alt="${label}"><label class="check"><input type="checkbox" name="rm_${slot}"> حذف الصورة</label>` : ''}
+        <input type="file" name="img_${slot}" accept="image/png,image/jpeg,image/webp,image/gif">
+      </div>`).join('')}</div>
+    </fieldset>
     <div class="grid2">
       <label>الإجابة الصحيحة<select name="correct_option">${['A', 'B', 'C', 'D'].map((k) => opt(k, letter(k), q?.correct_option || 'A')).join('')}</select></label>
       <label>التصنيف<select name="category">${opt('lesson', 'درس', q?.category || 'lesson')}${opt('past_exam', 'امتحان سابق', q?.category)}</select></label>
@@ -117,6 +127,25 @@ function questionForm(q, subjects) {
     <button class="btn primary" type="submit">${q ? 'حفظ التعديلات' : 'إضافة السؤال'}</button></form>`;
 }
 
+/** Shrinks large photos in the browser before upload (max 1600px; small PNG diagrams are kept as-is for sharpness). */
+async function prepareImage(file) {
+  if (file.type === 'image/gif' || (file.size <= 600 * 1024 && file.type !== 'image/jpeg')) return file;
+  try {
+    const bmp = await createImageBitmap(file);
+    const scale = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
+    if (scale === 1 && file.size <= 600 * 1024) return file;
+    const canvas = Object.assign(document.createElement('canvas'), { width: Math.round(bmp.width * scale), height: Math.round(bmp.height * scale) });
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(bmp, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise((r) => canvas.toBlob(r, 'image/webp', 0.88));
+    return blob && blob.size < file.size ? blob : file;
+  } catch {
+    return file;
+  }
+}
+
 function openQuestionModal(q, subjects, onSaved) {
   if (!subjects.length) { toast('ضيف مادة الأول من صفحة المواد', 'err'); return; }
   const m = modal(`<h2>${q ? `تعديل السؤال #${q.id}` : 'سؤال جديد'}</h2>${questionForm(q, subjects)}`);
@@ -125,18 +154,45 @@ function openQuestionModal(q, subjects, onSaved) {
     const s = subjects.find((x) => String(x.id) === f.subject_id.value);
     f.lesson_id.innerHTML = '<option value="">بدون درس</option>' + (s?.lessons || []).map((l) => opt(l.id, l.name)).join('');
   });
+  // Live preview of a newly chosen image
+  f.addEventListener('change', (e) => {
+    if (e.target.type !== 'file' || !e.target.files[0]) return;
+    const box = e.target.closest('.media-slot');
+    let img = box.querySelector('img');
+    if (!img) { img = document.createElement('img'); box.insertBefore(img, e.target); }
+    img.src = URL.createObjectURL(e.target.files[0]);
+  });
   onSubmit(f, async (v) => {
+    const files = Object.fromEntries(MEDIA_SLOTS.map(([slot]) => [slot, f[`img_${slot}`].files[0]]));
+    const keeps = (slot) => Boolean(files[slot] || (q?.media?.[slot] && !v[`rm_${slot}`]));
+    if (!v.question_text && !keeps('question')) throw new Error('اكتب نص السؤال أو ضيف صورة له');
+    for (const [k, L] of [['option_a', 'أ'], ['option_b', 'ب'], ['option_c', 'ج'], ['option_d', 'د']]) {
+      if (!v[k] && !keeps(k)) throw new Error(`الاختيار ${L} محتاج نص أو صورة`);
+    }
     const body = {
-      ...v,
       subject_id: Number(v.subject_id),
       lesson_id: v.lesson_id ? Number(v.lesson_id) : null,
+      question_text: v.question_text ?? '',
+      option_a: v.option_a ?? '', option_b: v.option_b ?? '', option_c: v.option_c ?? '', option_d: v.option_d ?? '',
+      correct_option: v.correct_option,
+      category: v.category,
       exam_year: v.exam_year ? Number(v.exam_year) : null,
       explanation: v.explanation ?? null,
       law_note: v.law_note ?? null,
       lesson_type: v.lesson_type ?? null,
+      is_active: v.is_active,
     };
-    if (q) await API.patch(`/admin/questions/${q.id}`, body);
-    else await API.post('/admin/questions', body);
+    const saved = q ? await API.patch(`/admin/questions/${q.id}`, body) : await API.post('/admin/questions', body);
+    const id = saved.question.id;
+    for (const [slot] of MEDIA_SLOTS) {
+      if (files[slot]) {
+        const fd = new FormData();
+        fd.append('image', await prepareImage(files[slot]), files[slot].name);
+        await API.req('PUT', `/admin/questions/${id}/media/${slot}`, undefined, { form: fd });
+      } else if (v[`rm_${slot}`] && q?.media?.[slot]) {
+        await API.del(`/admin/questions/${id}/media/${slot}`);
+      }
+    }
     closeModal();
     toast(q ? 'تم الحفظ' : 'تمت إضافة السؤال');
     onSaved();
@@ -153,7 +209,8 @@ Admin.questions = async (el, params, query) => {
 
   el.innerHTML = `<div class="page-head"><h1>بنك الأسئلة</h1><button class="btn primary" data-action="new">+ سؤال جديد</button></div>
     <section class="card"><div class="card-head"><h2>رفع شيت Excel</h2><button class="btn ghost tiny" data-action="template">⬇ تحميل النموذج</button></div>
-      <p class="muted">الأعمدة: السؤال · أ · ب · ج · د · الإجابة الصحيحة · الشرح · القانون/الملحوظة · المادة · الدرس · نوع الدرس · التصنيف (درس / امتحان سابق) · سنة الامتحان. المواد والدروس الجديدة بتتضاف لوحدها.</p>
+      <p class="muted">الأعمدة: السؤال · صورة السؤال · أ · ب · ج · د · الإجابة الصحيحة · الشرح · القانون/الملحوظة · المادة · الدرس · نوع الدرس · التصنيف (درس / امتحان سابق) · سنة الامتحان. المواد والدروس الجديدة بتتضاف لوحدها.</p>
+      <p class="muted">🖼 <b>الصور:</b> الصق الصورة جوه صف السؤال (Insert ← Pictures ← <b>Place over Cells</b>). في عمود "صورة السؤال" = صورة السؤال، في عمود اختيار = صورة الاختيار، في عمود الشرح = صورة الشرح. الملف كله لحد 4MB والصورة الواحدة لحد 2MB — لو الصور كتير قسّم الأسئلة على كذا ملف.</p>
       <form id="uf" class="form grid3">
         <label class="span2">ملف .xlsx (حتى 4MB)<input type="file" name="file" accept=".xlsx" required></label>
         <label>مادة افتراضية (لو مفيش عمود مادة)<input name="default_subject"></label>
@@ -173,7 +230,10 @@ Admin.questions = async (el, params, query) => {
       </form>
       ${list.items.length ? table(['#', 'السؤال', 'المادة / الدرس', 'التصنيف', 'الإجابة', 'الشرح', ''],
         list.items.map((q) => [q.id,
-          esc(q.question_text.length > 70 ? `${q.question_text.slice(0, 70)}…` : q.question_text) + (q.is_active ? '' : ` ${badge('مخفي', 'bad')}`),
+          (q.media?.question ? `<img class="thumb" src="${esc(q.media.question)}" alt=""> ` : '')
+            + esc(q.question_text.length > 70 ? `${q.question_text.slice(0, 70)}…` : q.question_text)
+            + (Object.keys(q.media || {}).length ? ` ${badge(`🖼 ${Object.keys(q.media).length}`)}` : '')
+            + (q.is_active ? '' : ` ${badge('مخفي', 'bad')}`),
           `${esc(q.subject)}<br><small class="muted">${esc(q.lesson || '')}</small>`,
           esc(LABELS.category[q.category]) + (q.exam_year ? `<br><small class="muted">${q.exam_year}</small>` : ''),
           `<b>${letter(q.correct_option)}</b>`, q.explanation ? '✓' : badge('لا يوجد', 'mid'),
@@ -204,8 +264,8 @@ Admin.questions = async (el, params, query) => {
       const r = await API.upload(`/admin/questions/upload${v.dry_run ? '?dry_run=true' : ''}`, fd);
       const errs = r.errors || [];
       res.innerHTML = `<div class="notice ${errs.length ? 'mid' : 'good'}">${r.dry_run
-        ? `فحص: ${r.valid_rows} صف سليم، ${r.failed} صف فيه أخطاء`
-        : `تم إضافة <b>${r.inserted}</b> سؤال · مكرر (اتجاهل): ${r.duplicates} · فيه أخطاء: ${r.failed}`}</div>
+        ? `فحص: ${r.valid_rows} صف سليم (فيهم ${r.images} صورة)، ${r.failed} صف فيه أخطاء`
+        : `تم إضافة <b>${r.inserted}</b> سؤال و${r.images} صورة · مكرر (اتجاهل): ${r.duplicates} · فيه أخطاء: ${r.failed}`}</div>
         ${errs.length ? table(['الصف', 'الأخطاء'], errs.map((e) => [e.row, esc(e.errors.join('، '))])) : ''}`;
       if (!r.dry_run) { toast(`تم رفع ${r.inserted} سؤال`); setTimeout(reload, 1500); }
     } catch (err) {

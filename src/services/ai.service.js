@@ -2,6 +2,7 @@ const env = require('../config/env');
 const db = require('../config/db');
 const { AppError } = require('../utils/errors');
 const { getSettings } = require('./settings.service');
+const { mediaForAi } = require('./media.service');
 
 const { model, inputUsdPerM, outputUsdPerM, maxOutputTokens } = env.gemini;
 
@@ -25,9 +26,14 @@ const costEgp = (inputTokens, outputTokens, usdToEgp) =>
   ((inputTokens * inputUsdPerM + outputTokens * outputUsdPerM) / 1e6) * usdToEgp;
 
 /** Conservative worst-case cost reserved BEFORE calling the model (Arabic ≈ 1 token per 1–2 chars). */
-const reserveFor = (prompt, usdToEgp) => costEgp(Math.ceil(prompt.length / 1.5) + 50, maxOutputTokens, usdToEgp);
+// Each image costs a few hundred input tokens (Gemini bills ~258 tokens per image tile).
+const IMAGE_TOKEN_ALLOWANCE = 1100;
+const reserveFor = (prompt, usdToEgp, imageCount = 0) =>
+  costEgp(Math.ceil(prompt.length / 1.5) + 50 + imageCount * IMAGE_TOKEN_ALLOWANCE, maxOutputTokens, usdToEgp);
 
-async function callGemini(prompt) {
+const SLOT_NAME = { question: 'صورة السؤال', option_a: 'صورة الاختيار أ', option_b: 'صورة الاختيار ب', option_c: 'صورة الاختيار ج', option_d: 'صورة الاختيار د' };
+
+async function callGemini(prompt, images = []) {
   if (!env.gemini.apiKey) {
     if (!env.allowMocks) throw new AppError(503, 'خدمة الذكاء الاصطناعي غير مهيأة', 'AI_NOT_CONFIGURED');
     // Development mock — mirrors the real response shape so the cost pipeline is exercised end to end.
@@ -42,7 +48,14 @@ async function callGemini(prompt) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.gemini.apiKey },
     body: JSON.stringify({
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      contents: [{
+        role: 'user',
+        parts: [
+          { text: prompt },
+          // Label each figure so the model knows which one belongs to the question vs an option.
+          ...images.flatMap((m) => [{ text: `${SLOT_NAME[m.slot]}:` }, { inline_data: { mime_type: m.mime, data: m.data.toString('base64') } }]),
+        ],
+      }],
       generationConfig: { maxOutputTokens, temperature: 0.3, thinkingConfig: { thinkingBudget: 0 } },
     }),
     signal: AbortSignal.timeout(25_000),
@@ -78,9 +91,11 @@ async function logUsage(row) {
  * student past their limit.
  */
 async function explainWithBudget(userId, question) {
-  const prompt = buildPrompt(question);
+  // GIF is not accepted by Gemini; other formats are sent so the model can read diagrams/figures.
+  const images = (await mediaForAi(question.id)).filter((m) => m.mime !== 'image/gif');
+  const prompt = buildPrompt(question) + (images.length ? '\nملحوظة: السؤال يحتوي على صور مرفقة، اعتمد عليها في الشرح.' : '');
   const { usd_to_egp: usdToEgp } = await getSettings();
-  const reserve = reserveFor(prompt, usdToEgp);
+  const reserve = reserveFor(prompt, usdToEgp, images.length);
 
   const reserved = await db.query(
     `UPDATE users SET ai_spent_egp = ai_spent_egp + $2
@@ -97,7 +112,7 @@ async function explainWithBudget(userId, question) {
 
   let result;
   try {
-    result = await callGemini(prompt);
+    result = await callGemini(prompt, images);
   } catch (err) {
     await db.query(`UPDATE users SET ai_spent_egp = GREATEST(ai_spent_egp - $2, 0) WHERE id = $1`, [userId, reserve.toFixed(6)]);
     await logUsage({ userId, questionId: question.id, status: 'error', error: String(err.message).slice(0, 500) });

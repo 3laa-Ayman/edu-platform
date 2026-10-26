@@ -28,4 +28,14 @@ const receiptUpload = multer({
   },
 });
 
-module.exports = { excelUpload, receiptUpload };
+/** Question images — validated again by content (magic bytes) before saving. */
+const imageUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 2 * 1024 * 1024, files: 1 },
+  fileFilter: (req, file, cb) => {
+    const ok = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.mimetype);
+    cb(ok ? null : badRequest('الصورة يجب أن تكون PNG / JPG / WEBP / GIF'), ok);
+  },
+});
+
+module.exports = { excelUpload, receiptUpload, imageUpload };

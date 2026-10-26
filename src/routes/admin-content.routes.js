@@ -5,6 +5,8 @@ const env = require('../config/env');
 const db = require('../config/db');
 const { validate, idParam, z } = require('../middleware/validate');
 const { hashQuestion } = require('../services/excel.service');
+const { SLOTS, saveMedia, mediaMap } = require('../services/media.service');
+const { imageUpload } = require('../middleware/upload');
 const { getSettings, updateSettings, SETTINGS_SCHEMA } = require('../services/settings.service');
 const { email, password, fullName } = require('../utils/schemas');
 const { badRequest, conflict, forbidden, notFound } = require('../utils/errors');
@@ -73,11 +75,12 @@ router.delete('/lessons/:id', validate({ params: idParam }), async (req, res) =>
 const questionBody = z.object({
   subject_id: z.number().int().positive(),
   lesson_id: z.number().int().positive().nullable().optional(),
-  question_text: z.string().trim().min(1).max(5000),
-  option_a: z.string().trim().min(1).max(1000),
-  option_b: z.string().trim().min(1).max(1000),
-  option_c: z.string().trim().min(1).max(1000),
-  option_d: z.string().trim().min(1).max(1000),
+  // Text may be empty when the question/option is an image (uploaded via /questions/:id/media/:slot).
+  question_text: z.string().trim().max(5000),
+  option_a: z.string().trim().max(1000),
+  option_b: z.string().trim().max(1000),
+  option_c: z.string().trim().max(1000),
+  option_d: z.string().trim().max(1000),
   correct_option: z.enum(['A', 'B', 'C', 'D']),
   explanation: z.string().trim().max(5000).nullable().optional(),
   law_note: z.string().trim().max(5000).nullable().optional(),
@@ -129,6 +132,28 @@ router.patch('/questions/:id', validate({ params: idParam, body: questionBody.pa
   // Keep open mistakes classified under the question's current subject/lesson.
   await db.query(`UPDATE mistakes SET subject_id = $2, lesson_id = $3 WHERE question_id = $1`, [q.id, q.subject_id, q.lesson_id]);
   res.json({ question: q });
+});
+
+// ------------------------------------------------------------------ Question images
+const slotParams = z.object({ id: z.coerce.number().int().positive(), slot: z.enum(SLOTS) });
+
+router.put('/questions/:id/media/:slot', imageUpload.single('image'), validate({ params: slotParams }), async (req, res) => {
+  if (!req.file) throw badRequest('ارفع الصورة في الحقل image');
+  const { rowCount } = await db.query(`SELECT 1 FROM questions WHERE id = $1`, [req.p.id]);
+  if (!rowCount) throw notFound('السؤال غير موجود');
+  try {
+    const url = await saveMedia(db, req.p.id, req.p.slot, req.file.buffer);
+    res.json({ slot: req.p.slot, url });
+  } catch (err) {
+    if (err.status === 400) throw badRequest(err.message);
+    throw err;
+  }
+});
+
+router.delete('/questions/:id/media/:slot', validate({ params: slotParams }), async (req, res) => {
+  const r = await db.query(`DELETE FROM question_media WHERE question_id = $1 AND slot = $2`, [req.p.id, req.p.slot]);
+  if (!r.rowCount) throw notFound('لا توجد صورة');
+  res.status(204).end();
 });
 
 /** Questions students already answered are hidden (kept for their history); unused ones are deleted. */

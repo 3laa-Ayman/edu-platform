@@ -1,7 +1,8 @@
 const router = require('express').Router();
 const db = require('../config/db');
 const { validate, z, pagination } = require('../middleware/validate');
-const { recordAnswer, publicQuestion } = require('../services/answer.service');
+const { recordAnswer, publicQuestions } = require('../services/answer.service');
+const { mediaMap } = require('../services/media.service');
 const { requireSubscription } = require('../middleware/subscription');
 const { normalizeChoice } = require('../utils/choices');
 const { badRequest, notFound } = require('../utils/errors');
@@ -66,7 +67,7 @@ router.get('/quiz', requireSubscription('mistakes_bank'), validate({ query: z.ob
       ORDER BY random() LIMIT $4`,
     [req.user.id, subject_id ?? null, lesson_id ?? null, limit],
   );
-  res.json({ questions: rows.map(publicQuestion) });
+  res.json({ questions: await publicQuestions(rows) });
 });
 
 /** Re-solve one mistake. Correct → removed from the bank automatically. */
@@ -89,6 +90,7 @@ router.post('/:questionId/retry', requireSubscription('mistakes_bank'), validate
     removed_from_mistakes: r.removedFromMistakes,
     message: r.isCorrect ? 'إجابة صحيحة! تم حذف السؤال من بنك الأخطاء' : 'إجابة خاطئة، السؤال باقٍ في بنك الأخطاء',
     explanation: q.explanation,
+    explanation_image: (await mediaMap([q.id]))[q.id]?.explanation || null,
     law_note: q.law_note,
   });
 });

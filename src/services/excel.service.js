@@ -3,6 +3,7 @@ const ExcelJS = require('exceljs');
 const db = require('../config/db');
 const { normalizeChoice } = require('../utils/choices');
 const { badRequest } = require('../utils/errors');
+const { sha256, sniffMime, MAX_IMAGE_BYTES } = require('./media.service');
 
 const MAX_ROWS = 5000;
 
@@ -33,6 +34,8 @@ const HEADER_ALIASES = {
   lesson_type: ['lesson type', 'نوع الدرس'],
   category: ['category', 'type', 'التصنيف', 'تصنيف السؤال', 'النوع'],
   exam_year: ['exam year', 'year', 'سنة الامتحان', 'السنة'],
+  // Optional column where the question's picture is pasted (any picture in the row outside option/explanation columns also counts).
+  image: ['image', 'picture', 'صورة', 'الصورة', 'صورة السؤال'],
 };
 const HEADER_LOOKUP = new Map();
 for (const [field, aliases] of Object.entries(HEADER_ALIASES)) for (const a of aliases) HEADER_LOOKUP.set(norm(a), field);
@@ -55,10 +58,34 @@ function cellText(cell) {
   return String(v).trim();
 }
 
+/** De-duplication hash: subject + text + options (+ image hashes, so same text with different figures is kept). */
 const hashQuestion = (r) =>
   crypto.createHash('sha256')
-    .update([r.subject, r.question, r.option_a, r.option_b, r.option_c, r.option_d].map(norm).join('|'))
+    .update([r.subject, r.question, r.option_a, r.option_b, r.option_c, r.option_d].map(norm).join('|')
+      + (r.media ? `|${Object.entries(r.media).map(([slot, m]) => `${slot}:${m.hash}`).sort().join(',')}` : ''))
     .digest('hex');
+
+const IMAGE_SLOT_FIELDS = ['option_a', 'option_b', 'option_c', 'option_d', 'explanation'];
+const SLOT_LABEL = { question: 'السؤال', option_a: 'الاختيار أ', option_b: 'الاختيار ب', option_c: 'الاختيار ج', option_d: 'الاختيار د', explanation: 'الشرح' };
+
+/**
+ * Pictures pasted over the sheet ("Place over cells"), grouped by row.
+ * Slot = column of the picture's top-left corner: an option column → that option, the explanation column → explanation,
+ * anything else (image column, question column...) → the question itself.
+ */
+function imagesByRow(wb, ws, columns) {
+  const byRow = new Map();
+  for (const img of ws.getImages()) {
+    const media = wb.getImage(Number(img.imageId)) || wb.getImage(img.imageId);
+    if (!media?.buffer) continue;
+    const row = Math.floor(img.range.tl.nativeRow ?? img.range.tl.row) + 1;
+    const col = Math.floor(img.range.tl.nativeCol ?? img.range.tl.col) + 1;
+    const slot = IMAGE_SLOT_FIELDS.find((f) => columns[f] === col) || 'question';
+    if (!byRow.has(row)) byRow.set(row, []);
+    byRow.get(row).push({ slot, buffer: Buffer.from(media.buffer) });
+  }
+  return byRow;
+}
 
 /** Parses + validates the sheet. Returns { valid: [...rows], errors: [{row, errors}] }. */
 async function parseQuestionSheet(buffer, { defaultSubject } = {}) {
@@ -84,6 +111,7 @@ async function parseQuestionSheet(buffer, { defaultSubject } = {}) {
   const valid = [];
   const errors = [];
   const seen = new Set();
+  const rowImages = imagesByRow(wb, ws, columns);
   if (ws.actualRowCount > MAX_ROWS + 1) throw badRequest(`الحد الأقصى ${MAX_ROWS} سؤال في الملف الواحد`);
 
   for (let i = 2; i <= ws.rowCount; i++) {
@@ -98,11 +126,23 @@ async function parseQuestionSheet(buffer, { defaultSubject } = {}) {
       lesson: get('lesson') || null,
       lesson_type: get('lesson_type') || null,
     };
-    if (!r.question && !r.option_a && !r.option_b) continue; // skip empty rows
+    const images = rowImages.get(i) || [];
+    if (!r.question && !r.option_a && !r.option_b && !images.length) continue; // skip empty rows
 
     const rowErrors = [];
-    if (!r.question) rowErrors.push('نص السؤال فارغ');
-    for (const k of ['option_a', 'option_b', 'option_c', 'option_d']) if (!r[k]) rowErrors.push(`الاختيار ${k.slice(-1).toUpperCase()} فارغ`);
+    const media = {};
+    for (const { slot, buffer } of images) {
+      if (media[slot]) { rowErrors.push(`أكثر من صورة في خانة ${SLOT_LABEL[slot]}`); continue; }
+      const mime = sniffMime(buffer);
+      if (!mime) rowErrors.push(`صورة ${SLOT_LABEL[slot]} بصيغة غير مدعومة (PNG / JPG / WEBP / GIF)`);
+      else if (buffer.length > MAX_IMAGE_BYTES) rowErrors.push(`صورة ${SLOT_LABEL[slot]} أكبر من 2MB — صغّرها`);
+      else media[slot] = { buffer, mime, hash: sha256(buffer) };
+    }
+    if (!r.question && !media.question) rowErrors.push('السؤال فارغ (لا نص ولا صورة)');
+    for (const k of ['option_a', 'option_b', 'option_c', 'option_d']) {
+      if (!r[k] && !media[k]) rowErrors.push(`الاختيار ${k.slice(-1).toUpperCase()} فارغ (لا نص ولا صورة)`);
+    }
+    if (Object.keys(media).length) r.media = media;
     if (!r.subject) rowErrors.push('المادة غير محددة');
 
     const rawCorrect = get('correct');
@@ -135,7 +175,8 @@ async function parseQuestionSheet(buffer, { defaultSubject } = {}) {
     seen.add(hash);
     valid.push({ ...r, row: i, correct, category, exam_year: examYear, hash });
   }
-  return { valid, errors };
+  const imageCount = valid.reduce((n, r) => n + Object.keys(r.media || {}).length, 0);
+  return { valid, errors, images: imageCount };
 }
 
 /** Inserts validated rows in one transaction; subjects/lessons are created on the fly. Duplicates are skipped. */
@@ -149,6 +190,7 @@ async function importQuestions({ valid, errors }, { adminId, filename }) {
     const lessonIds = new Map();
     let inserted = 0;
     let duplicates = 0;
+    let images = 0;
 
     for (const r of valid) {
       if (!subjectIds.has(r.subject)) {
@@ -183,15 +225,22 @@ async function importQuestions({ valid, errors }, { adminId, filename }) {
         [subjectId, lessonId, r.question, r.option_a, r.option_b, r.option_c, r.option_d, r.correct,
           r.explanation, r.law_note, r.lesson_type, r.category, r.exam_year, r.hash, upload.id],
       );
-      if (res.rowCount) inserted++;
-      else duplicates++;
+      if (res.rowCount) {
+        inserted++;
+        for (const [slot, m] of Object.entries(r.media || {})) {
+          await c.query(
+            `INSERT INTO question_media (question_id, slot, mime, data, hash) VALUES ($1, $2, $3, $4, $5)`,
+            [res.rows[0].id, slot, m.mime, m.buffer, m.hash]);
+          images++;
+        }
+      } else duplicates++;
     }
 
     await c.query(
       `UPDATE question_uploads SET inserted = $2, duplicates = $3, failed = $4, errors = $5 WHERE id = $1`,
       [upload.id, inserted, duplicates, errors.length, JSON.stringify(errors)],
     );
-    return { upload_id: upload.id, total_rows: valid.length + errors.length, inserted, duplicates, failed: errors.length, errors };
+    return { upload_id: upload.id, total_rows: valid.length + errors.length, inserted, duplicates, images, failed: errors.length, errors };
   });
 }
 

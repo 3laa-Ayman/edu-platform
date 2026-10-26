@@ -198,6 +198,10 @@ Views.home = async (el) => {
   });
 };
 
+// ---------------------------------------------------------------- Images (served from /api/media, same origin)
+const qImage = (url, alt) => (url ? `<a href="${esc(url)}" target="_blank" rel="noopener" class="q-img-link"><img class="q-img" src="${esc(url)}" alt="${esc(alt)}" loading="lazy"></a>` : '');
+const optImage = (url, alt) => (url ? `<img class="opt-img" src="${esc(url)}" alt="${esc(alt)}" loading="lazy">` : '');
+
 // ---------------------------------------------------------------- Shared question card (practice + mistakes retry)
 function questionCard(q, idx, total) {
   return `<div class="card qcard">
@@ -206,9 +210,11 @@ function questionCard(q, idx, total) {
       <span>${esc(q.subject || '')}${q.lesson ? ` · ${esc(q.lesson)}` : ''}</span>
       ${q.category === 'past_exam' ? badge(`امتحان سابق${q.exam_year ? ` ${q.exam_year}` : ''}`, 'mid') : ''}
     </div>
-    <h2 class="q-text">${esc(q.question)}</h2>
+    ${q.question ? `<h2 class="q-text">${esc(q.question)}</h2>` : ''}
+    ${qImage(q.image, 'صورة السؤال')}
     <div class="options">
-      ${['A', 'B', 'C', 'D'].map((k, i) => `<button class="option" data-action="choose" data-key="${k}"><span class="opt-key">${'أبجد'[i]}</span>${esc(q.options[k])}</button>`).join('')}
+      ${['A', 'B', 'C', 'D'].map((k, i) => `<button class="option" data-action="choose" data-key="${k}"><span class="opt-key">${'أبجد'[i]}</span>
+        <span class="opt-body">${q.options[k] ? `<span>${esc(q.options[k])}</span>` : ''}${optImage(q.option_images?.[k], `الاختيار ${'أبجد'[i]}`)}</span></button>`).join('')}
     </div>
     <div class="feedback" hidden></div>
     <div class="explain" hidden></div>
@@ -233,8 +239,8 @@ async function showExplanation(card, qid, btn) {
   const r = await API.get(`/catalog/questions/${qid}/explanation`);
   box.hidden = false;
   const law = r.law_note ? `<p class="law">📐 ${esc(r.law_note)}</p>` : '';
-  if (r.explanation) {
-    box.innerHTML = `<div class="src">${r.source === 'question_bank' ? 'شرح من بنك الأسئلة — مجاني' : 'شرح محفوظ — مجاني'}</div><p>${esc(r.explanation)}</p>${law}`;
+  if (r.explanation || r.explanation_image) {
+    box.innerHTML = `<div class="src">${r.source === 'question_bank' ? 'شرح من بنك الأسئلة — مجاني' : 'شرح محفوظ — مجاني'}</div>${r.explanation ? `<p>${esc(r.explanation)}</p>` : ''}${qImage(r.explanation_image, 'صورة الشرح')}${law}`;
     btn.remove();
     return;
   }
@@ -424,7 +430,8 @@ Views.competition = async (el, { id }) => {
     if (c.status === 'finished' && c.my_submitted_at) {
       const { answers } = await API.get(`/competitions/${id}/review`);
       review = `<section class="card"><h2>إجاباتك</h2><ol class="review">${answers.map((a) => `<li class="${a.is_correct ? 'good' : 'bad'}">
-        <p>${esc(a.question_text)}</p><small>إجابتك: ${esc(a.selected_option ? a[`option_${a.selected_option.toLowerCase()}`] : 'لم تُجب')} · الصحيحة: <b>${esc(a[`option_${a.correct_option.toLowerCase()}`])}</b></small></li>`).join('')}</ol></section>`;
+        <p>${esc(a.question_text)}</p>${qImage(a.media.question, 'صورة السؤال')}
+        <small>إجابتك: ${a.selected_option ? `${letterAr(a.selected_option)} ${esc(a[`option_${a.selected_option.toLowerCase()}`])}` : 'لم تُجب'} · الصحيحة: <b>${letterAr(a.correct_option)} ${esc(a[`option_${a.correct_option.toLowerCase()}`])}</b></small></li>`).join('')}</ol></section>`;
     }
     const me = State.user.student_code;
     el.innerHTML = `<div class="page-head"><h1>${esc(c.title)}</h1>${badge(LABELS.compStatus[c.status], LABELS.compTone[c.status])}</div>
@@ -463,8 +470,8 @@ Views.competition = async (el, { id }) => {
 
       el.innerHTML = `<div class="timer-bar"><span>${esc(c.title)}</span><b id="timer">--:--</b><span id="answered"></span></div>
         <form id="cf">${entry.questions.map((q) => `<div class="card qcard">
-          <div class="q-meta"><span>سؤال ${q.number}</span></div><h2 class="q-text">${esc(q.question)}</h2>
-          <div class="options">${q.options.map((o) => `<label class="option radio"><input type="radio" name="q${q.question_id}" value="${o.key}" ${saved[q.question_id] === o.key ? 'checked' : ''}><span>${esc(o.text)}</span></label>`).join('')}</div>
+          <div class="q-meta"><span>سؤال ${q.number}</span></div>${q.question ? `<h2 class="q-text">${esc(q.question)}</h2>` : ''}${qImage(q.image, 'صورة السؤال')}
+          <div class="options">${q.options.map((o) => `<label class="option radio"><input type="radio" name="q${q.question_id}" value="${o.key}" ${saved[q.question_id] === o.key ? 'checked' : ''}><span class="opt-body">${o.text ? `<span>${esc(o.text)}</span>` : ''}${optImage(o.image, 'اختيار')}</span></label>`).join('')}</div>
         </div>`).join('')}
         <button class="btn primary block" type="submit">تسليم الإجابات</button></form>`;
 
@@ -519,6 +526,7 @@ Views.competition = async (el, { id }) => {
   });
 };
 
+const letterAr = (L) => `(${'أبجد'['ABCD'.indexOf(L)]})`;
 const medal = (r) => ({ 1: '🥇', 2: '🥈', 3: '🥉' }[r] || r);
 const fmtDuration = (s) => (s == null ? '—' : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`);
 function table(head, rows) {
