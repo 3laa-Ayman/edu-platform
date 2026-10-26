@@ -353,6 +353,10 @@ function quizResult(el, result, { again, solveSkipped }) {
 }
 
 // ---------------------------------------------------------------- Practice
+/** Lesson select: "الدرس" shown until a choice, then "كل الدروس" + each lesson with its question count. */
+const lessonOptions = (subject) => `<option value="" disabled selected hidden>الدرس</option><option value="all">كل الدروس</option>${
+  (subject?.lessons || []).map((l) => `<option value="${l.id}">${esc(l.name)} (${l.questions})</option>`).join('')}`;
+
 Views.practice = async (el) => {
   // Students only see subjects/lessons that actually have questions.
   const subjects = (await API.get('/catalog/subjects')).subjects
@@ -366,7 +370,7 @@ Views.practice = async (el) => {
         <label>المادة<select name="subject_id" required>
           <option value="" disabled selected hidden>المادة</option>
           ${subjects.map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select></label>
-        <label>الدرس<select name="lesson_id"><option value="">كل الدروس</option></select></label>
+        <label>الدرس<select name="lesson_id" required>${lessonOptions(null)}</select></label>
         <label>النوع<select name="category"><option value="">الكل</option><option value="lesson">دروس</option><option value="past_exam">امتحانات سابقة</option></select></label>
         <label>عدد الأسئلة<select name="limit"><option>5</option><option selected>10</option><option>20</option></select></label>
         <label class="check"><input type="checkbox" name="unsolved_only"> أسئلة جديدة بس (محلتهاش قبل كده)</label>
@@ -376,12 +380,11 @@ Views.practice = async (el) => {
     const form = $('#f', el);
     form.subject_id.addEventListener('change', () => {
       const s = subjects.find((x) => String(x.id) === form.subject_id.value);
-      form.lesson_id.innerHTML = '<option value="">كل الدروس</option>'
-        + (s ? s.lessons.map((l) => `<option value="${l.id}">${esc(l.name)} (${l.questions})</option>`).join('') : '');
+      form.lesson_id.innerHTML = lessonOptions(s);
     });
     onSubmit(form, async (v) => {
       const qs = new URLSearchParams();
-      for (const [k, val] of Object.entries(v)) if (val !== undefined && val !== false) qs.set(k, String(val));
+      for (const [k, val] of Object.entries(v)) if (val !== undefined && val !== false && val !== 'all') qs.set(k, String(val));
       let r;
       try {
         r = await API.get(`/catalog/questions?${qs}`);
