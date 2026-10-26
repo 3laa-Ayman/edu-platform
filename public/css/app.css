@@ -241,7 +241,6 @@ sup, sub { font-size: .72em; line-height: 0; }
 .math-preview:not(:empty)::before { content: 'معاينة: '; color: var(--muted); font-size: .85rem; }
 /* Skipped / unanswered questions */
 .toast.warn { background: var(--mid); color: #fff; }
-.q-skip { display: flex; justify-content: flex-start; margin-top: 12px; }
 .score-split { display: flex; justify-content: center; gap: 16px; flex-wrap: wrap; margin: 10px 0; font-weight: 600; }
 .timer-bar { flex-direction: column; align-items: stretch; gap: 8px; }
 .timer-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
@@ -256,3 +255,7 @@ sup, sub { font-size: .72em; line-height: 0; }
 .qcard.flash { box-shadow: 0 0 0 4px var(--primary-soft); }
 .review li.skip { color: var(--muted); }
 @media (max-width: 760px) { .timer-bar { top: 100px; } }
+/* "Next" is always visible but faded and unclickable until an answer is chosen */
+.q-actions [data-action=skip] { margin-inline-end: auto; }
+.btn[data-action=next]:disabled { opacity: .35; cursor: not-allowed; }
+.next-hint { margin: 8px 0 0; font-size: .82rem; color: var(--muted); text-align: end; }

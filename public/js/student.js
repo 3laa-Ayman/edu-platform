@@ -216,13 +216,14 @@ function questionCard(q, idx, total) {
       ${['A', 'B', 'C', 'D'].map((k, i) => `<button class="option" data-action="choose" data-key="${k}"><span class="opt-key">${'أبجد'[i]}</span>
         <span class="opt-body">${q.options[k] ? `<span>${rich(q.options[k])}</span>` : ''}${optImage(q.option_images?.[k], `الاختيار ${'أبجد'[i]}`)}</span></button>`).join('')}
     </div>
-    <div class="q-skip"><button class="btn ghost tiny" data-action="skip">تخطي السؤال ←</button></div>
     <div class="feedback" hidden></div>
     <div class="explain" hidden></div>
-    <div class="q-actions" hidden>
-      <button class="btn ghost" data-action="explain">عرض الشرح</button>
-      <button class="btn primary" data-action="next">${idx + 1 < total ? 'السؤال التالي' : 'إنهاء'}</button>
+    <div class="q-actions">
+      <button class="btn ghost tiny" data-action="skip">تخطي السؤال ←</button>
+      <button class="btn ghost" data-action="explain" hidden>عرض الشرح</button>
+      <button class="btn primary" data-action="next" disabled title="اختار إجابة الأول">${idx + 1 < total ? 'السؤال التالي' : 'إنهاء'}</button>
     </div>
+    <p class="next-hint">اختار إجابة عشان تقدر تكمل، أو اضغط "تخطي السؤال"</p>
   </div>`;
 }
 
@@ -300,13 +301,17 @@ function runQuiz(el, questions, { answerFn, onDone, allowExplain = true }) {
       if (r.is_correct) correct++;
       else wrong++;
       markOptions(card(), b.dataset.key, r.correct_option);
-      $('.q-skip', card())?.remove();
+      // Answered: no more skipping; "next" becomes active (it stays visible but disabled until now).
+      $('[data-action=skip]', card())?.remove();
+      $('.next-hint', card())?.remove();
+      const next = $('[data-action=next]', card());
+      next.disabled = false;
+      next.removeAttribute('title');
       const fb = $('.feedback', card());
       fb.hidden = false;
       fb.className = `feedback ${r.is_correct ? 'good' : 'bad'}`;
       fb.innerHTML = `${r.is_correct ? '✅ إجابة صحيحة' : '❌ إجابة خاطئة'}${r.note ? ` — <small>${esc(r.note)}</small>` : ''}`;
-      $('.q-actions', card()).hidden = false;
-      if (!allowExplain) $('[data-action=explain]', card())?.remove();
+      if (allowExplain) $('[data-action=explain]', card()).hidden = false;
     }),
     skip: () => {
       skipped.push(questions[i]);
