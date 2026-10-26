@@ -54,7 +54,7 @@ async function student(name, email, phone, parentPhone, parentEmail) {
   const co = await call('POST', '/api/payments/checkout', { token: ahmed.token, body: { plan_code: 'premium', provider: 'paymob' } });
   show('أحمد يدفع بريميم عبر Paymob', `${co.data.payment.amount_egp} جنيه — الحالة: ${co.data.payment.status}`);
   const obj = {
-    id: 7001, amount_cents: 29900, created_at: new Date().toISOString(), currency: 'EGP', error_occured: false, has_parent_transaction: false,
+    id: 7001, amount_cents: 19900, created_at: new Date().toISOString(), currency: 'EGP', error_occured: false, has_parent_transaction: false,
     integration_id: 1, is_3d_secure: true, is_auth: false, is_capture: false, is_refunded: false, is_standalone_payment: true, is_voided: false,
     owner: 1, pending: false, success: true, order: { id: 1, merchant_order_id: co.data.payment.reference }, source_data: { pan: '2346', sub_type: 'MasterCard', type: 'card' },
   };

@@ -416,3 +416,6 @@ CREATE TABLE IF NOT EXISTS announcement_reads (
   read_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (announcement_id, user_id)
 );
+
+-- Mock AI explanations (no GEMINI_API_KEY) used to be cached as if real, hiding the AI button for everyone: remove them.
+DELETE FROM ai_explanations WHERE content LIKE '[شرح تجريبي%';

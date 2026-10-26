@@ -41,6 +41,7 @@ async function callGemini(prompt, images = []) {
     return {
       text: '[شرح تجريبي — أضف GEMINI_API_KEY للحصول على شرح حقيقي] الإجابة الصحيحة تعتمد على تطبيق القاعدة المذكورة في السؤال.',
       usage: { input: Math.ceil(prompt.length / 3), output: 120 },
+      mock: true,
     };
   }
 
@@ -136,8 +137,8 @@ async function explainWithBudget(userId, question) {
     userId, questionId: question.id, status: 'success', input: result.usage.input, output: result.usage.output,
     costUsd: (actualEgp / usdToEgp).toFixed(8), costEgp: actualEgp.toFixed(6),
   });
-  // Cache so every other student gets this explanation for free.
-  await db.query(
+  // Cache so every other student gets this explanation for free (never the mock, or it would hide the AI button for good).
+  if (!result.mock) await db.query(
     `INSERT INTO ai_explanations (question_id, content, model, created_by) VALUES ($1, $2, $3, $4)
      ON CONFLICT (question_id) DO NOTHING`,
     [question.id, result.text, model, userId],

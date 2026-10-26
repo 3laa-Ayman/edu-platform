@@ -108,7 +108,8 @@ async function registerStudent(i) {
   // ---------------- Subscriptions
   ok((await call('GET', '/api/catalog/questions', { token: A.token })).status === 403, 'practice requires subscription');
   const plans = await call('GET', '/api/payments/plans', { token: A.token });
-  ok(plans.data.plans.map((p) => p.price_egp).join(',') === '149,299', 'plans 149 / 299');
+  const price = Object.fromEntries(plans.data.plans.map((p) => [p.code, Number(p.price_egp)]));
+  ok(price.standard > 0 && price.premium > price.standard, `plans ${price.standard} / ${price.premium}`, plans.data);
 
   const co = await call('POST', '/api/payments/checkout', { token: A.token, body: { plan_code: 'premium', provider: 'paymob' } });
   ok(co.status === 201 && co.data.mock, 'paymob checkout (dev mock)', co.data);
@@ -119,7 +120,7 @@ async function registerStudent(i) {
   if (process.env.PAYMOB_HMAC_SECRET) {
     const coD = await call('POST', '/api/payments/checkout', { token: D.token, body: { plan_code: 'standard', provider: 'paymob' } });
     const obj = {
-      id: 990000 + Math.floor(Math.random() * 9999), amount_cents: 14900, created_at: new Date().toISOString(), currency: 'EGP',
+      id: 990000 + Math.floor(Math.random() * 9999), amount_cents: Math.round(price.standard * 100), created_at: new Date().toISOString(), currency: 'EGP',
       error_occured: false, has_parent_transaction: false, integration_id: 1, is_3d_secure: true, is_auth: false, is_capture: false,
       is_refunded: false, is_standalone_payment: true, is_voided: false, owner: 1, pending: false, success: true,
       order: { id: 555, merchant_order_id: coD.data.payment.reference }, source_data: { pan: '2346', sub_type: 'MasterCard', type: 'card' },
@@ -227,7 +228,13 @@ async function registerStudent(i) {
   ok(ai1.status === 200 && ai1.data.source === 'gemini' && ai1.data.usage.cost_egp > 0, `gemini explanation, cost ${ai1.data.usage?.cost_egp} EGP`, ai1.data);
   await call('POST', '/api/catalog/answer', { token: B.token, body: { question_id: qNoExp.id, choice: 'A' } });
   const ai2 = await call('POST', `/api/ai/explain/${qNoExp.id}`, { token: B.token });
-  ok(ai2.data.source === 'ai_cache' && ai2.data.usage.cost_egp === 0, 'second student gets cached AI explanation free');
+  if (ai1.data.explanation.startsWith('[شرح تجريبي')) {
+    // No GEMINI_API_KEY: the mock must never be cached, or it would hide the AI button from everyone.
+    ok(ai2.data.source === 'gemini', 'mock AI explanation is not cached');
+    ok((await call('GET', `/api/catalog/questions/${qNoExp.id}/explanation`, { token: B.token })).data.ai_available, 'AI button still offered after a mock explanation');
+  } else {
+    ok(ai2.data.source === 'ai_cache' && ai2.data.usage.cost_egp === 0, 'second student gets cached AI explanation free');
+  }
   const usage = await call('GET', '/api/ai/usage', { token: A.token });
   ok(usage.data.spent_egp > 0 && usage.data.limit_egp === 100 && usage.data.requests === 1, 'AI usage tracked per student', usage.data);
   ok(usage.data.limit_points === 10000 && usage.data.points_per_egp === 100 && usage.data.remaining_points < 10000, `AI budget shown as points: ${usage.data.remaining_points} / ${usage.data.limit_points}`, usage.data);
@@ -366,11 +373,11 @@ async function registerStudent(i) {
   // Plans: price change + feature toggle is enforced immediately
   const plansAdm = await call('GET', '/api/admin/plans', { token: AT });
   ok(plansAdm.data.plans.length >= 2 && plansAdm.data.features.includes('past_exams'), 'admin lists plans');
-  await call('PATCH', '/api/admin/plans/standard', { token: AT, body: { price_egp: 159, features: { ...plansAdm.data.plans.find((p) => p.code === 'standard').features, practice: false } } });
-  ok((await call('GET', '/api/payments/plans', { token: D.token })).data.plans.find((p) => p.code === 'standard').price_egp === 159, 'new plan price visible to students');
+  await call('PATCH', '/api/admin/plans/standard', { token: AT, body: { price_egp: price.standard + 10, features: { ...plansAdm.data.plans.find((p) => p.code === 'standard').features, practice: false } } });
+  ok((await call('GET', '/api/payments/plans', { token: D.token })).data.plans.find((p) => p.code === 'standard').price_egp === price.standard + 10, 'new plan price visible to students');
   const blockedPractice = await call('GET', '/api/catalog/questions', { token: D.token });
   ok(blockedPractice.status === 403 && blockedPractice.data.error.code === 'PLAN_UPGRADE_REQUIRED', 'disabled plan feature is enforced');
-  await call('PATCH', '/api/admin/plans/standard', { token: AT, body: { price_egp: 149, features: plansAdm.data.plans.find((p) => p.code === 'standard').features } });
+  await call('PATCH', '/api/admin/plans/standard', { token: AT, body: { price_egp: price.standard, features: plansAdm.data.plans.find((p) => p.code === 'standard').features } });
   ok((await call('GET', `/api/catalog/questions?subject_id=${physics.id}`, { token: D.token })).status === 200, 'feature re-enabled');
   const newPlan = await call('POST', '/api/admin/plans', { token: AT, body: { code: `p${rnd}`, name_ar: 'باقة الامتحانات', price_egp: 99, duration_days: 14, rank: 0, features: { practice: true }, is_active: false } });
   ok(newPlan.status === 201, 'admin creates a new plan');
