@@ -19,7 +19,7 @@
   --shadow: 0 1px 2px rgba(20, 24, 50, .05), 0 4px 16px rgba(20, 24, 50, .05);
   color-scheme: light;
 }
-/* Theme: follows the device unless the student picks one with the 🌙/☀️ button (data-theme on <html>). */
+/* Theme: dark by default (set on <html> by theme.js); light when the student picks ☀️. The media query is a fallback if JS is off. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #11131c; --surface: #1a1d29; --surface-2: #232736; --text: #e9ebf3; --muted: #9aa0b8; --border: #2d3244;
