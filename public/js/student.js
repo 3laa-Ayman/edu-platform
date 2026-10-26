@@ -354,12 +354,16 @@ function quizResult(el, result, { again, solveSkipped }) {
 
 // ---------------------------------------------------------------- Practice
 Views.practice = async (el) => {
-  const { subjects } = await API.get('/catalog/subjects');
+  // Students only see subjects/lessons that actually have questions.
+  const subjects = (await API.get('/catalog/subjects')).subjects
+    .filter((s) => s.questions > 0)
+    .map((s) => ({ ...s, lessons: s.lessons.filter((l) => l.questions > 0) }));
+  if (!subjects.length) { el.innerHTML = empty('لسه مفيش أسئلة متاحة للتدريب.'); return; }
   const setup = () => {
     el.innerHTML = `<div class="card">
       <h1>التدريب</h1>
       <form id="f" class="form grid3">
-        <label>المادة<select name="subject_id" required><option value="" disabled selected>اختار المادة</option>
+        <label>المادة<select name="subject_id" required>
           ${subjects.map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select></label>
         <label>الدرس<select name="lesson_id"><option value="">كل الدروس</option></select></label>
         <label>النوع<select name="category"><option value="">الكل</option><option value="lesson">دروس</option><option value="past_exam">امتحانات سابقة</option></select></label>
@@ -374,6 +378,7 @@ Views.practice = async (el) => {
       form.lesson_id.innerHTML = '<option value="">كل الدروس</option>'
         + (s ? s.lessons.map((l) => `<option value="${l.id}">${esc(l.name)} (${l.questions})</option>`).join('') : '');
     });
+    form.subject_id.dispatchEvent(new Event('change')); // fill the lessons of the pre-selected (first) subject
     onSubmit(form, async (v) => {
       const qs = new URLSearchParams();
       for (const [k, val] of Object.entries(v)) if (val !== undefined && val !== false) qs.set(k, String(val));
