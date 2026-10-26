@@ -372,7 +372,7 @@ Views.practice = async (el) => {
           ${subjects.map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select></label>
         <label>الدرس<select name="lesson_id" required>${lessonOptions(null)}</select></label>
         <label>النوع<select name="category"><option value="">الكل</option><option value="lesson">دروس</option><option value="past_exam">امتحانات سابقة</option></select></label>
-        <label>عدد الأسئلة<select name="limit"><option>5</option><option selected>10</option><option>20</option></select></label>
+        <label>عدد الأسئلة<select name="limit">${[10, 20, 30, 40, 50].map((n) => `<option ${n === 10 ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
         <label class="check"><input type="checkbox" name="unsolved_only"> أسئلة جديدة بس (محلتهاش قبل كده)</label>
         <button class="btn primary" type="submit">ابدأ</button>
       </form>
