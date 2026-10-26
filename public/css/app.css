@@ -274,3 +274,5 @@ body { transition: background-color .2s, color .2s; }
 /* Placeholder look for a select that has no choice yet ("المادة") */
 select:invalid { color: var(--muted); }
 select option { color: var(--text); }
+.all-solved { margin-top: 14px; }
+.all-solved p { margin: 6px 0 10px; color: var(--text); }

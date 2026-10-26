@@ -376,8 +376,12 @@ Views.practice = async (el) => {
         <label class="check"><input type="checkbox" name="unsolved_only"> أسئلة جديدة بس (محلتهاش قبل كده)</label>
         <button class="btn primary" type="submit">ابدأ</button>
       </form>
+      <div id="practice-msg"></div>
     </div>`;
     const form = $('#f', el);
+    const msg = $('#practice-msg', el);
+    // Any change to the choices clears a previous "all solved" message.
+    form.addEventListener('change', () => { msg.innerHTML = ''; });
     form.subject_id.addEventListener('change', () => {
       const s = subjects.find((x) => String(x.id) === form.subject_id.value);
       form.lesson_id.innerHTML = lessonOptions(s);
@@ -392,7 +396,22 @@ Views.practice = async (el) => {
         if (isSubError(err)) return subscriptionWall(el, err);
         throw err;
       }
-      if (!r.questions.length) return toast('مفيش أسئلة بالاختيارات دي', 'err');
+      if (!r.questions.length) {
+        if (v.unsolved_only) {
+          // Everything in this scope was already answered at least once.
+          const subject = subjects.find((s) => String(s.id) === v.subject_id);
+          const lesson = subject?.lessons.find((l) => String(l.id) === v.lesson_id);
+          const scope = lesson ? `درس "${esc(lesson.name)}"` : `مادة ${esc(subject?.name || '')}`;
+          msg.innerHTML = `<div class="notice good all-solved">
+            <b>🎉 انت حليت كل الأسئلة</b> في ${scope}${v.category ? ` (${esc(LABELS.category[v.category])})` : ''}!
+            <p>شيل علامة "أسئلة جديدة بس" عشان تراجعها تاني، أو راجع بنك الأخطاء.</p>
+            <div class="row wrap"><button class="btn primary tiny" type="button" data-review>راجع الأسئلة تاني</button>
+            <a class="btn ghost tiny" href="#/mistakes">بنك الأخطاء</a></div></div>`;
+          $('[data-review]', msg).addEventListener('click', () => { form.unsolved_only.checked = false; form.requestSubmit(); });
+          return undefined;
+        }
+        return toast('مفيش أسئلة بالاختيارات دي', 'err');
+      }
       const start = (questions) => runQuiz(el, questions, {
         answerFn: async (q, key, ms) => {
           const a = await API.post('/catalog/answer', { question_id: q.id, choice: key, time_spent_ms: ms });
