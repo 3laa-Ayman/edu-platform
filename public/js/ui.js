@@ -35,9 +35,15 @@ function normalizeMath(text) {
       (_, pre, m, sign, e) => `${pre}${m}×10^{${sign === '-' ? '-' : ''}${Number(e)}}`);
 }
 
-function rich(text) {
-  return esc(normalizeMath(text))
-    .replace(/\*\*([^*\n]+?)\*\*/g, '<strong>$1</strong>') // markdown bold (e.g. in AI explanations)
+/**
+ * A run of English/code inside Arabic text (print(10 // 3), Integer (int), F = m×a^2...). Without an LTR isolate the
+ * browser reorders its brackets and spaces around the Arabic words. Must contain a Latin letter (checked when matching).
+ */
+const LTR_RUN = /(?:[A-Za-z]|[(\[{](?=[A-Za-z0-9]))[A-Za-z0-9 .,:;!?'"=+\-−*/%<>()[\]{}^_×·&|#@$\\~]*[A-Za-z0-9)\]}'"%]/g;
+
+/** Formats one piece of text: escape, then exponents / subscripts. */
+function richChunk(text) {
+  return esc(text)
     // Latin/number formulas: render + keep them left-to-right inside Arabic text.
     .replace(MATH_RUN, (match) => {
       const [, run, tail] = match.match(/^(.*?)([.,]*)$/); // sentence punctuation stays outside the LTR formula
@@ -45,6 +51,20 @@ function rich(text) {
     })
     // Arabic bases (م^2, س^2): only the exponent is converted, the word order is left to the browser.
     .replace(/(\S)([\^_])(?:\{([^{}<>]*)\}|([-−+]?(?:[0-9٠-٩]+(?:\.[0-9٠-٩]+)?|[A-Za-zء-ي])))/g, (_, pre, op, b, r) => pre + supSub(op, b ?? r));
+}
+
+function rich(text) {
+  // Markdown bold (e.g. in AI explanations) → placeholder chars, so it never ends up split by an LTR run.
+  const t = normalizeMath(text).replace(/\*\*([^*\n]+?)\*\*/g, '\u0001$1\u0002');
+  let out = '';
+  let last = 0;
+  for (const m of t.matchAll(LTR_RUN)) {
+    if (!/[A-Za-z]/.test(m[0])) continue;
+    out += `${richChunk(t.slice(last, m.index))}<bdi dir="ltr">${richChunk(m[0])}</bdi>`;
+    last = m.index + m[0].length;
+  }
+  out += richChunk(t.slice(last));
+  return out.replace(/\u0001/g, '<strong>').replace(/\u0002/g, '</strong>');
 }
 
 const fmtDate = (d) => (d ? new Date(d).toLocaleString('ar-EG-u-nu-latn', { dateStyle: 'medium', timeStyle: 'short' }) : '—');

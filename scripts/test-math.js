@@ -55,5 +55,23 @@ for (const evil of ['<sup><img src=x onerror=alert(1)></sup>', '**<script>alert(
   if (unsafe) failed++;
   console.log(`${unsafe ? '❌ UNSAFE' : '✅ safe'}: ${evil}`);
 }
-console.log(failed ? `\n${failed} failed` : `\n🎉 all ${cases.length + 3} math checks passed`);
+// English / code inside Arabic text is kept left-to-right as one piece (brackets don't flip).
+const ltr = [
+  ['في لغة Python، ناتج print(10 // 3) هو:', ['Python', 'print(10 // 3)']],
+  ['Integer (int)', ['Integer (int)']],
+  ['راجع قانون F = m×a^2 كويس', ['F = m×a<sup>2</sup>']],
+  ['لو x = 5، الشرط (x > 3 and x < 10) قيمته', ['x = 5', '(x &gt; 3 and x &lt; 10)']],
+  ['**Note** مهم', ['Note']],
+];
+for (const [input, runs] of ltr) {
+  const html = rich(input); // eslint-disable-line no-undef
+  const got = [...html.matchAll(/<bdi dir="ltr">(.*?)<\/bdi>(?![^<]*<\/bdi>)/g)].map((m) => m[1].replace(/<bdi[^>]*>|<\/bdi>/g, ''));
+  const pass = JSON.stringify(got) === JSON.stringify(runs);
+  if (!pass) failed++;
+  console.log(`${pass ? '✅' : '❌'} LTR ${input}  →  ${JSON.stringify(got)}${pass ? '' : `   (expected ${JSON.stringify(runs)})`}`);
+}
+const boldOk = rich('**Note** مهم').startsWith('<strong>'); // eslint-disable-line no-undef
+if (!boldOk) failed++;
+console.log(`${boldOk ? '✅' : '❌'} bold kept around an LTR run`);
+console.log(failed ? `\n${failed} failed` : `\n🎉 all ${cases.length + ltr.length + 4} math checks passed`);
 process.exit(failed ? 1 : 0);
