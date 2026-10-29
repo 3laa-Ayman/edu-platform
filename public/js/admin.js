@@ -107,6 +107,16 @@ function questionForm(q, subjects) {
       <label>المادة<select name="subject_id" required>${subjects.map((s) => opt(s.id, s.name, subj?.id)).join('')}</select></label>
       <label>الدرس<select name="lesson_id"><option value="">بدون درس</option>${(subj?.lessons || []).map((l) => opt(l.id, l.name, q?.lesson_id)).join('')}</select></label>
     </div>
+    ${q?.passage ? `<fieldset class="features-box admin-passage"><legend>📖 القطعة / الرسمة المشتركة (#${q.passage.id})</legend>
+      <p class="muted hint">⚠️ القطعة دي مشتركة بين كل أسئلتها — أي تعديل هنا بيتطبق عليهم كلهم.</p>
+      <label>نص القطعة<textarea name="passage_text" rows="6">${esc(q.passage.text || '')}</textarea></label>
+      <div class="media-slot">
+        <b>صورة القطعة / الرسمة</b>
+        ${q.passage.image ? `<img src="${esc(q.passage.image)}" alt="صورة القطعة"><label class="check"><input type="checkbox" name="rm_passage_image"> حذف الصورة</label>` : ''}
+        <input type="file" name="img_passage" accept="image/png,image/jpeg,image/webp,image/gif">
+      </div>
+      <label class="check"><input type="checkbox" name="unlink_passage"> فك السؤال ده بس من القطعة</label>
+    </fieldset>` : ''}
     <label>نص السؤال<textarea name="question_text" rows="3">${esc(q?.question_text || '')}</textarea></label>
     <p class="muted hint">✏️ الأس: اكتب <code>10^8</code> أو <code>10^{-19}</code> ← 10<sup>8</sup> · الرقم الصغير تحت: <code>H_2O</code> ← H<sub>2</sub>O</p>
     <div class="math-preview" aria-live="polite"></div>
@@ -195,6 +205,21 @@ function openQuestionModal(q, subjects, onSaved) {
       lesson_type: v.lesson_type ?? null,
       is_active: v.is_active,
     };
+    const p = q?.passage;
+    if (p && !v.unlink_passage) {
+      // Shared passage: saved before the question so the question's duplicate check uses the new passage.
+      const newText = (v.passage_text ?? '').trim();
+      const passageImage = f.img_passage.files[0];
+      if (!newText && (v.rm_passage_image || !p.image) && !passageImage) throw new Error('القطعة لازم يبقى فيها نص أو صورة');
+      if (passageImage) {
+        const fd = new FormData();
+        fd.append('image', await prepareImage(passageImage), passageImage.name);
+        await API.req('PUT', `/admin/passages/${p.id}/image`, undefined, { form: fd });
+      }
+      if (newText !== (p.text || '')) await API.patch(`/admin/passages/${p.id}`, { passage_text: newText });
+      if (v.rm_passage_image && p.image && !passageImage) await API.del(`/admin/passages/${p.id}/image`);
+    }
+    if (p && v.unlink_passage) await API.del(`/admin/questions/${q.id}/passage`);
     const saved = q ? await API.patch(`/admin/questions/${q.id}`, body) : await API.post('/admin/questions', body);
     const id = saved.question.id;
     for (const [slot] of MEDIA_SLOTS) {
@@ -224,6 +249,7 @@ Admin.questions = async (el, params, query) => {
     <section class="card"><div class="card-head"><h2>رفع شيت Excel</h2><button class="btn ghost tiny" data-action="template">⬇ تحميل النموذج</button></div>
       <p class="muted">الأعمدة: السؤال · صورة السؤال · أ · ب · ج · د · الإجابة الصحيحة · الشرح · القانون/الملحوظة · المادة · الدرس · نوع الدرس · التصنيف (درس / امتحان سابق) · سنة الامتحان. المواد والدروس الجديدة بتتضاف لوحدها.</p>
       <p class="muted">🖼 <b>الصور:</b> الصق الصورة جوه صف السؤال (Insert ← Pictures ← <b>Place over Cells</b>). في عمود "صورة السؤال" = صورة السؤال، في عمود اختيار = صورة الاختيار، في عمود الشرح = صورة الشرح. الملف كله لحد 4MB والصورة الواحدة لحد 2MB — لو الصور كتير قسّم الأسئلة على كذا ملف.</p>
+      <p class="muted">📖 <b>القطع والرسومات المشتركة (اختياري):</b> أعمدة <b>رقم القطعة</b> · <b>القطعة</b> · <b>صورة القطعة</b>. الأسئلة اللي ليها نفس "رقم القطعة" بتتربط بقطعة واحدة بتفضل ثابتة فوق أسئلتها والطالب بيتنقل بينهم. اكتب نص القطعة (أو الصق الرسمة في عمود "صورة القطعة") مرة واحدة في أي صف من صفوفها — أو في صف لوحده فيه رقم القطعة بس من غير سؤال.</p>
       <form id="uf" class="form grid3">
         <label class="span2">ملف .xlsx (حتى 4MB)<input type="file" name="file" accept=".xlsx" required></label>
         <label>مادة افتراضية (لو مفيش عمود مادة)<input name="default_subject"></label>
@@ -246,6 +272,7 @@ Admin.questions = async (el, params, query) => {
           (q.media?.question ? `<img class="thumb" src="${esc(q.media.question)}" alt=""> ` : '')
             + rich(q.question_text.length > 70 ? `${q.question_text.slice(0, 70)}…` : q.question_text)
             + (Object.keys(q.media || {}).length ? ` ${badge(`🖼 ${Object.keys(q.media).length}`)}` : '')
+            + (q.passage ? ` <span class="q-passage-tag" title="${esc((q.passage.text || 'رسمة').slice(0, 120))}">${q.passage.text ? '📖' : '🖼️'} قطعة #${q.passage.id}</span>` : '')
             + (q.is_active ? '' : ` ${badge('مخفي', 'bad')}`),
           `${esc(q.subject)}<br><small class="muted">${esc(q.lesson || '')}</small>`,
           esc(LABELS.category[q.category]) + (q.exam_year ? `<br><small class="muted">${q.exam_year}</small>` : ''),
@@ -277,8 +304,8 @@ Admin.questions = async (el, params, query) => {
       const r = await API.upload(`/admin/questions/upload${v.dry_run ? '?dry_run=true' : ''}`, fd);
       const errs = r.errors || [];
       res.innerHTML = `<div class="notice ${errs.length ? 'mid' : 'good'}">${r.dry_run
-        ? `فحص: ${r.valid_rows} صف سليم (فيهم ${r.images} صورة)، ${r.failed} صف فيه أخطاء`
-        : `تم إضافة <b>${r.inserted}</b> سؤال و${r.images} صورة · مكرر (اتجاهل): ${r.duplicates} · فيه أخطاء: ${r.failed}`}</div>
+        ? `فحص: ${r.valid_rows} صف سليم (فيهم ${r.images} صورة${r.passages ? ` و${r.passages} قطعة/رسمة مشتركة` : ''})، ${r.failed} صف فيه أخطاء`
+        : `تم إضافة <b>${r.inserted}</b> سؤال و${r.images} صورة${r.passages ? ` و${r.passages} قطعة/رسمة مشتركة` : ''} · مكرر (اتجاهل): ${r.duplicates} · فيه أخطاء: ${r.failed}`}</div>
         ${errs.length ? table(['الصف', 'الأخطاء'], errs.map((e) => [e.row, esc(e.errors.join('، '))])) : ''}`;
       if (!r.dry_run) { toast(`تم رفع ${r.inserted} سؤال`); setTimeout(reload, 1500); }
     } catch (err) {

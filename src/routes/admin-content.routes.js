@@ -5,7 +5,8 @@ const env = require('../config/env');
 const db = require('../config/db');
 const { validate, idParam, z } = require('../middleware/validate');
 const { hashQuestion } = require('../services/excel.service');
-const { SLOTS, saveMedia, mediaMap } = require('../services/media.service');
+const { SLOTS, saveMedia, mediaMap, sniffMime, sha256, MAX_IMAGE_BYTES } = require('../services/media.service');
+const { passageHash, passageMap } = require('../services/passage.service');
 const { imageUpload } = require('../middleware/upload');
 const { getSettings, updateSettings, SETTINGS_SCHEMA } = require('../services/settings.service');
 const { email, password, fullName } = require('../utils/schemas');
@@ -100,7 +101,8 @@ async function prepareQuestion(q) {
     const { rowCount } = await db.query(`SELECT 1 FROM lessons WHERE id = $1 AND subject_id = $2`, [q.lesson_id, q.subject_id]);
     if (!rowCount) throw badRequest('الدرس لا يتبع هذه المادة');
   }
-  return hashQuestion({ subject: s.name, question: q.question_text, option_a: q.option_a, option_b: q.option_b, option_c: q.option_c, option_d: q.option_d });
+  const { rows: [p] } = q.passage_id ? await db.query(`SELECT content_hash FROM passages WHERE id = $1`, [q.passage_id]) : { rows: [] };
+  return hashQuestion({ subject: s.name, question: q.question_text, option_a: q.option_a, option_b: q.option_b, option_c: q.option_c, option_d: q.option_d, passage_hash: p?.content_hash });
 }
 
 router.post('/questions', validate({ body: questionBody }), async (req, res) => {
@@ -153,6 +155,61 @@ router.put('/questions/:id/media/:slot', imageUpload.single('image'), validate({
 router.delete('/questions/:id/media/:slot', validate({ params: slotParams }), async (req, res) => {
   const r = await db.query(`DELETE FROM question_media WHERE question_id = $1 AND slot = $2`, [req.p.id, req.p.slot]);
   if (!r.rowCount) throw notFound('لا توجد صورة');
+  res.status(204).end();
+});
+
+// ------------------------------------------------------------------ Reading passages / shared figures
+// A passage is shared by several questions: editing it here changes it for all of them.
+const emptyPassage = (err) => {
+  if (err.code === '23514') throw badRequest('القطعة لازم يبقى فيها نص أو صورة');
+  throw err;
+};
+async function rehashPassage(c, id) {
+  const { rows: [p] } = await c.query(`SELECT passage_text, image_hash FROM passages WHERE id = $1`, [id]);
+  try {
+    await c.query(`UPDATE passages SET content_hash = $2 WHERE id = $1`, [id, passageHash(p.passage_text, p.image_hash)]);
+  } catch (err) {
+    if (err.code === '23505') throw conflict('فيه قطعة تانية بنفس النص والصورة بالظبط');
+    throw err;
+  }
+}
+
+router.patch('/passages/:id', validate({ params: idParam, body: z.object({ passage_text: z.string().trim().max(20000) }) }), async (req, res) => {
+  await db.withTransaction(async (c) => {
+    const r = await c.query(`UPDATE passages SET passage_text = NULLIF($2, '') WHERE id = $1`, [req.p.id, req.body.passage_text]);
+    if (!r.rowCount) throw notFound('القطعة غير موجودة');
+    await rehashPassage(c, req.p.id);
+  }).catch(emptyPassage);
+  res.json((await passageMap([req.p.id]))[req.p.id]);
+});
+
+router.put('/passages/:id/image', imageUpload.single('image'), validate({ params: idParam }), async (req, res) => {
+  if (!req.file) throw badRequest('ارفع الصورة في الحقل image');
+  const mime = sniffMime(req.file.buffer);
+  if (!mime) throw badRequest('صيغة الصورة غير مدعومة (PNG / JPG / WEBP / GIF)');
+  if (req.file.buffer.length > MAX_IMAGE_BYTES) throw badRequest('حجم الصورة أكبر من 2MB');
+  await db.withTransaction(async (c) => {
+    const r = await c.query(`UPDATE passages SET image_mime = $2, image_data = $3, image_hash = $4 WHERE id = $1`,
+      [req.p.id, mime, req.file.buffer, sha256(req.file.buffer)]);
+    if (!r.rowCount) throw notFound('القطعة غير موجودة');
+    await rehashPassage(c, req.p.id);
+  }).catch(emptyPassage);
+  res.json((await passageMap([req.p.id]))[req.p.id]);
+});
+
+router.delete('/passages/:id/image', validate({ params: idParam }), async (req, res) => {
+  await db.withTransaction(async (c) => {
+    const r = await c.query(`UPDATE passages SET image_mime = NULL, image_data = NULL, image_hash = NULL WHERE id = $1 AND image_data IS NOT NULL`, [req.p.id]);
+    if (!r.rowCount) throw notFound('لا توجد صورة');
+    await rehashPassage(c, req.p.id);
+  }).catch(emptyPassage);
+  res.status(204).end();
+});
+
+/** Unlinks one question from its passage (the passage stays for its other questions). */
+router.delete('/questions/:id/passage', validate({ params: idParam }), async (req, res) => {
+  const r = await db.query(`UPDATE questions SET passage_id = NULL, updated_at = now() WHERE id = $1 AND passage_id IS NOT NULL`, [req.p.id]);
+  if (!r.rowCount) throw notFound('السؤال مش مربوط بقطعة');
   res.status(204).end();
 });
 

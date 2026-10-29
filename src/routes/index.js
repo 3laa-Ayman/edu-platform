@@ -17,6 +17,17 @@ router.get('/media/q/:qid/:slot/:hash', async (req, res) => {
   if (!m) return res.status(404).end();
   return res.type(m.mime).set('Cache-Control', 'public, max-age=31536000, immutable').send(m.data);
 });
+// Picture of a reading passage / shared figure (same rules as question images).
+router.get('/media/p/:pid/:hash', async (req, res) => {
+  const db = require('../config/db');
+  const pid = Number(req.params.pid);
+  if (!Number.isInteger(pid) || !/^[0-9a-f]{16}$/.test(req.params.hash)) return res.status(404).end();
+  const { rows: [p] } = await db.query(
+    `SELECT image_mime, image_data FROM passages WHERE id = $1 AND image_data IS NOT NULL AND left(image_hash, 16) = $2`,
+    [pid, req.params.hash]);
+  if (!p) return res.status(404).end();
+  return res.type(p.image_mime).set('Cache-Control', 'public, max-age=31536000, immutable').send(p.image_data);
+});
 router.get('/settings/public', async (req, res) => {
   const { getSettings, publicSettings } = require('../services/settings.service');
   res.json(publicSettings(await getSettings()));

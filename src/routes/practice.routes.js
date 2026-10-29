@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const router = require('express').Router();
 const db = require('../config/db');
 const { validate, idParam, z } = require('../middleware/validate');
@@ -55,10 +56,11 @@ router.get('/questions', requireSubscription('practice'), validate({
         AND ($3::text IS NULL OR q.category = $3)
         AND ($4::int IS NULL OR q.exam_year = $4)
         AND ($5::boolean = FALSE OR NOT EXISTS (SELECT 1 FROM attempts a WHERE a.user_id = $6 AND a.question_id = q.id))
-      ORDER BY random()
+      -- Random order of passages/questions, but a passage's questions come together and in their upload order.
+      ORDER BY md5(COALESCE('p' || q.passage_id, 'q' || q.id) || $8), q.id
       LIMIT $7`,
     [f.subject_id ?? null, f.lesson_id ?? null, f.category ?? null, f.exam_year ?? null,
-      f.unsolved_only === 'true', req.user.id, f.limit],
+      f.unsolved_only === 'true', req.user.id, f.limit, crypto.randomUUID()],
   );
   res.json({ questions: await publicQuestions(rows) });
 });

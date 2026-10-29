@@ -1,6 +1,7 @@
 /**
  * Generates templates/questions-template.xlsx with the expected Arabic headers + sample rows,
- * including examples of pictures: one in the "صورة السؤال" column and four as answer options.
+ * including examples of pictures: one in the "صورة السؤال" column and four as answer options,
+ * and of shared passages: a reading passage with 3 questions and one figure shared by 2 questions.
  */
 const fs = require('fs');
 const path = require('path');
@@ -14,6 +15,7 @@ const HEADERS = [
   ['أ', 22], ['ب', 22], ['ج', 22], ['د', 22],
   ['الإجابة الصحيحة', 16], ['الشرح', 40], ['القانون/الملحوظة', 30],
   ['المادة', 14], ['الدرس', 20], ['نوع الدرس', 14], ['التصنيف', 14], ['سنة الامتحان', 12],
+  ['رقم القطعة', 11], ['القطعة', 60], ['صورة القطعة', 28],
 ];
 const COL = Object.fromEntries(HEADERS.map(([h], i) => [h, i])); // 0-based column index
 
@@ -35,6 +37,16 @@ const COL = Object.fromEntries(HEADERS.map(([h], i) => [h, i])); // 0-based colu
     // Pictures as the four options (option text left empty)
     ['أي من الرسومات البيانية التالية يمثل علاقة طردية؟', '', '', '', '', '', 'أ', 'العلاقة الطردية خط مستقيم يمر بنقطة الأصل', 'ص = ك × س', 'رياضيات', 'التناسب', 'مسائل', 'درس', ''],
   ];
+  // Shared passage / figure: same "رقم القطعة" → one passage fixed above its questions (written once, in any of its rows).
+  const PASSAGE = 'الماء أساس الحياة على كوكب الأرض، إذ يغطي نحو 71% من سطحه. ويوجد معظم الماء في المحيطات على هيئة ماء مالح، '
+    + 'بينما لا تتجاوز نسبة الماء العذب 3% تقريباً، يتجمد أغلبها في الأنهار الجليدية. لذلك يدعو العلماء إلى ترشيد استهلاك الماء العذب والحفاظ عليه من التلوث.';
+  rows.push(
+    ['ما النسبة التقريبية لسطح الأرض التي يغطيها الماء؟', '', '3%', '29%', '71%', '97%', 'ج', 'ورد في أول القطعة أن الماء يغطي نحو 71% من سطح الأرض', '', 'لغة عربية', 'القراءة', 'فهم', 'درس', '', '1', PASSAGE, ''],
+    ['أين يتجمد أغلب الماء العذب؟', '', 'في المحيطات', 'في الأنهار الجليدية', 'في البحيرات', 'في المياه الجوفية', 'ب', '', '', 'لغة عربية', 'القراءة', 'فهم', 'درس', '', '1', '', ''],
+    ['الفكرة الرئيسية للقطعة هي:', '', 'أهمية الماء وضرورة ترشيده', 'أنواع المحيطات', 'كيف تتكون الأنهار الجليدية', 'ملوحة مياه البحار', 'أ', '', '', 'لغة عربية', 'القراءة', 'فهم', 'درس', '', '1', '', ''],
+    ['من الشكل: طول الضلع الأفقي يساوي:', '', '3', '4', '5', '6', 'ب', '', '', 'رياضيات', 'نظرية فيثاغورس', 'مسائل', 'درس', '', '2', '', ''],
+    ['من الشكل: مساحة المثلث تساوي:', '', '6', '12', '7.5', '10', 'أ', 'المساحة = ½ × القاعدة × الارتفاع = ½ × 4 × 3 = 6', 'المساحة = ½ × ق × ع', 'رياضيات', 'نظرية فيثاغورس', 'مسائل', 'درس', '', '2', '', ''],
+  );
   rows.forEach((r) => ws.addRow(r));
 
   const place = (name, excelRow, colName, width, height) => {
@@ -45,6 +57,10 @@ const COL = Object.fromEntries(HEADERS.map(([h], i) => [h, i])); // 0-based colu
   place('triangle', 8, 'صورة السؤال', 160, 110);
   ws.getRow(9).height = 90;
   [['graph-a', 'أ'], ['graph-b', 'ب'], ['graph-c', 'ج'], ['graph-d', 'د']].forEach(([n, c]) => place(n, 9, c, 110, 82));
+  ws.getColumn(COL['القطعة'] + 1).alignment = { wrapText: true, vertical: 'top' };
+  // The shared figure is pasted once, in the "صورة القطعة" column of the first row of passage 2.
+  ws.getRow(13).height = 120;
+  place('triangle', 13, 'صورة القطعة', 160, 110);
 
   await wb.xlsx.writeFile(out);
   console.log(`✅ Template written to ${out}`);

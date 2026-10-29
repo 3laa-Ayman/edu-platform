@@ -5,6 +5,7 @@ const { badRequest, conflict, forbidden, notFound } = require('../utils/errors')
 const { recordAnswer } = require('./answer.service');
 const { getTeamOf } = require('./team.service');
 const { mediaMap } = require('./media.service');
+const { passageMap, groupByPassage } = require('./passage.service');
 
 const SUBMIT_GRACE_MS = 30_000;
 
@@ -18,11 +19,11 @@ async function getCompetition(id, client = db) {
 async function renderEntry(entry, client = db) {
   const ids = entry.question_order.map((o) => o.qid);
   const { rows } = await client.query(
-    `SELECT id, question_text, option_a, option_b, option_c, option_d FROM questions WHERE id = ANY($1::bigint[])`,
+    `SELECT id, question_text, option_a, option_b, option_c, option_d, passage_id FROM questions WHERE id = ANY($1::bigint[])`,
     [ids],
   );
   const byId = new Map(rows.map((q) => [q.id, q]));
-  const media = await mediaMap(ids);
+  const [media, passages] = await Promise.all([mediaMap(ids), passageMap(rows.map((q) => q.passage_id))]);
   return {
     entry_id: entry.id,
     started_at: entry.started_at,
@@ -38,6 +39,7 @@ async function renderEntry(entry, client = db) {
         question_id: qid,
         question: q.question_text,
         image: m.question || null,
+        passage: passages[q.passage_id] || null,
         options: LETTERS.map((L, i) => ({ key: L, text: optionText(q, perm[i]), image: m[`option_${perm[i].toLowerCase()}`] || null })),
       };
     }),
@@ -72,10 +74,19 @@ async function startEntry(competitionId, user) {
       teamId = team.id;
     }
 
-    const { rows: qs } = await c.query(`SELECT question_id FROM competition_questions WHERE competition_id = $1`, [comp.id]);
+    const { rows: qs } = await c.query(
+      `SELECT cq.question_id, q.passage_id FROM competition_questions cq JOIN questions q ON q.id = cq.question_id
+        WHERE cq.competition_id = $1 ORDER BY cq.question_id`, [comp.id]);
     if (!qs.length) throw badRequest('لا توجد أسئلة في هذه المسابقة');
     // Each student gets a different question order AND a different option order per question.
-    const order = shuffle(qs.map((r) => r.question_id)).map((qid) => ({ qid, perm: shuffle(LETTERS) }));
+    // A passage's questions move as one block (shuffled inside it), so they stay under their passage.
+    const blocks = new Map();
+    for (const r of qs) {
+      const key = r.passage_id ? `p${r.passage_id}` : `q${r.question_id}`;
+      if (!blocks.has(key)) blocks.set(key, []);
+      blocks.get(key).push(r.question_id);
+    }
+    const order = shuffle([...blocks.values()]).flatMap((b) => shuffle(b)).map((qid) => ({ qid, perm: shuffle(LETTERS) }));
     const deadline = new Date(Math.min(now.getTime() + comp.duration_minutes * 60_000, comp.ends_at.getTime()));
 
     const { rows: [entry] } = await c.query(
@@ -239,15 +250,15 @@ async function review(competitionId, userId) {
   if (new Date() < comp.ends_at) throw forbidden('تظهر الإجابات الصحيحة بعد انتهاء المسابقة');
   const { rows } = await db.query(
     `SELECT q.id AS question_id, q.question_text, q.option_a, q.option_b, q.option_c, q.option_d,
-            q.correct_option, q.explanation, a.selected_option, a.is_correct
+            q.correct_option, q.explanation, q.passage_id, a.selected_option, a.is_correct
        FROM competition_entries e
        JOIN competition_answers a ON a.entry_id = e.id
        JOIN questions q ON q.id = a.question_id
       WHERE e.competition_id = $1 AND e.user_id = $2`,
     [competitionId, userId],
   );
-  const media = await mediaMap(rows.map((r) => r.question_id));
-  return rows.map((r) => ({ ...r, media: media[r.question_id] || {} }));
+  const [media, passages] = await Promise.all([mediaMap(rows.map((r) => r.question_id)), passageMap(rows.map((r) => r.passage_id))]);
+  return groupByPassage(rows).map((r) => ({ ...r, media: media[r.question_id] || {}, passage: passages[r.passage_id] || null }));
 }
 
 module.exports = { getCompetition, startEntry, saveDraft, submitEntry, finalizeExpired, leaderboard, review };

@@ -7,6 +7,7 @@ const { excelUpload } = require('../middleware/upload');
 const { uploadLimiter } = require('../middleware/rateLimit');
 const { parseQuestionSheet, importQuestions } = require('../services/excel.service');
 const { mediaMap } = require('../services/media.service');
+const { passageMap } = require('../services/passage.service');
 const { activatePayment } = require('../services/payment.service');
 const { autoAssignTeams } = require('../services/team.service');
 const { sendWeeklyReportsToAll } = require('../services/report.service');
@@ -38,7 +39,7 @@ router.post('/questions/upload', uploadLimiter, excelUpload.single('file'), asyn
   const defaultSubject = typeof req.body?.default_subject === 'string' ? req.body.default_subject.trim().slice(0, 120) : undefined;
   const parsed = await parseQuestionSheet(req.file.buffer, { defaultSubject });
   if (req.query.dry_run === 'true') {
-    return res.json({ dry_run: true, valid_rows: parsed.valid.length, images: parsed.images, failed: parsed.errors.length, errors: parsed.errors });
+    return res.json({ dry_run: true, valid_rows: parsed.valid.length, images: parsed.images, passages: parsed.passages, failed: parsed.errors.length, errors: parsed.errors });
   }
   if (!parsed.valid.length) throw badRequest('لا يوجد أي صف صالح في الملف', { errors: parsed.errors });
   res.status(201).json(await importQuestions(parsed, { adminId: req.user.id, filename: req.file.originalname }));
@@ -71,13 +72,15 @@ router.get('/questions', validate({
       WHERE ($1::int IS NULL OR q.subject_id = $1) AND ($2::int IS NULL OR q.lesson_id = $2)
         AND ($3::text IS NULL OR q.category = $3)
         AND ($4::boolean = FALSE OR q.explanation IS NULL)
-        AND ($5::text IS NULL OR q.question_text ILIKE '%' || $5 || '%')
-      ORDER BY q.id DESC LIMIT $6 OFFSET $7`,
+        AND ($5::text IS NULL OR q.question_text ILIKE '%' || $5 || '%'
+             OR EXISTS (SELECT 1 FROM passages p WHERE p.id = q.passage_id AND p.passage_text ILIKE '%' || $5 || '%'))
+      -- Newest first, with a passage's questions kept together (in their upload order).
+      ORDER BY MAX(q.id) OVER (PARTITION BY COALESCE(q.passage_id, -q.id)) DESC, q.id LIMIT $6 OFFSET $7`,
     [f.subject_id ?? null, f.lesson_id ?? null, f.category ?? null, f.missing_explanation === 'true',
       f.search ? f.search.replace(/[%_\\]/g, (m) => `\\${m}`) : null, f.limit, (f.page - 1) * f.limit],
   );
-  const media = await mediaMap(rows.map((q) => q.id));
-  res.json({ total: rows[0]?.total ?? 0, items: rows.map(({ total, ...q }) => ({ ...q, media: media[q.id] || {} })) });
+  const [media, passages] = await Promise.all([mediaMap(rows.map((q) => q.id)), passageMap(rows.map((q) => q.passage_id))]);
+  res.json({ total: rows[0]?.total ?? 0, items: rows.map(({ total, ...q }) => ({ ...q, media: media[q.id] || {}, passage: passages[q.passage_id] || null })) });
 });
 
 // ------------------------------------------------------------------ Payments review

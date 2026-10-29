@@ -267,6 +267,27 @@ async function openAnnouncements() {
 const qImage = (url, alt) => (url ? `<a href="${esc(url)}" target="_blank" rel="noopener" class="q-img-link"><img class="q-img" src="${esc(url)}" alt="${esc(alt)}" loading="lazy"></a>` : '');
 const optImage = (url, alt) => (url ? `<img class="opt-img" src="${esc(url)}" alt="${esc(alt)}" loading="lazy">` : '');
 
+// ---------------------------------------------------------------- Reading passage / shared figure (stays fixed above its questions)
+/** range: [first, last] question numbers of this passage, shown in the title when it covers several questions. */
+function passageBox(p, range, { open = true } = {}) {
+  if (!p) return '';
+  const what = p.text ? 'القطعة' : 'الرسمة';
+  const nums = range && range[1] > range[0] ? ` — الأسئلة من ${range[0]} لـ ${range[1]}` : '';
+  return `<details class="passage" data-passage="${p.id}" ${open ? 'open' : ''}>
+    <summary>${p.text ? '📖' : '🖼️'} ${what}${nums} <small class="muted">(اضغط للإخفاء/الإظهار)</small></summary>
+    <div class="passage-body">${p.text ? `<p class="passage-text">${rich(p.text)}</p>` : ''}${qImage(p.image, what)}</div>
+  </details>`;
+}
+/** [first, last] (1-based) of the questions around index i that share its passage. */
+function passageRange(questions, i, pidOf = (q) => q.passage?.id) {
+  const pid = pidOf(questions[i]);
+  let a = i;
+  let b = i;
+  while (a > 0 && pidOf(questions[a - 1]) === pid) a--;
+  while (b < questions.length - 1 && pidOf(questions[b + 1]) === pid) b++;
+  return [a + 1, b + 1];
+}
+
 // ---------------------------------------------------------------- Shared question card (practice + mistakes retry)
 function questionCard(q, idx, total) {
   return `<div class="card qcard">
@@ -346,8 +367,21 @@ function runQuiz(el, questions, { answerFn, onDone, allowExplain = true }) {
   const skipped = [];
   let shownAt = 0;
   const show = () => {
-    el.innerHTML = questionCard(questions[i], i, questions.length);
+    const q = questions[i];
+    if (!$('.q-slot', el)) el.innerHTML = '<div class="passage-slot"></div><div class="q-slot"></div>';
+    // The passage is replaced only when the question belongs to another one, so it stays put (scroll, open/closed) between its questions.
+    const slot = $('.passage-slot', el);
+    const pid = String(q.passage?.id || '');
+    if (slot.dataset.pid !== pid) {
+      slot.dataset.pid = pid;
+      slot.innerHTML = passageBox(q.passage, passageRange(questions, i));
+    }
+    $('.q-slot', el).innerHTML = questionCard(q, i, questions.length);
     shownAt = Date.now();
+    // Next question of a long passage: bring the passage back into view (below the sticky top bar).
+    const barH = $('#topbar')?.offsetHeight || 0;
+    const top = (q.passage ? slot : $('.q-slot', el)).getBoundingClientRect().top;
+    if (top < barH) window.scrollBy({ top: top - barH - 8 });
   };
   const card = () => $('.qcard', el);
   const advance = () => {
@@ -571,7 +605,8 @@ Views.competition = async (el, { id }) => {
     let review = '';
     if (c.status === 'finished' && c.my_submitted_at) {
       const { answers } = await API.get(`/competitions/${id}/review`);
-      review = `<section class="card"><h2>إجاباتك</h2><ol class="review">${answers.map((a) => `<li class="${a.is_correct ? 'good' : a.selected_option ? 'bad' : 'skip'}">
+      review = `<section class="card"><h2>إجاباتك</h2><ol class="review">${answers.map((a, i) => `<li class="${a.is_correct ? 'good' : a.selected_option ? 'bad' : 'skip'}">
+        ${a.passage && answers[i - 1]?.passage?.id !== a.passage.id ? passageBox(a.passage, passageRange(answers, i), { open: false }) : ''}
         <p>${rich(a.question_text)}</p>${qImage(a.media.question, 'صورة السؤال')}
         <small>إجابتك: ${a.selected_option ? `${letterAr(a.selected_option)} ${rich(a[`option_${a.selected_option.toLowerCase()}`])}` : 'لم تُجب'} · الصحيحة: <b>${letterAr(a.correct_option)} ${rich(a[`option_${a.correct_option.toLowerCase()}`])}</b></small></li>`).join('')}</ol></section>`;
     }
@@ -621,10 +656,11 @@ Views.competition = async (el, { id }) => {
 
       el.innerHTML = `<div class="timer-bar"><div class="timer-row"><span>${esc(c.title)}</span><b id="timer">--:--</b><span id="answered"></span><span id="sync" class="sync"></span></div>
           <nav class="qnav" aria-label="أرقام الأسئلة">${entry.questions.map((q) => `<a href="#" data-goto="${q.question_id}" class="${saved[q.question_id] ? 'done' : ''}">${q.number}</a>`).join('')}</nav></div>
-        <form id="cf">${entry.questions.map((q) => `<div class="card qcard" id="cq-${q.question_id}">
+        <form id="cf">${entry.questions.map((q, i) => `${q.passage && entry.questions[i - 1]?.passage?.id !== q.passage.id
+          ? `<div class="passage-group">${passageBox(q.passage, passageRange(entry.questions, i))}` : ''}<div class="card qcard" id="cq-${q.question_id}">
           <div class="q-meta"><span>سؤال ${q.number}</span><span class="unanswered-tag">لم تُجب بعد</span></div>${q.question ? `<h2 class="q-text">${rich(q.question)}</h2>` : ''}${qImage(q.image, 'صورة السؤال')}
           <div class="options">${q.options.map((o) => `<label class="option radio"><input type="radio" name="q${q.question_id}" value="${o.key}" ${saved[q.question_id] === o.key ? 'checked' : ''}><span class="opt-body">${o.text ? `<span>${rich(o.text)}</span>` : ''}${optImage(o.image, 'اختيار')}</span></label>`).join('')}</div>
-        </div>`).join('')}
+        </div>${q.passage && entry.questions[i + 1]?.passage?.id !== q.passage.id ? '</div>' : ''}`).join('')}
         <button class="btn primary block" type="submit">تسليم الإجابات</button></form>`;
 
       const form = $('#cf', el);

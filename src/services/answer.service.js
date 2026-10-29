@@ -32,7 +32,7 @@ async function recordAnswer(client, { userId, question, selected, source, entryI
 }
 
 /** Public projection of a question — never includes the correct answer or explanation (nor its image). */
-const publicQuestion = (q, media = {}) => ({
+const publicQuestion = (q, media = {}, passage = null) => ({
   id: q.id,
   subject_id: q.subject_id,
   subject: q.subject_name,
@@ -44,13 +44,18 @@ const publicQuestion = (q, media = {}) => ({
   options: { A: q.option_a, B: q.option_b, C: q.option_c, D: q.option_d },
   image: media.question || null,
   option_images: { A: media.option_a || null, B: media.option_b || null, C: media.option_c || null, D: media.option_d || null },
+  passage,
 });
 
-/** Adds image URLs to a list of questions (one query for the whole list). */
+/**
+ * Adds image URLs and reading passages to a list of questions (one query each for the whole list).
+ * Questions of the same passage are kept next to each other, so the passage stays on screen between them.
+ */
 async function publicQuestions(rows) {
   const { mediaMap } = require('./media.service');
-  const m = await mediaMap(rows.map((q) => q.id));
-  return rows.map((q) => publicQuestion(q, m[q.id]));
+  const { passageMap, groupByPassage } = require('./passage.service');
+  const [m, p] = await Promise.all([mediaMap(rows.map((q) => q.id)), passageMap(rows.map((q) => q.passage_id))]);
+  return groupByPassage(rows).map((q) => publicQuestion(q, m[q.id], p[q.passage_id] || null));
 }
 
 module.exports = { recordAnswer, publicQuestion, publicQuestions };

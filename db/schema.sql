@@ -419,3 +419,19 @@ CREATE TABLE IF NOT EXISTS announcement_reads (
 
 -- Mock AI explanations (no GEMINI_API_KEY) used to be cached as if real, hiding the AI button for everyone: remove them.
 DELETE FROM ai_explanations WHERE content LIKE '[شرح تجريبي%';
+
+-- ---------------------------------------------------------------------
+-- 12) Reading passages / shared figures: one passage (text and/or picture) shown above several questions
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS passages (
+  id            BIGSERIAL PRIMARY KEY,
+  passage_text  TEXT,
+  image_mime    VARCHAR(30),
+  image_data    BYTEA,
+  image_hash    CHAR(64),
+  content_hash  CHAR(64) NOT NULL UNIQUE,   -- text + picture: the same passage uploaded twice is stored once
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CHECK (passage_text IS NOT NULL OR image_data IS NOT NULL)
+);
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS passage_id BIGINT REFERENCES passages(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_questions_passage ON questions (passage_id) WHERE passage_id IS NOT NULL;

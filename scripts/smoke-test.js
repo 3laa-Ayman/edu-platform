@@ -192,6 +192,16 @@ async function registerStudent(i) {
   const practiceAll = await call('GET', `/api/catalog/questions?limit=50&subject_id=${triQ.subject_id}`, { token: A.token });
   const pTri = practiceAll.data.questions.find((q) => q.id === triQ.id);
   ok(pTri && pTri.image === triQ.media.question, 'students get question image in practice');
+  // Shared passages: same "رقم القطعة" → one passage; its questions come together in practice.
+  const [pa1, pa2, pa3, fig1, fig2] = ['لسطح الأرض', 'يتجمد أغلب', 'الفكرة الرئيسية', 'الضلع الأفقي', 'مساحة المثلث'].map(byText);
+  ok(pa1.passage?.text && [pa2, pa3].every((q) => q.passage?.id === pa1.passage.id), 'reading passage written once is shared by its 3 questions');
+  ok(fig1.passage?.image && !fig1.passage.text && fig2.passage?.id === fig1.passage.id && !fig1.media.question, 'shared figure (passage picture) linked to both questions');
+  ok((await fetch(API + fig1.passage.image)).headers.get('content-type') === 'image/png', 'passage picture served');
+  const readQs = (await call('GET', `/api/catalog/questions?limit=50&subject_id=${pa1.subject_id}`, { token: A.token })).data.questions;
+  // (earlier runs re-use the same passage, so only the passage block as a whole is checked)
+  const pos = readQs.map((q, i) => (q.passage?.id === pa1.passage.id ? i : null)).filter((i) => i !== null);
+  ok(pos.length >= 3 && pos.at(-1) - pos[0] === pos.length - 1 && [pa1, pa2, pa3].every((q) => readQs.some((r) => r.id === q.id && r.passage.text === pa1.passage.text)),
+    'practice keeps a passage\'s questions together, with the passage', readQs.map((q) => [q.id, q.passage?.id]));
   const pinned = await (async () => {
     const fd = new FormData();
     fd.append('image', new Blob([fs.readFileSync(path.join(__dirname, '../templates/images/graph-b.png'))], { type: 'image/png' }), 'x.png');

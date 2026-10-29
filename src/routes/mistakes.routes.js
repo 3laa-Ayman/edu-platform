@@ -3,6 +3,7 @@ const db = require('../config/db');
 const { validate, z, pagination } = require('../middleware/validate');
 const { recordAnswer, publicQuestions } = require('../services/answer.service');
 const { mediaMap } = require('../services/media.service');
+const { passageMap } = require('../services/passage.service');
 const { requireSubscription } = require('../middleware/subscription');
 const { normalizeChoice } = require('../utils/choices');
 const { badRequest, notFound } = require('../utils/errors');
@@ -40,7 +41,7 @@ router.get('/', validate({ query: z.object({ ...filters, ...pagination }) }), as
   const { subject_id, lesson_id, page, limit } = req.q;
   const { rows } = await db.query(
     `SELECT m.question_id, m.wrong_count, m.last_selected_option, m.last_wrong_at,
-            q.question_text, q.option_a, q.option_b, q.option_c, q.option_d, q.correct_option,
+            q.question_text, q.option_a, q.option_b, q.option_c, q.option_d, q.correct_option, q.passage_id,
             s.name AS subject, l.name AS lesson, COUNT(*) OVER()::int AS total
        FROM mistakes m
        JOIN questions q ON q.id = m.question_id
@@ -51,7 +52,8 @@ router.get('/', validate({ query: z.object({ ...filters, ...pagination }) }), as
       LIMIT $4 OFFSET $5`,
     [req.user.id, subject_id ?? null, lesson_id ?? null, limit, (page - 1) * limit],
   );
-  res.json({ page, limit, total: rows[0]?.total ?? 0, items: rows.map(({ total, ...r }) => r) });
+  const passages = await passageMap(rows.map((r) => r.passage_id));
+  res.json({ page, limit, total: rows[0]?.total ?? 0, items: rows.map(({ total, ...r }) => ({ ...r, passage: passages[r.passage_id] || null })) });
 });
 
 /** A re-solve quiz drawn from the mistakes bank (answers hidden). */

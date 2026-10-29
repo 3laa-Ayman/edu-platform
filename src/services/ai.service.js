@@ -3,16 +3,18 @@ const db = require('../config/db');
 const { AppError } = require('../utils/errors');
 const { getSettings, toPoints } = require('./settings.service');
 const { mediaForAi } = require('./media.service');
+const { passageForAi } = require('./passage.service');
 
 const { model, inputUsdPerM, outputUsdPerM, maxOutputTokens } = env.gemini;
 
-function buildPrompt(q) {
+function buildPrompt(q, passage = null) {
   const correctText = q[`option_${q.correct_option.toLowerCase()}`];
   return [
     'أنت مدرس خبير لطلاب الثانوية العامة في مصر. اشرح بالعربية الفصحى المبسطة وباختصار (لا يزيد عن 180 كلمة):',
     '1) لماذا الإجابة الصحيحة صحيحة، 2) لماذا كل اختيار آخر خاطئ باختصار، 3) القانون أو القاعدة المستخدمة إن وجدت.',
     'اكتب الأُسس بالصيغة 10^8 أو 10^{-19} والأرقام السفلية بالصيغة H_2O (المنصة تعرضها كأُسس حقيقية)، ولا تستخدم LaTeX.',
     '',
+    passage?.passage_text ? `القطعة/النص المرتبط بالسؤال:\n${passage.passage_text}\n` : '',
     `السؤال: ${q.question_text}`,
     `أ) ${q.option_a}`,
     `ب) ${q.option_b}`,
@@ -32,7 +34,7 @@ const IMAGE_TOKEN_ALLOWANCE = 1100;
 const reserveFor = (prompt, usdToEgp, imageCount = 0) =>
   costEgp(Math.ceil(prompt.length / 1.5) + 50 + imageCount * IMAGE_TOKEN_ALLOWANCE, maxOutputTokens, usdToEgp);
 
-const SLOT_NAME = { question: 'صورة السؤال', option_a: 'صورة الاختيار أ', option_b: 'صورة الاختيار ب', option_c: 'صورة الاختيار ج', option_d: 'صورة الاختيار د' };
+const SLOT_NAME = { passage: 'الرسمة/صورة القطعة المرتبطة بالسؤال', question: 'صورة السؤال', option_a: 'صورة الاختيار أ', option_b: 'صورة الاختيار ب', option_c: 'صورة الاختيار ج', option_d: 'صورة الاختيار د' };
 
 async function callGemini(prompt, images = []) {
   if (!env.gemini.apiKey) {
@@ -94,8 +96,12 @@ async function logUsage(row) {
  */
 async function explainWithBudget(userId, question) {
   // GIF is not accepted by Gemini; other formats are sent so the model can read diagrams/figures.
-  const images = (await mediaForAi(question.id)).filter((m) => m.mime !== 'image/gif');
-  const prompt = buildPrompt(question) + (images.length ? '\nملحوظة: السؤال يحتوي على صور مرفقة، اعتمد عليها في الشرح.' : '');
+  const passage = await passageForAi(question.passage_id);
+  const images = [
+    ...(passage?.image_data ? [{ slot: 'passage', mime: passage.image_mime, data: passage.image_data }] : []),
+    ...await mediaForAi(question.id),
+  ].filter((m) => m.mime !== 'image/gif');
+  const prompt = buildPrompt(question, passage) + (images.length ? '\nملحوظة: السؤال يحتوي على صور مرفقة، اعتمد عليها في الشرح.' : '');
   const { usd_to_egp: usdToEgp, ai_points_per_egp: rate } = await getSettings();
   const reserve = reserveFor(prompt, usdToEgp, images.length);
 

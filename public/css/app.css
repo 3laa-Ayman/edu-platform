@@ -304,3 +304,22 @@ select option { color: var(--text); }
 .bell-count { position: absolute; top: -4px; inset-inline-end: -4px; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 999px;
   background: var(--bad); color: #fff; font-size: .7rem; font-weight: 700; line-height: 18px; text-align: center; }
 .notice.upgrade { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+
+/* Reading passage / shared figure: fixed above its questions while the student moves between them */
+.passage { max-width: 760px; margin: 0 auto 14px; background: var(--surface); border: 1px solid var(--border); border-inline-start: 4px solid var(--primary); border-radius: var(--radius); box-shadow: var(--shadow); }
+.passage > summary { cursor: pointer; padding: 12px 16px; font-weight: 700; list-style-position: inside; }
+.passage-body { padding: 0 16px 14px; max-height: 45vh; overflow-y: auto; overscroll-behavior: contain; }
+.passage-text { margin: 0 0 10px; line-height: 2; white-space: pre-line; }
+.passage .q-img { max-height: 320px; }
+/* Competition: all questions are on one page, so the passage sticks under the timer while its questions scroll by. */
+.passage-group > .passage { position: sticky; top: 130px; z-index: 5; }
+.passage-group > .passage .passage-body { max-height: 32vh; }
+@media (max-width: 760px) {
+  .passage-group > .passage { top: 190px; }
+  .passage-body { max-height: 38vh; }
+  .passage-group > .passage .passage-body { max-height: 26vh; }
+}
+.review .passage { margin: 0 0 8px; box-shadow: none; }
+.admin-passage { border-inline-start: 4px solid var(--primary); }
+.admin-passage textarea { min-height: 120px; }
+.q-passage-tag { font-size: .78rem; color: var(--primary); white-space: nowrap; }
