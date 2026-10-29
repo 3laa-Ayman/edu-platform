@@ -4,7 +4,7 @@
  *   node scripts/build-questions-sheet.js questions.json out.xlsx
  *
  * JSON: { "defaults": { subject, lesson, lesson_type, category, exam_year }, "questions": [ {
- *   question, A, B, C, D, answer,              // answer: أ/ب/ج/د (or A-D); leave "" when unknown
+ *   question, A, B, C, D, answer,              // answer: أ/ب/ج/د (or A-D) — always filled (solve it when the source has no answer)
  *   explanation, law, subject, lesson, lesson_type, category, exam_year,
  *   passage_no, passage,                       // same passage_no = one shared passage (text written once is enough)
  *   images: { question, A, B, C, D, explanation, passage }   // paths to PNG/JPG files, relative to the JSON file
