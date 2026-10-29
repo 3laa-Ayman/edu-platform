@@ -269,15 +269,44 @@ const optImage = (url, alt) => (url ? `<img class="opt-img" src="${esc(url)}" al
 
 // ---------------------------------------------------------------- Reading passage / shared figure (stays fixed above its questions)
 /** range: [first, last] question numbers of this passage, shown in the title when it covers several questions. */
-function passageBox(p, range, { open = true } = {}) {
+/** A long passage (or a big figure with text) doesn't fit above the question: it goes in a side column / phone drawer. */
+const isLongPassage = (p) => Boolean(p) && ((p.text || '').length > 500 || (Boolean(p.image) && (p.text || '').length > 200));
+
+function passageBox(p, range, { open = true, side = false } = {}) {
   if (!p) return '';
   const what = p.text ? 'القطعة' : 'الرسمة';
   const nums = range && range[1] > range[0] ? ` — الأسئلة من ${range[0]} لـ ${range[1]}` : '';
+  if (side) {
+    // Computer: a sticky column beside the questions. Phone: a drawer opened by the button.
+    return `<div class="p-backdrop" data-passage-close></div>
+      <aside class="passage-side" data-passage="${p.id}" aria-label="${what}">
+        <header class="ps-head"><b>📖 ${what}${nums}</b><button type="button" class="btn ghost tiny ps-close" data-passage-close>✕ إغلاق</button></header>
+        <div class="ps-body">${p.text ? `<p class="passage-text">${rich(p.text)}</p>` : ''}${qImage(p.image, what)}</div>
+      </aside>
+      <button type="button" class="btn primary p-open" data-passage-open>📖 اعرض ${what}${nums}</button>`;
+  }
   return `<details class="passage" data-passage="${p.id}" ${open ? 'open' : ''}>
     <summary>${p.text ? '📖' : '🖼️'} ${what}${nums} <small class="muted">(اضغط للإخفاء/الإظهار)</small></summary>
     <div class="passage-body">${p.text ? `<p class="passage-text">${rich(p.text)}</p>` : ''}${qImage(p.image, what)}</div>
   </details>`;
 }
+// Phone drawer for long passages (one handler for practice and competitions).
+document.addEventListener('click', (e) => {
+  const opener = e.target.closest('[data-passage-open]');
+  const closer = e.target.closest('[data-passage-close]');
+  if (!opener && !closer) return;
+  const box = (opener || closer).closest('.passage-slot, .passage-group');
+  const open = Boolean(opener);
+  box?.querySelector('.passage-side')?.classList.toggle('open', open);
+  box?.querySelector('.p-backdrop')?.classList.toggle('open', open);
+  document.body.classList.toggle('drawer-open', open);
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  $$('.passage-side.open, .p-backdrop.open').forEach((x) => x.classList.remove('open'));
+  document.body.classList.remove('drawer-open');
+});
+
 /** [first, last] (1-based) of the questions around index i that share its passage. */
 function passageRange(questions, i, pidOf = (q) => q.passage?.id) {
   const pid = pidOf(questions[i]);
@@ -368,13 +397,16 @@ function runQuiz(el, questions, { answerFn, onDone, allowExplain = true }) {
   let shownAt = 0;
   const show = () => {
     const q = questions[i];
-    if (!$('.q-slot', el)) el.innerHTML = '<div class="passage-slot"></div><div class="q-slot"></div>';
+    if (!$('.q-slot', el)) el.innerHTML = '<div class="quiz-wrap"><div class="passage-slot"></div><div class="q-slot"></div></div>';
     // The passage is replaced only when the question belongs to another one, so it stays put (scroll, open/closed) between its questions.
     const slot = $('.passage-slot', el);
     const pid = String(q.passage?.id || '');
     if (slot.dataset.pid !== pid) {
       slot.dataset.pid = pid;
-      slot.innerHTML = passageBox(q.passage, passageRange(questions, i));
+      const side = isLongPassage(q.passage);
+      slot.innerHTML = passageBox(q.passage, passageRange(questions, i), { side });
+      $('.quiz-wrap', el).classList.toggle('split', side);
+      document.body.classList.remove('drawer-open');
     }
     $('.q-slot', el).innerHTML = questionCard(q, i, questions.length);
     shownAt = Date.now();
@@ -657,10 +689,12 @@ Views.competition = async (el, { id }) => {
       el.innerHTML = `<div class="timer-bar"><div class="timer-row"><span>${esc(c.title)}</span><b id="timer">--:--</b><span id="answered"></span><span id="sync" class="sync"></span></div>
           <nav class="qnav" aria-label="أرقام الأسئلة">${entry.questions.map((q) => `<a href="#" data-goto="${q.question_id}" class="${saved[q.question_id] ? 'done' : ''}">${q.number}</a>`).join('')}</nav></div>
         <form id="cf">${entry.questions.map((q, i) => `${q.passage && entry.questions[i - 1]?.passage?.id !== q.passage.id
-          ? `<div class="passage-group">${passageBox(q.passage, passageRange(entry.questions, i))}` : ''}<div class="card qcard" id="cq-${q.question_id}">
+          ? (isLongPassage(q.passage)
+            ? `<div class="passage-group split">${passageBox(q.passage, passageRange(entry.questions, i), { side: true })}<div class="pg-qs">`
+            : `<div class="passage-group"><div class="pg-qs">${passageBox(q.passage, passageRange(entry.questions, i))}`) : ''}<div class="card qcard" id="cq-${q.question_id}">
           <div class="q-meta"><span>سؤال ${q.number}</span><span class="unanswered-tag">لم تُجب بعد</span></div>${q.question ? `<h2 class="q-text">${rich(q.question)}</h2>` : ''}${qImage(q.image, 'صورة السؤال')}
           <div class="options">${q.options.map((o) => `<label class="option radio"><input type="radio" name="q${q.question_id}" value="${o.key}" ${saved[q.question_id] === o.key ? 'checked' : ''}><span class="opt-body">${o.text ? `<span>${rich(o.text)}</span>` : ''}${optImage(o.image, 'اختيار')}</span></label>`).join('')}</div>
-        </div>${q.passage && entry.questions[i + 1]?.passage?.id !== q.passage.id ? '</div>' : ''}`).join('')}
+        </div>${q.passage && entry.questions[i + 1]?.passage?.id !== q.passage.id ? '</div></div>' : ''}`).join('')}
         <button class="btn primary block" type="submit">تسليم الإجابات</button></form>`;
 
       const form = $('#cf', el);
