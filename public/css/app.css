@@ -324,7 +324,11 @@ select option { color: var(--text); }
 /* Long passage: a sticky side column on a computer, a slide-in drawer on a phone */
 .passage-side { display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--border); border-inline-start: 4px solid var(--primary); border-radius: var(--radius); box-shadow: var(--shadow); }
 .ps-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--border); }
-.ps-body { padding: 14px 16px; overflow-y: auto; overscroll-behavior: contain; }
+.ps-body { padding: 14px 16px; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; scrollbar-width: thin; scrollbar-color: var(--primary) var(--surface-2); }
+/* A visible scrollbar (macOS and phones hide overlay scrollbars) so a very long passage clearly scrolls. */
+.ps-body::-webkit-scrollbar { width: 10px; }
+.ps-body::-webkit-scrollbar-track { background: var(--surface-2); border-radius: 10px; }
+.ps-body::-webkit-scrollbar-thumb { background: var(--primary); border-radius: 10px; border: 2px solid var(--surface-2); }
 .ps-body .q-img { max-height: 360px; }
 .p-backdrop { display: none; }
 @media (min-width: 1000px) {
