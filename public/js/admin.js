@@ -319,7 +319,12 @@ Admin.questions = async (el, params, query) => {
     edit: (b) => openQuestionModal(list.items.find((x) => String(x.id) === b.dataset.id), subjects, reload),
     del: (b) => run(b, async () => {
       if (!confirm('حذف السؤال؟')) return;
-      const r = await API.del(`/admin/questions/${b.dataset.id}`);
+      const id = b.dataset.id;
+      let r = await API.del(`/admin/questions/${id}`);
+      // Already answered: it was hidden; offer to delete it for good.
+      if (r.hidden && confirm(`السؤال ده اتحل قبل كده (${r.answers} إجابة)، فاتخفى عن الطلاب.\n\nعايز تحذفه نهائيًا؟ ده هيمسح إجاباته من إحصائيات الطلاب وبنك الأخطاء، ومش هينفع ترجعه.`)) {
+        r = await API.del(`/admin/questions/${id}?force=true`);
+      }
       toast(r.message);
       reload();
     }),

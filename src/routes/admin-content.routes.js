@@ -213,14 +213,22 @@ router.delete('/questions/:id/passage', validate({ params: idParam }), async (re
   res.status(204).end();
 });
 
-/** Questions students already answered are hidden (kept for their history); unused ones are deleted. */
-router.delete('/questions/:id', validate({ params: idParam }), async (req, res) => {
-  const { rowCount: used } = await db.query(`SELECT 1 FROM attempts WHERE question_id = $1 LIMIT 1`, [req.p.id]);
-  if (used) {
+/**
+ * Questions students already answered are hidden (kept for their history) unless ?force=true,
+ * which deletes them for good together with their answers, mistakes-bank entries and AI explanations.
+ */
+router.delete('/questions/:id', validate({ params: idParam, query: z.object({ force: z.enum(['true', 'false']).optional() }) }), async (req, res) => {
+  const { rows: [{ n: used }] } = await db.query(`SELECT COUNT(*)::int AS n FROM attempts WHERE question_id = $1`, [req.p.id]);
+  if (used && req.q.force !== 'true') {
     const r = await db.query(`UPDATE questions SET is_active = FALSE, updated_at = now() WHERE id = $1`, [req.p.id]);
     if (!r.rowCount) throw notFound('السؤال غير موجود');
-    return res.json({ deleted: false, hidden: true, message: 'السؤال له إجابات سابقة من الطلاب، فتم إخفاؤه بدل الحذف' });
+    return res.json({ deleted: false, hidden: true, answers: used, message: 'السؤال له إجابات سابقة من الطلاب، فتم إخفاؤه بدل الحذف' });
   }
+  // A student solving a running (or upcoming) competition still has this question on their sheet.
+  const { rowCount: live } = await db.query(
+    `SELECT 1 FROM competition_questions cq JOIN competitions c ON c.id = cq.competition_id
+      WHERE cq.question_id = $1 AND c.ends_at > now() LIMIT 1`, [req.p.id]);
+  if (live) throw conflict('السؤال داخل مسابقة لسه ما خلصتش، احذفه بعد ما المسابقة تخلص أو اخفيه دلوقتي');
   const r = await db.query(`DELETE FROM questions WHERE id = $1`, [req.p.id]);
   if (!r.rowCount) throw notFound('السؤال غير موجود');
   return res.json({ deleted: true, message: 'تم حذف السؤال' });
