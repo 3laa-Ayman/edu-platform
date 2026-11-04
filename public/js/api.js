@@ -4,6 +4,16 @@ const store = {
   set(k, v) { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch { /* storage unavailable */ } },
 };
 
+/** This browser's device id (a copy of the server's cookie): an account works on 2 devices, one at a time. */
+function deviceId() {
+  let d = store.get('deviceId');
+  if (!d) {
+    d = window.crypto?.randomUUID?.() || Array.from({ length: 4 }, () => Math.random().toString(36).slice(2, 10)).join('-');
+    store.set('deviceId', d);
+  }
+  return d;
+}
+
 const API = {
   token: store.get('token'),
 
@@ -31,6 +41,8 @@ const API = {
       if (res.status === 401 && this.token && !url.startsWith('/auth/login')) {
         this.setToken(null);
         State.user = null;
+        // Signed out because the account was opened on another device: say so on the login page.
+        if (data?.error?.code === 'SESSION_REPLACED') sessionStorage.setItem('loginNotice', data.error.message);
         location.hash = '#/login';
       }
       const err = new Error(data?.error?.message || `خطأ (${res.status})`);

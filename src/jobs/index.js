@@ -15,6 +15,7 @@ const JOBS = {
   cleanup: async () => {
     const competitions = await finalizeExpired();
     await db.query(`DELETE FROM rate_limits WHERE reset_at < now() - interval '1 day'`);
+    await db.query(`DELETE FROM device_events WHERE created_at < now() - interval '1 year'`);
     const invites = await db.query(
       `UPDATE team_invites SET status = 'expired', responded_at = now() WHERE status = 'pending' AND created_at < now() - interval '7 days'`);
     const otps = await db.query(`DELETE FROM otp_codes WHERE created_at < now() - interval '2 days'`);

@@ -435,3 +435,36 @@ CREATE TABLE IF NOT EXISTS passages (
 );
 ALTER TABLE questions ADD COLUMN IF NOT EXISTS passage_id BIGINT REFERENCES passages(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS idx_questions_passage ON questions (passage_id) WHERE passage_id IS NOT NULL;
+
+-- ---------------------------------------------------------------------
+-- 12) Account sharing protection: max 2 devices per student, one active session at a time,
+--     email code to add a new device.
+-- ---------------------------------------------------------------------
+ALTER TABLE otp_codes DROP CONSTRAINT IF EXISTS otp_codes_purpose_check;
+ALTER TABLE otp_codes ADD CONSTRAINT otp_codes_purpose_check CHECK (purpose IN ('verify_email', 'reset_password', 'new_device'));
+
+CREATE TABLE IF NOT EXISTS user_devices (
+  id            BIGSERIAL PRIMARY KEY,
+  user_id       BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  key_hash      CHAR(64) NOT NULL,                 -- sha256 of the device id kept in the browser (cookie + storage)
+  name          VARCHAR(80) NOT NULL,              -- e.g. "iPhone · Safari"
+  first_ip      VARCHAR(64),
+  last_ip       VARCHAR(64),
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_seen_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (user_id, key_hash)
+);
+
+-- The one session allowed right now (a new login replaces it → the other device is signed out).
+ALTER TABLE users ADD COLUMN IF NOT EXISTS active_session UUID;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS active_device_id BIGINT REFERENCES user_devices(id) ON DELETE SET NULL;
+
+CREATE TABLE IF NOT EXISTS device_events (
+  id           BIGSERIAL PRIMARY KEY,
+  user_id      BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  type         VARCHAR(24) NOT NULL CHECK (type IN ('added', 'blocked_limit', 'removed_by_student', 'removed_by_admin', 'reset_by_admin')),
+  device_name  VARCHAR(80),
+  ip           VARCHAR(64),
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_device_events_user ON device_events (user_id, created_at DESC);

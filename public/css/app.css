@@ -350,3 +350,17 @@ select option { color: var(--text); }
 .admin-passage { border-inline-start: 4px solid var(--primary); }
 .admin-passage textarea { min-height: 120px; }
 .q-passage-tag { font-size: .78rem; color: var(--primary); white-space: nowrap; }
+
+/* Devices («أجهزتي» + admin) */
+.small { font-size: .85rem; }
+.device-list { display: grid; gap: 10px; margin: 12px 0; }
+.device { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-2); }
+.device.current { border-color: var(--good); }
+.device.empty { border-style: dashed; background: transparent; }
+.device-icon { font-size: 1.4rem; flex: none; width: 1.6em; text-align: center; }
+.device-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }
+.device-names { margin: 6px 0; padding-inline-start: 1.2em; }
+.device-log summary { cursor: pointer; color: var(--muted); margin-top: 8px; }
+.device-log ul { margin: 8px 0 0; padding-inline-start: 1.2em; display: grid; gap: 4px; font-size: .9rem; }
+.device-main > .badge, .device-main > b + .badge { align-self: flex-start; }
+.bell-count { direction: ltr; }

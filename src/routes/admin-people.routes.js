@@ -3,6 +3,7 @@ const router = require('express').Router();
 const bcrypt = require('bcrypt');
 const env = require('../config/env');
 const db = require('../config/db');
+const devices = require('../services/device.service');
 const { validate, idParam, z } = require('../middleware/validate');
 const { nextStudentCode } = require('../utils/ids');
 const { egyptPhone, email, password, fullName } = require('../utils/schemas');
@@ -51,12 +52,22 @@ router.get('/students/:id', validate({ params: idParam }), async (req, res) => {
     db.query(`SELECT COUNT(*)::int AS n FROM mistakes WHERE user_id = $1`, [u.id]),
     subjectPerformance(u.id),
   ]);
+  const [deviceList, events, active] = await Promise.all([
+    devices.listDevices(db, u.id),
+    db.query(`SELECT type, device_name, ip, created_at FROM device_events WHERE user_id = $1 ORDER BY created_at DESC LIMIT 30`, [u.id]),
+    db.query(`SELECT active_device_id FROM users WHERE id = $1`, [u.id]),
+  ]);
   res.json({
     student: u,
     subscriptions: subs.rows,
     payments: payments.rows,
     team: team.rows[0] || null,
     open_mistakes: mistakes.rows[0].n,
+    devices: {
+      max: devices.MAX_DEVICES,
+      items: deviceList.map((d) => ({ ...d, active: d.id === active.rows[0].active_device_id })),
+      events: events.rows,
+    },
     performance: { overall: overall(subjects), subjects },
   });
 });
@@ -88,6 +99,16 @@ router.patch('/students/:id', validate({
     [req.p.id, ...fields.map((k) => b[k])]);
   if (!u) throw notFound('الطالب غير موجود');
   res.json({ student: u });
+});
+
+/** Remove one of the student's devices (signs it out if it is the active one). */
+router.delete('/students/:id/devices/:deviceId', validate({ params: z.object({ id: z.coerce.number().int().positive(), deviceId: z.coerce.number().int().positive() }) }), async (req, res) => {
+  res.json(await devices.removeByAdmin(req.p.id, req.p.deviceId));
+});
+
+/** Remove all of the student's devices: they sign out, and the next login (email code) registers devices again. */
+router.post('/students/:id/devices/reset', validate({ params: idParam }), async (req, res) => {
+  res.json(await devices.removeByAdmin(req.p.id));
 });
 
 /** Set a new password for a student (logs them out of all devices). */

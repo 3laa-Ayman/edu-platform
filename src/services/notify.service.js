@@ -30,8 +30,9 @@ async function sendSms(phone, text) {
 }
 
 async function sendOtpEmail(to, code, purpose) {
-  const title = purpose === 'reset_password' ? 'إعادة تعيين كلمة المرور' : 'تأكيد البريد الإلكتروني';
-  const text = `${title}\nرمز التحقق الخاص بك: ${code}\nصالح لمدة ${env.otp.ttlMinutes} دقائق. لا تشاركه مع أي شخص.`;
+  const title = { reset_password: 'إعادة تعيين كلمة المرور', new_device: 'تسجيل دخول من جهاز جديد' }[purpose] || 'تأكيد البريد الإلكتروني';
+  const warn = purpose === 'new_device' ? '\nلو مش انت اللي بتحاول تدخل، غيّر كلمة المرور فوراً.' : '';
+  const text = `${title}\nرمز التحقق الخاص بك: ${code}\nصالح لمدة ${env.otp.ttlMinutes} دقائق. لا تشاركه مع أي شخص.${warn}`;
   return sendEmail({ to, subject: `${title} — رمز التحقق`, text, html: `<div dir="rtl"><h3>${title}</h3><p>رمز التحقق:</p><h1>${code}</h1></div>` });
 }
 

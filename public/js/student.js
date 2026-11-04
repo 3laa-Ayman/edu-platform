@@ -3,8 +3,12 @@ const Views = {};
 
 // ---------------------------------------------------------------- Auth
 Views.login = async (el) => {
+  const notice = sessionStorage.getItem('loginNotice');
+  sessionStorage.removeItem('loginNotice');
   el.innerHTML = `<div class="auth card">
     <h1>تسجيل الدخول</h1>
+    ${notice ? `<p class="notice mid">📱 ${esc(notice)}</p>` : ''}
+    <div id="device-limit"></div>
     <form id="f" class="form">
       <label>البريد الإلكتروني أو كود الطالب<input name="identifier" required autocomplete="username" placeholder="STU-2026-0001"></label>
       <label>كلمة المرور<input name="password" type="password" required autocomplete="current-password"></label>
@@ -13,12 +17,26 @@ Views.login = async (el) => {
     <p class="links"><a href="#/register">حساب جديد</a> · <a href="#/forgot">نسيت كلمة المرور؟</a></p>
   </div>`;
   onSubmit($('#f', el), async (v) => {
+    $('#device-limit', el).innerHTML = '';
     try {
-      const r = await API.post('/auth/login', v);
+      const r = await API.post('/auth/login', { ...v, device_id: deviceId() });
+      if (r.device_verification) {
+        // New device: confirm with the code sent to the student's email.
+        sessionStorage.setItem('deviceToken', r.device_token);
+        sessionStorage.setItem('deviceEmail', r.email_hint || '');
+        if (r.dev_otp) sessionStorage.setItem('devOtp', r.dev_otp);
+        else sessionStorage.removeItem('devOtp');
+        location.hash = '#/verify-device';
+        return;
+      }
       API.setToken(r.token);
       await State.refresh();
       location.hash = State.user.role === 'admin' ? '#/admin' : '#/';
     } catch (err) {
+      if (err.code === 'DEVICE_LIMIT') {
+        $('#device-limit', el).innerHTML = deviceLimitNotice(err);
+        return;
+      }
       if (err.code === 'EMAIL_NOT_VERIFIED' && v.identifier.includes('@')) {
         sessionStorage.setItem('verifyEmail', v.identifier);
         toast(err.message, 'err');
@@ -27,6 +45,82 @@ Views.login = async (el) => {
       }
       throw err;
     }
+  });
+};
+
+const deviceLimitNotice = (err) => `<div class="notice bad">
+    <b>⛔ الحساب ده مفتوح على ${err.details?.max || 2} أجهزة بالفعل</b>
+    ${err.details?.devices?.length ? `<ul class="device-names">${err.details.devices.map((d) => `<li>📱 ${esc(d)}</li>`).join('')}</ul>` : ''}
+    <small>عشان تدخل من الجهاز ده: ادخل من جهاز منهم ← «أجهزتي» ← شيل الجهاز التاني. ولو مش معاك أي واحد منهم كلّم الإدارة.</small></div>`;
+
+/** Login from a new device: the code sent to the student's email adds this device (max 2). */
+Views.verifyDevice = async (el) => {
+  const token = sessionStorage.getItem('deviceToken');
+  if (!token) { location.hash = '#/login'; return; }
+  const hint = sessionStorage.getItem('deviceEmail');
+  const devOtp = sessionStorage.getItem('devOtp');
+  el.innerHTML = `<div class="auth card">
+    <h1>📱 جهاز جديد</h1>
+    <p class="muted">بتدخل من جهاز أول مرة. أرسلنا رمز من 6 أرقام على ${hint ? `<b class="mono">${esc(hint)}</b>` : 'إيميلك'} — لو مش لاقيه بص في الـ Spam.</p>
+    <p class="notice">الحساب يشتغل على جهازين بالكتير، وعلى جهاز واحد بس في نفس الوقت.</p>
+    ${devOtp ? `<p class="notice">وضع تجريبي — الرمز: <b class="mono">${esc(devOtp)}</b></p>` : ''}
+    <div id="device-limit"></div>
+    <form id="f" class="form">
+      <label>رمز التحقق<input name="code" required inputmode="numeric" maxlength="6" pattern="\\d{6}" class="otp" autocomplete="one-time-code"></label>
+      <button class="btn primary" type="submit">تأكيد الجهاز</button>
+    </form>
+    <p class="links"><a href="#" data-action="resend">إعادة إرسال الرمز</a> · <a href="#/login">رجوع</a></p>
+  </div>`;
+  const done = () => ['deviceToken', 'deviceEmail', 'devOtp'].forEach((k) => sessionStorage.removeItem(k));
+  onSubmit($('#f', el), async (v) => {
+    try {
+      const r = await API.post('/auth/verify-device', { device_token: token, code: v.code });
+      done();
+      API.setToken(r.token);
+      await State.refresh();
+      toast('تم تأكيد الجهاز ✓');
+      location.hash = '#/';
+    } catch (err) {
+      if (err.code === 'DEVICE_LIMIT') { done(); $('#device-limit', el).innerHTML = deviceLimitNotice(err); return; }
+      if (err.status === 401) { done(); location.hash = '#/login'; }
+      throw err;
+    }
+  });
+  onAction(el, {
+    resend: (b) => run(b, async () => {
+      const r = await API.post('/auth/resend-device-otp', { device_token: token });
+      toast(r.message);
+      if (r.dev_otp) { sessionStorage.setItem('devOtp', r.dev_otp); Views.verifyDevice(el); }
+    }),
+  });
+};
+
+/** «أجهزتي»: the 2 devices of the account; the student can remove the other one (limited per month). */
+Views.devices = async (el) => {
+  const d = await API.get('/auth/devices');
+  el.innerHTML = `<h1 class="page-head">📱 أجهزتي</h1>
+    <section class="card">
+      <p class="muted">حسابك يشتغل على <b>${d.max}</b> أجهزة بالكتير، وعلى جهاز واحد بس في نفس الوقت — لو دخلت من الجهاز التاني، الجهاز ده هيتقفل.
+        أي جهاز جديد محتاج رمز على إيميلك.</p>
+      <div class="device-list">${d.devices.map((x) => `<div class="device ${x.current ? 'current' : ''}">
+          <span class="device-icon" aria-hidden="true">${/iPhone|موبايل|iPad|تابلت/.test(x.name) ? '📱' : '💻'}</span>
+          <div class="device-main"><span><b>${esc(x.name)}</b> ${x.current ? badge('الجهاز ده', 'good') : ''}</span>
+            <small class="muted">اتضاف ${fmtDay(x.created_at)} · آخر دخول ${fmtDate(x.last_seen_at)}</small></div>
+          ${x.current ? '' : `<button class="btn danger tiny" data-action="remove" data-id="${x.id}" ${d.removals_left ? '' : 'disabled'}>شيل الجهاز</button>`}
+        </div>`).join('')}
+        ${Array.from({ length: Math.max(d.max - d.devices.length, 0) }, () => '<div class="device empty"><span class="device-icon">＋</span><div class="device-main muted">مكان فاضي لجهاز</div></div>').join('')}
+      </div>
+      <p class="muted small">${d.removals_left
+        ? `تقدر تشيل جهاز ${d.removals_left === 1 ? 'مرة واحدة كمان' : `${d.removals_left} مرات`} في آخر 30 يوم (الحد ${d.removals_per_month}). بعد كده التغيير من الإدارة.`
+        : 'استخدمت كل مرات تغيير الأجهزة المتاحة في آخر 30 يوم — لو محتاج تغيّر جهاز كلّم الإدارة.'}</p>
+    </section>`;
+  onAction(el, {
+    remove: (b) => run(b, async () => {
+      if (!confirm('تشيل الجهاز ده من حسابك؟ لو حد فاتح منه هيتقفل، وهيحتاج رمز على إيميلك عشان يدخل تاني.')) return;
+      await API.del(`/auth/devices/${b.dataset.id}`);
+      toast('تم شيل الجهاز');
+      Views.devices(el);
+    }),
   });
 };
 
@@ -109,7 +203,7 @@ Views.setPassword = async (el) => {
     if (v.password !== v.confirm) throw new Error('كلمتين المرور مش متطابقين');
     let r;
     try {
-      r = await API.post('/auth/set-password', { setup_token: setupToken, password: v.password });
+      r = await API.post('/auth/set-password', { setup_token: setupToken, password: v.password, device_id: deviceId() });
     } catch (err) {
       if (err.status === 401) { sessionStorage.removeItem('setupToken'); location.hash = '#/verify'; }
       throw err;
@@ -179,6 +273,7 @@ Views.home = async (el) => {
         <h1>أهلاً ${esc(u.full_name.split(' ')[0])} 👋</h1>
         <p class="muted">كود الطالب: <b class="mono">${esc(u.student_code)}</b>
           <button class="btn tiny ghost" data-action="copy">نسخ</button> — شاركه مع أصحابك عشان يضيفوك للتيم</p>
+        <p class="muted small"><a href="#/devices">📱 أجهزتي</a></p>
       </div>
       ${sub
         ? `<div class="sub-chip good">${esc(sub.name_ar)}<small>ساري حتى ${fmtDay(sub.ends_at)}</small></div>`

@@ -570,7 +570,9 @@ Admin.students = async (el, params, query) => {
       items.map((s) => [s.student_code ? `<span class="mono">${esc(s.student_code)}</span>` : badge('لم يكمل التسجيل', 'mid'), esc(s.full_name),
         `${esc(s.email)}<br><small class="muted">طالب ${esc(s.phone)} · ولي أمر ${esc(s.parent_phone)}</small>`,
         s.current_plan ? badge(s.current_plan, 'good') : badge('بدون', ''),
-        `${s.is_verified ? '' : badge('غير مفعّل', 'mid')} ${s.is_active ? badge('نشط', 'good') : badge('موقوف', 'bad')}`,
+        `${s.is_verified ? '' : badge('غير مفعّل', 'mid')} ${s.is_active ? badge('نشط', 'good') : badge('موقوف', 'bad')}
+          ${s.blocked_device_attempts ? `<span title="محاولات دخول من أجهزة زيادة في آخر 30 يوم">${badge(`⚠️ أجهزة زيادة ×${s.blocked_device_attempts}`, 'bad')}</span>` : ''}
+          <br><small class="muted">📱 ${s.devices}/2</small>`,
         `<a class="btn primary tiny" href="#/admin/student/${s.id}">إدارة</a>`])) : empty('مفيش طلاب')}
     </section>`;
   onSubmit($('#sf', el), async (v) => { location.hash = `#/admin/students${v.search ? `?search=${encodeURIComponent(v.search)}` : ''}`; });
@@ -633,6 +635,8 @@ Admin.student = async (el, { id }) => {
         <button class="btn primary" type="submit">تغيير كلمة المرور</button></form></section>
     </div>
 
+    ${deviceSection(d.devices)}
+
     <section class="card"><h2>الأداء في المواد</h2>${d.performance.subjects.length ? d.performance.subjects.map((x) => `<div class="perf-row">
       <span>${esc(x.subject)}</span>${bar(x.percent, percentTone(x.percent))}<b class="${percentTone(x.percent)}">${x.percent}%</b><small class="muted">${x.correct}/${x.attempts}</small></div>`).join('') : empty('لسه محلش أسئلة')}</section>
 
@@ -669,8 +673,44 @@ Admin.student = async (el, { id }) => {
       await API.post(`/admin/subscriptions/${b.dataset.id}/cancel`);
       reload();
     }),
+    removeDevice: (b) => run(b, async () => {
+      if (!confirm('تشيل الجهاز ده من حساب الطالب؟ لو فاتح منه هيتقفل.')) return;
+      await API.del(`/admin/students/${id}/devices/${b.dataset.id}`);
+      toast('تم شيل الجهاز');
+      reload();
+    }),
+    resetDevices: (b) => run(b, async () => {
+      if (!confirm('تمسح كل أجهزة الطالب؟ هيتقفل من كل حاجة، وأول دخول بعد كده محتاج رمز على إيميله.')) return;
+      await API.post(`/admin/students/${id}/devices/reset`);
+      toast('تم مسح الأجهزة');
+      reload();
+    }),
   });
 };
+
+const DEVICE_EVENTS = {
+  added: ['جهاز جديد اتضاف', ''],
+  blocked_limit: ['⚠️ محاولة دخول من جهاز زيادة', 'bad'],
+  removed_by_student: ['الطالب شال جهاز', 'mid'],
+  removed_by_admin: ['الإدارة شالت جهاز', 'mid'],
+  reset_by_admin: ['الإدارة مسحت كل الأجهزة', 'mid'],
+};
+/** Student's devices (max 2, one session at a time) + history; repeated "extra device" attempts hint at a shared account. */
+function deviceSection(dv) {
+  const blocked = dv.events.filter((e) => e.type === 'blocked_limit' && Date.now() - new Date(e.created_at) < 30 * 86400000).length;
+  return `<section class="card">
+    <div class="card-head"><h2>الأجهزة (${dv.items.length}/${dv.max})</h2>
+      ${dv.items.length ? '<button class="btn ghost tiny" data-action="resetDevices">مسح كل الأجهزة</button>' : ''}</div>
+    ${blocked ? `<p class="notice bad">⚠️ ${blocked} محاولة دخول من أجهزة زيادة في آخر 30 يوم — ممكن يكون بيشارك حسابه.</p>` : ''}
+    ${dv.items.length ? table(['الجهاز', 'اتضاف', 'آخر دخول', 'IP', ''], dv.items.map((x) => [
+      `${esc(x.name)} ${x.active ? badge('فاتح دلوقتي', 'good') : ''}`, fmtDate(x.created_at), fmtDate(x.last_seen_at),
+      `<span class="mono">${esc(x.last_ip || '—')}</span>`,
+      `<button class="btn danger tiny" data-action="removeDevice" data-id="${x.id}">شيل</button>`])) : empty('مفيش أجهزة مسجلة — أول دخول هيحتاج رمز على الإيميل')}
+    ${dv.events.length ? `<details class="device-log"><summary>سجل الأجهزة (${dv.events.length})</summary>
+      <ul>${dv.events.map((e) => `<li><span class="${DEVICE_EVENTS[e.type]?.[1] || ''}">${DEVICE_EVENTS[e.type]?.[0] || esc(e.type)}</span>
+        ${e.device_name ? `— ${esc(e.device_name)}` : ''} <small class="muted">${fmtDate(e.created_at)}${e.ip ? ` · <span class="mono">${esc(e.ip)}</span>` : ''}</small></li>`).join('')}</ul></details>` : ''}
+  </section>`;
+}
 
 // ---------------------------------------------------------------- Products
 const productFields = (p = {}) => `

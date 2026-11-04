@@ -6,13 +6,16 @@ const { badRequest, tooMany } = require('../utils/errors');
 const generateCode = () => crypto.randomInt(0, 1_000_000).toString().padStart(6, '0');
 const hashCode = (userId, code) => crypto.createHmac('sha256', env.jwtSecret).update(`${userId}:${code}`).digest('hex');
 
-/** Creates a fresh OTP (invalidating previous ones). Only the HMAC of the code is stored. */
-async function issueOtp(client, userId, purpose) {
+/**
+ * Creates a fresh OTP (invalidating previous ones). Only the HMAC of the code is stored.
+ * cooldown=false: for codes that follow a correct password (new-device login), already rate limited per IP.
+ */
+async function issueOtp(client, userId, purpose, { cooldown = true } = {}) {
   const { rows } = await client.query(
     `SELECT created_at FROM otp_codes WHERE user_id = $1 AND purpose = $2 ORDER BY created_at DESC LIMIT 1`,
     [userId, purpose],
   );
-  if (rows[0] && Date.now() - rows[0].created_at.getTime() < env.otp.resendCooldownSec * 1000) {
+  if (cooldown && rows[0] && Date.now() - rows[0].created_at.getTime() < env.otp.resendCooldownSec * 1000) {
     throw tooMany(`انتظر ${env.otp.resendCooldownSec} ثانية قبل طلب رمز جديد`);
   }
   await client.query(

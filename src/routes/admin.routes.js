@@ -139,7 +139,11 @@ router.get('/students', validate({ query: z.object({ search: z.string().max(100)
             u.ai_spent_egp, u.ai_limit_egp, u.created_at,
             (SELECT p.name_ar FROM subscriptions s JOIN plans p ON p.code = s.plan_code
               WHERE s.user_id = u.id AND s.status = 'active' AND now() BETWEEN s.starts_at AND s.ends_at
-              ORDER BY p.rank DESC LIMIT 1) AS current_plan
+              ORDER BY p.rank DESC LIMIT 1) AS current_plan,
+            (SELECT COUNT(*)::int FROM user_devices d WHERE d.user_id = u.id) AS devices,
+            -- tries from a 3rd device in the last 30 days: a hint that the account is being shared
+            (SELECT COUNT(*)::int FROM device_events e WHERE e.user_id = u.id AND e.type = 'blocked_limit'
+                AND e.created_at > now() - interval '30 days') AS blocked_device_attempts
        FROM users u
       WHERE u.role = 'student' AND ($1::text IS NULL OR u.student_code ILIKE $1 || '%' OR u.email ILIKE $1 || '%' OR u.full_name ILIKE '%' || $1 || '%')
       ORDER BY u.id DESC LIMIT $2 OFFSET $3`,

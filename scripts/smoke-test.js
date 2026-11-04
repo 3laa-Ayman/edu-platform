@@ -43,9 +43,17 @@ async function registerStudent(i) {
   ok(r.status === 201 && r.data.dev_otp && !r.data.student_code, `register student ${i} (no password, no code yet)`, r.data);
   const v = await call('POST', '/api/auth/verify-otp', { body: { email, code: r.data.dev_otp } });
   ok(v.status === 200 && v.data.setup_token && !v.data.token, `verify OTP student ${i} → setup token only`, v.data);
-  const p = await call('POST', '/api/auth/set-password', { body: { setup_token: v.data.setup_token, password: 'Passw0rd123' } });
+  const device = `dev-${i}-${rnd}-${crypto.randomBytes(6).toString('hex')}`;
+  const p = await call('POST', '/api/auth/set-password', { body: { setup_token: v.data.setup_token, password: 'Passw0rd123', device_id: device } });
   ok(p.status === 201 && /^STU-\d{4}-\d{4,}$/.test(p.data.student_code) && p.data.token, `set password student ${i} → ${p.data.student_code}`, p.data);
-  return { email, code: p.data.student_code, token: p.data.token, id: p.data.user.id, setupToken: v.data.setup_token };
+  return { email, code: p.data.student_code, token: p.data.token, id: p.data.user.id, setupToken: v.data.setup_token, device };
+}
+
+/** Student login from a given device; a new device is confirmed with the emailed code (dev echo). */
+async function studentLogin(identifier, password, device) {
+  const r = await call('POST', '/api/auth/login', { body: { identifier, password, device_id: device } });
+  if (r.status !== 200 || !r.data.device_verification) return r;
+  return call('POST', '/api/auth/verify-device', { body: { device_token: r.data.device_token, code: r.data.dev_otp } });
 }
 
 (async () => {
@@ -77,8 +85,9 @@ async function registerStudent(i) {
   const again = await call('POST', '/api/auth/register', { body: { full_name: 'otp user 2', email: `o-${rnd}@t.com`, phone: '01033333334', parent_phone: '01044444445' } });
   ok(again.status === 201 || again.status === 429, 'unfinished registration can restart with same email');
 
-  const loginByCode = await call('POST', '/api/auth/login', { body: { identifier: A.code, password: 'Passw0rd123' } });
-  ok(loginByCode.status === 200 && loginByCode.data.token, 'login with student code');
+  const loginByCode = await call('POST', '/api/auth/login', { body: { identifier: A.code, password: 'Passw0rd123', device_id: A.device } });
+  ok(loginByCode.status === 200 && loginByCode.data.token, 'login with student code (known device, no code)');
+  A.token = loginByCode.data.token; // one session at a time: the newest login is the valid one
   ok((await call('POST', '/api/auth/login', { body: { identifier: A.email, password: 'nope1234' } })).status === 401, 'wrong password → 401');
   ok((await call('GET', '/api/auth/me')).status === 401, 'no token → 401');
   ok((await call('GET', '/api/auth/me', { token: 'abc.def.ghi' })).status === 401, 'forged token → 401');
@@ -414,13 +423,13 @@ async function registerStudent(i) {
   const nsId = ns.data.student.id;
   ok((await call('PATCH', `/api/admin/students/${nsId}`, { token: AT, body: { full_name: 'طالب معدّل', parent_email: `pp-${rnd}@t.com` } })).data.student.full_name === 'طالب معدّل', 'admin edits student');
   await call('POST', `/api/admin/students/${nsId}/password`, { token: AT, body: { new_password: 'NewPassw0rd1' } });
-  const nsLogin = await call('POST', '/api/auth/login', { body: { identifier: `adm-${rnd}@t.com`, password: 'NewPassw0rd1' } });
+  const nsLogin = await studentLogin(`adm-${rnd}@t.com`, 'NewPassw0rd1', `dev-ns-${rnd}-0000000000`);
   ok(nsLogin.status === 200, 'admin-set password works');
   const pendingStu = (await call('GET', `/api/admin/students?search=o-${rnd}`, { token: AT })).data.items[0];
   ok(pendingStu && pendingStu.student_code === null, 'admin sees unfinished registration (no code)');
   const fin = await call('POST', `/api/admin/students/${pendingStu.id}/password`, { token: AT, body: { new_password: 'Finish3dIt' } });
   ok(/^STU-/.test(fin.data.student_code), `admin completes registration → ${fin.data.student_code}`);
-  ok((await call('POST', '/api/auth/login', { body: { identifier: fin.data.student_code, password: 'Finish3dIt' } })).status === 200, 'completed student can log in');
+  ok((await studentLogin(fin.data.student_code, 'Finish3dIt', `dev-fin-${rnd}-0000000000`)).status === 200, 'completed student can log in');
   const gift = await call('POST', `/api/admin/students/${nsId}/subscriptions`, { token: AT, body: { plan_code: 'premium', days: 7 } });
   ok(gift.status === 201, 'admin grants subscription');
   ok((await call('GET', '/api/auth/me', { token: nsLogin.data.token })).data.subscription?.plan_code === 'premium', 'granted subscription active');
@@ -482,6 +491,56 @@ async function registerStudent(i) {
   ok((await call('POST', '/api/admin/me/password', { token: a2.data.token, body: { current_password: 'wrong', new_password: 'Another99x' } })).status === 400, 'change password needs current password');
   ok((await call('PATCH', `/api/admin/admins/${na.data.admin.id}`, { token: AT, body: { is_active: false } })).data.admin.is_active === false, 'admin disables another admin');
   ok((await call('GET', '/api/admin/dashboard', { token: a2.data.token })).status === 401, 'disabled admin logged out');
+
+  // ---------------- Account sharing: 2 devices, one session at a time, email code for a new device
+  const X = await registerStudent(77);
+  const devB = `dev-b-${rnd}-1111111111`;
+  const devC = `dev-c-${rnd}-2222222222`;
+  const dLb = await call('POST', '/api/auth/login', { body: { identifier: X.email, password: 'Passw0rd123', device_id: devB } });
+  ok(dLb.status === 200 && dLb.data.device_verification && !dLb.data.token && dLb.data.email_hint.includes('***'), 'new device → email code required (no token yet)', dLb.data);
+  ok((await call('POST', '/api/auth/verify-device', { body: { device_token: dLb.data.device_token, code: dLb.data.dev_otp === '000000' ? '111111' : '000000' } })).status === 400, 'wrong device code rejected');
+  const dVb = await call('POST', '/api/auth/verify-device', { body: { device_token: dLb.data.device_token, code: dLb.data.dev_otp } });
+  ok(dVb.status === 200 && dVb.data.token, 'device code → second device added + logged in');
+  const dReplaced = await call('GET', '/api/auth/me', { token: X.token });
+  ok(dReplaced.status === 401 && dReplaced.data.error.code === 'SESSION_REPLACED', 'first device signed out (one session at a time)');
+  const dLc = await call('POST', '/api/auth/login', { body: { identifier: X.email, password: 'Passw0rd123', device_id: devC } });
+  ok(dLc.status === 403 && dLc.data.error.code === 'DEVICE_LIMIT' && dLc.data.error.details.devices.length === 2, 'third device refused (max 2)', dLc.data);
+  const dBack = await call('POST', '/api/auth/login', { body: { identifier: X.email, password: 'Passw0rd123', device_id: X.device } });
+  ok(dBack.status === 200 && dBack.data.token, 'known device logs back in without a code');
+  ok((await call('GET', '/api/auth/me', { token: dVb.data.token })).status === 401, 'other device signed out again');
+  const dViaCookie = await fetch(`${API}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: `edu_did=${devB}` }, body: JSON.stringify({ identifier: X.email, password: 'Passw0rd123', device_id: devC }) });
+  const dVcData = await dViaCookie.json();
+  ok(dViaCookie.status === 200 && dVcData.token && (dViaCookie.headers.get('set-cookie') || '').includes(`edu_did=${devB}`), 'device cookie wins over the page copy');
+  let XT = dVcData.token;
+  const dMyDev = await call('GET', '/api/auth/devices', { token: XT });
+  ok(dMyDev.data.devices.length === 2 && dMyDev.data.devices.filter((d) => d.current).length === 1 && dMyDev.data.removals_left === 2, 'student sees 2 devices, current marked', dMyDev.data);
+  const dCur = dMyDev.data.devices.find((d) => d.current);
+  const dOther = dMyDev.data.devices.find((d) => !d.current);
+  ok((await call('DELETE', `/api/auth/devices/${dCur.id}`, { token: XT })).status === 400, 'cannot remove the device in use');
+  const dRm1 = await call('DELETE', `/api/auth/devices/${dOther.id}`, { token: XT });
+  ok(dRm1.status === 200 && dRm1.data.removals_left === 1, 'student removes the other device');
+  const dLc2 = await studentLogin(X.email, 'Passw0rd123', devC);
+  ok(dLc2.status === 200 && dLc2.data.token, 'freed slot → new device can be added');
+  XT = (await call('POST', '/api/auth/login', { body: { identifier: X.email, password: 'Passw0rd123', device_id: devB } })).data.token;
+  const dDevs2 = (await call('GET', '/api/auth/devices', { token: XT })).data.devices;
+  ok((await call('DELETE', `/api/auth/devices/${dDevs2.find((d) => !d.current).id}`, { token: XT })).data.removals_left === 0, 'second removal uses the monthly allowance');
+  await studentLogin(X.email, 'Passw0rd123', `dev-d-${rnd}-3333333333`);
+  XT = (await call('POST', '/api/auth/login', { body: { identifier: X.email, password: 'Passw0rd123', device_id: devB } })).data.token;
+  const dDevs3 = (await call('GET', '/api/auth/devices', { token: XT })).data.devices;
+  const dRm3 = await call('DELETE', `/api/auth/devices/${dDevs3.find((d) => !d.current).id}`, { token: XT });
+  ok(dRm3.status === 403 && dRm3.data.error.code === 'DEVICE_REMOVAL_LIMIT', 'third removal in 30 days → ask the admin');
+  const dFlag = (await call('GET', `/api/admin/students?search=${encodeURIComponent(X.code)}`, { token: AT })).data.items[0];
+  ok(dFlag.devices === 2 && dFlag.blocked_device_attempts >= 1, 'admin list flags extra-device attempts', dFlag);
+  const dXd = await call('GET', `/api/admin/students/${X.id}`, { token: AT });
+  ok(dXd.data.devices.items.length === 2 && dXd.data.devices.items.some((d) => d.active) && dXd.data.devices.events.some((e) => e.type === 'blocked_limit'), 'admin sees devices + history');
+  const dActive = dXd.data.devices.items.find((d) => d.active);
+  ok((await call('DELETE', `/api/admin/students/${X.id}/devices/${dActive.id}`, { token: AT })).status === 200, 'admin removes a device');
+  ok((await call('GET', '/api/auth/me', { token: XT })).status === 401, 'removed active device is signed out');
+  ok((await call('POST', `/api/admin/students/${X.id}/devices/reset`, { token: AT })).data.removed === 1, 'admin resets all devices');
+  ok((await call('GET', `/api/admin/students/${X.id}`, { token: AT })).data.devices.items.length === 0, 'no devices after reset');
+  ok((await call('POST', `/api/admin/students/${A.id}/devices/reset`, { token: X.token })).status === 401, 'students cannot use admin device tools');
+  const dAdminAgain = await call('POST', '/api/auth/login', { body: { identifier: process.env.ADMIN_EMAIL || 'admin@example.com', password: process.env.ADMIN_PASSWORD || 'ChangeMe!2026', device_id: devC } });
+  ok(dAdminAgain.status === 200 && dAdminAgain.data.token && (await call('GET', '/api/admin/dashboard', { token: AT })).status === 200, 'admins are not limited by devices/sessions');
 
   console.log(`\n🎉 All ${passed} checks passed`);
 })().catch((e) => { console.error(e); process.exit(1); });

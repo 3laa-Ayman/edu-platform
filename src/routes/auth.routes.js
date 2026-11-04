@@ -2,8 +2,9 @@ const router = require('express').Router();
 const bcrypt = require('bcrypt');
 const env = require('../config/env');
 const db = require('../config/db');
-const { validate, z } = require('../middleware/validate');
-const { authenticate, signToken, signSetupToken, verifySetupToken } = require('../middleware/auth');
+const { validate, idParam, z } = require('../middleware/validate');
+const { authenticate, signToken, signSetupToken, verifySetupToken, signDeviceToken, verifyDeviceToken } = require('../middleware/auth');
+const devices = require('../services/device.service');
 const { authLimiter, otpLimiter } = require('../middleware/rateLimit');
 const { getActiveSubscription } = require('../middleware/subscription');
 const { nextStudentCode } = require('../utils/ids');
@@ -18,6 +19,9 @@ const otpCode = z.string().trim().regex(/^\d{6}$/, 'رمز التحقق 6 أرق
 // Used when the email is unknown, so response time does not reveal whether an account exists.
 const DUMMY_HASH = bcrypt.hashSync('timing-equalizer', 10);
 const devOtp = (code) => (env.otp.devEcho ? { dev_otp: code } : {});
+const deviceId = z.string().max(100).optional(); // the browser's copy of its device id (the cookie wins)
+/** "a***@gmail.com" — tells the student where the code went without exposing the full address. */
+const maskEmail = (e) => e.replace(/^(.)[^@]*(@.*)$/, (_, a, d) => `${a}***${d}`);
 
 /**
  * Registration (3 steps):
@@ -77,12 +81,14 @@ router.post('/verify-otp', authLimiter, validate({ body: z.object({ email, code:
 });
 
 router.post('/set-password', authLimiter, validate({
-  body: z.object({ setup_token: z.string().min(10).max(1000), password }),
+  body: z.object({ setup_token: z.string().min(10).max(1000), password, device_id: deviceId }),
 }), async (req, res) => {
   const { sub } = verifySetupToken(req.body.setup_token);
   const hash = await bcrypt.hash(req.body.password, env.bcryptRounds);
+  const keyHash = devices.hashKey(devices.deviceKey(req, res));
+  let sid;
   const user = await db.withTransaction(async (c) => {
-    const { rows: [u] } = await c.query(`SELECT * FROM users WHERE id = $1 FOR UPDATE`, [sub]);
+    const { rows: [u] } = await c.query(`SELECT * FROM users WHERE id = $1 FOR NO KEY UPDATE`, [sub]);
     if (!u || !u.is_verified) throw badRequest('أكّد بريدك الإلكتروني أولاً');
     // Single use: once a password exists, this step is closed (changes go through "forgot password").
     if (u.password_hash) throw conflict('تم تعيين كلمة المرور بالفعل، سجّل الدخول');
@@ -90,12 +96,15 @@ router.post('/set-password', authLimiter, validate({
     const { rows: [done] } = await c.query(
       `UPDATE users SET password_hash = $2, student_code = $3, updated_at = now() WHERE id = $1 RETURNING *`,
       [u.id, hash, studentCode]);
+    // The email was just confirmed on this browser: it becomes the account's first device, no extra code.
+    const device = await devices.addDevice(c, done, keyHash, req);
+    sid = await devices.startSession(c, done.id, device, req);
     return done;
   });
   res.status(201).json({
     message: `تم إنشاء حسابك بنجاح — كود الطالب الخاص بك: ${user.student_code}`,
     student_code: user.student_code,
-    token: signToken(user),
+    token: signToken(user, sid),
     user: profile(user),
   });
 });
@@ -112,7 +121,7 @@ router.post('/resend-otp', otpLimiter, validate({ body: z.object({ email }) }), 
 });
 
 router.post('/login', authLimiter, validate({
-  body: z.object({ identifier: z.string().trim().min(3).max(255), password: z.string().min(1).max(72) }),
+  body: z.object({ identifier: z.string().trim().min(3).max(255), password: z.string().min(1).max(72), device_id: deviceId }),
 }), async (req, res) => {
   const id = req.body.identifier.toLowerCase();
   const { rows } = await db.query(
@@ -122,7 +131,64 @@ router.post('/login', authLimiter, validate({
   if (!user?.password_hash || !ok) throw unauthorized('البريد/الكود أو كلمة المرور غير صحيحة');
   if (!user.is_active) throw forbidden('تم إيقاف هذا الحساب، تواصل مع الدعم', 'ACCOUNT_DISABLED');
   if (!user.is_verified) throw forbidden('يجب تأكيد البريد الإلكتروني أولاً', 'EMAIL_NOT_VERIFIED');
-  res.json({ token: signToken(user), user: profile(user) });
+  if (user.role === 'admin') return res.json({ token: signToken(user), user: profile(user) });
+
+  // Students: a known device logs straight in (signing the other device out); a new one needs the email code.
+  const keyHash = devices.hashKey(devices.deviceKey(req, res));
+  const known = await devices.findDevice(db, user.id, keyHash);
+  if (known) {
+    const sid = await db.withTransaction((c) => devices.startSession(c, user.id, known, req));
+    return res.json({ token: signToken(user, sid), user: profile(user) });
+  }
+  await devices.assertRoom(db, user, req);
+  const code = await issueOtp(db, user.id, 'new_device', { cooldown: false });
+  await sendOtpEmail(user.email, code, 'new_device');
+  res.json({
+    device_verification: true,
+    device_token: signDeviceToken(user, keyHash),
+    email_hint: maskEmail(user.email),
+    message: 'ده جهاز جديد — أرسلنا رمز تأكيد على إيميلك',
+    ...devOtp(code),
+  });
+});
+
+/** Second step of a login from a new device: the email code → the device is added (max 2) and the session starts. */
+router.post('/verify-device', authLimiter, validate({
+  body: z.object({ device_token: z.string().min(10).max(1000), code: otpCode }),
+}), async (req, res) => {
+  const { sub, dk } = verifyDeviceToken(req.body.device_token);
+  await consumeOtp(sub, 'new_device', req.body.code);
+  const { user, sid } = await db.withTransaction(async (c) => {
+    const { rows: [u] } = await c.query(`SELECT * FROM users WHERE id = $1 FOR NO KEY UPDATE`, [sub]);
+    if (!u?.is_active) throw forbidden('تم إيقاف هذا الحساب، تواصل مع الدعم', 'ACCOUNT_DISABLED');
+    const device = await devices.addDevice(c, u, dk, req);
+    return { user: u, sid: await devices.startSession(c, u.id, device, req) };
+  });
+  res.json({ token: signToken(user, sid), user: profile(user), message: 'تم تأكيد الجهاز' });
+});
+
+router.post('/resend-device-otp', otpLimiter, validate({ body: z.object({ device_token: z.string().min(10).max(1000) }) }), async (req, res) => {
+  const { sub } = verifyDeviceToken(req.body.device_token);
+  const { rows: [u] } = await db.query(`SELECT id, email FROM users WHERE id = $1 AND is_active`, [sub]);
+  if (!u) throw unauthorized();
+  const code = await issueOtp(db, u.id, 'new_device');
+  await sendOtpEmail(u.email, code, 'new_device');
+  res.json({ message: 'أرسلنا رمز جديد', ...devOtp(code) });
+});
+
+/** The student's devices (max 2) — they can remove the other one, a limited number of times a month. */
+router.get('/devices', authenticate, async (req, res) => {
+  const list = await devices.listDevices(db, req.user.id);
+  res.json({
+    devices: list.map((d) => ({ id: d.id, name: d.name, created_at: d.created_at, last_seen_at: d.last_seen_at, current: d.id === req.user.active_device_id })),
+    max: devices.MAX_DEVICES,
+    removals_left: await devices.removalsLeft(db, req.user.id),
+    removals_per_month: devices.REMOVALS_PER_MONTH,
+  });
+});
+
+router.delete('/devices/:id', authenticate, validate({ params: idParam }), async (req, res) => {
+  res.json(await devices.removeByStudent(req.user.id, req.p.id, req.user.active_device_id));
 });
 
 router.post('/forgot-password', otpLimiter, validate({ body: z.object({ email }) }), async (req, res) => {

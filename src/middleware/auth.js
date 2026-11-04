@@ -1,12 +1,13 @@
 const jwt = require('jsonwebtoken');
 const env = require('../config/env');
 const db = require('../config/db');
-const { unauthorized, forbidden } = require('../utils/errors');
+const { AppError, unauthorized, forbidden } = require('../utils/errors');
 
 const ISSUER = 'edu-platform';
 
-function signToken(user) {
-  return jwt.sign({ sub: user.id, role: user.role, tv: user.token_version }, env.jwtSecret, {
+/** sid: the student's session id (only one is valid at a time, see device.service). */
+function signToken(user, sid) {
+  return jwt.sign({ sub: user.id, role: user.role, tv: user.token_version, ...(sid ? { sid } : {}) }, env.jwtSecret, {
     expiresIn: env.jwtExpiresIn,
     issuer: ISSUER,
     algorithm: 'HS256',
@@ -31,6 +32,21 @@ function verifySetupToken(token) {
   }
 }
 
+/** Short-lived token between "password OK on a new device" and "email code entered" (POST /auth/verify-device). */
+const DEVICE_AUDIENCE = 'new-device';
+function signDeviceToken(user, keyHash) {
+  return jwt.sign({ sub: user.id, purpose: DEVICE_AUDIENCE, dk: keyHash }, env.jwtSecret, {
+    expiresIn: '15m', issuer: ISSUER, audience: DEVICE_AUDIENCE, algorithm: 'HS256',
+  });
+}
+function verifyDeviceToken(token) {
+  try {
+    return jwt.verify(token, env.jwtSecret, { algorithms: ['HS256'], issuer: ISSUER, audience: DEVICE_AUDIENCE });
+  } catch {
+    throw unauthorized('انتهت مهلة تأكيد الجهاز، سجّل الدخول من جديد');
+  }
+}
+
 /** Verifies the Bearer JWT and loads the user (so disabled accounts / revoked tokens are rejected immediately). */
 async function authenticate(req, res, next) {
   const [scheme, token] = (req.headers.authorization || '').split(' ');
@@ -45,12 +61,16 @@ async function authenticate(req, res, next) {
   if (payload.purpose) throw unauthorized(); // setup tokens are not login tokens
 
   const { rows } = await db.query(
-    `SELECT id, student_code, full_name, email, role, is_verified, is_active, token_version
+    `SELECT id, student_code, full_name, email, role, is_verified, is_active, token_version, active_session, active_device_id
        FROM users WHERE id = $1`,
     [payload.sub],
   );
   const user = rows[0];
   if (!user || !user.is_active || user.token_version !== payload.tv) throw unauthorized();
+  // Students: one session at a time — an older token means the account was opened on another device since.
+  if (user.role === 'student' && (!payload.sid || payload.sid !== user.active_session)) {
+    throw new AppError(401, 'اتفتح حسابك من جهاز تاني، فاتقفل هنا. الحساب يتفتح على جهاز واحد بس في نفس الوقت.', 'SESSION_REPLACED');
+  }
   req.user = user;
   next();
 }
@@ -60,4 +80,4 @@ const requireRole = (...roles) => (req, res, next) => {
   next();
 };
 
-module.exports = { signToken, signSetupToken, verifySetupToken, authenticate, requireRole, requireAdmin: requireRole('admin') };
+module.exports = { signToken, signSetupToken, verifySetupToken, signDeviceToken, verifyDeviceToken, authenticate, requireRole, requireAdmin: requireRole('admin') };
