@@ -9,9 +9,27 @@ function grade(percent) {
   return 'يحتاج تحسين';
 }
 
-/** Accuracy % per subject, optionally within a date range. Every attempt counts (practice, retries, competitions). */
+/**
+ * Per-subject results. All-time (home page, admin) reads the counters in user_subject_stats (kept by triggers);
+ * a date range (weekly parent report) counts that period's answers.
+ */
 async function subjectPerformance(userId, { from = null, to = null } = {}) {
-  const { rows } = await db.query(
+  const { rows } = from || to ? await countAttempts(userId, from, to) : await db.query(
+    `SELECT s.id AS subject_id, s.name AS subject, st.attempts, st.correct,
+            (SELECT COUNT(*)::int FROM mistakes m WHERE m.user_id = $1 AND m.subject_id = s.id) AS open_mistakes
+       FROM user_subject_stats st JOIN subjects s ON s.id = st.subject_id
+      WHERE st.user_id = $1 AND st.attempts > 0
+      ORDER BY s.name`,
+    [userId],
+  );
+  return rows.map((r) => {
+    const percent = r.attempts ? Math.round((r.correct / r.attempts) * 1000) / 10 : null;
+    return { ...r, percent, rating: grade(percent) };
+  });
+}
+
+function countAttempts(userId, from, to) {
+  return db.query(
     `SELECT s.id AS subject_id, s.name AS subject,
             COUNT(a.id)::int AS attempts,
             COUNT(a.id) FILTER (WHERE a.is_correct)::int AS correct,
@@ -26,10 +44,6 @@ async function subjectPerformance(userId, { from = null, to = null } = {}) {
       ORDER BY s.name`,
     [userId, from, to],
   );
-  return rows.map((r) => {
-    const percent = r.attempts ? Math.round((r.correct / r.attempts) * 1000) / 10 : null;
-    return { ...r, percent, rating: grade(percent) };
-  });
 }
 
 function overall(subjects) {
@@ -39,4 +53,4 @@ function overall(subjects) {
   return { attempts, correct, percent, rating: grade(percent) };
 }
 
-module.exports = { subjectPerformance, overall, grade };
+module.exports = { subjectPerformance, countAttempts, overall, grade };

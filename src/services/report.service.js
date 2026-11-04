@@ -83,18 +83,72 @@ async function sendParentReport(userId, days = 7) {
   return { status, channel, report };
 }
 
-async function sendWeeklyReportsToAll() {
-  const { rows } = await db.query(`SELECT id FROM users WHERE role = 'student' AND is_verified AND is_active AND student_code IS NOT NULL`);
+/*
+ * Weekly reports for every student, in batches: one serverless call is limited to ~60 s, and sending thousands of
+ * emails takes much longer. A "run" (job_runs.started_at) makes every student due once; each batch sends to due
+ * students for a time budget (several at a time), and the caller starts the next batch until none are left.
+ * A lease (locked_until) keeps two batches from sending to the same students.
+ */
+const RUN = 'parent-reports';
+const BATCH_MS = Number(process.env.REPORT_BATCH_MS) || 40_000;
+const CONCURRENCY = 8;
+const DUE = `
+  FROM users u
+ WHERE u.role = 'student' AND u.is_verified AND u.is_active AND u.student_code IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM parent_reports r WHERE r.user_id = u.id AND r.sent_at >= $1)`;
+
+/** Starts a new run: every student gets a report (again). */
+async function startWeeklyReports() {
+  await db.query(
+    `INSERT INTO job_runs (name, started_at) VALUES ($1, now())
+     ON CONFLICT (name) DO UPDATE SET started_at = now(), updated_at = now()`, [RUN]);
+}
+
+async function countDue() {
+  const { rows: [r] } = await db.query(
+    `SELECT COUNT(*)::int AS n FROM job_runs j CROSS JOIN LATERAL (SELECT u.id ${DUE.replaceAll('$1', 'j.started_at')}) d WHERE j.name = $1`, [RUN]);
+  return r.n;
+}
+
+/** One batch of the current run. Returns { sent, failed, remaining } (busy: another batch is running). */
+async function sendDueReports({ budgetMs = BATCH_MS } = {}) {
+  const deadline = Date.now() + budgetMs;
+  const { rows: [lease] } = await db.query(
+    `UPDATE job_runs SET locked_until = now() + make_interval(secs => $2), updated_at = now()
+      WHERE name = $1 AND started_at IS NOT NULL AND (locked_until IS NULL OR locked_until < now())
+      RETURNING started_at`, [RUN, Math.ceil(budgetMs / 1000) + 30]);
+  if (!lease) return { busy: true, sent: 0, failed: 0, remaining: await countDue() };
   let sent = 0;
   let failed = 0;
-  for (const { id } of rows) {
-    const r = await sendParentReport(id).catch(() => ({ status: 'failed' }));
-    if (r.status === 'sent') sent++;
-    else failed++;
+  try {
+    while (Date.now() < deadline) {
+      const { rows } = await db.query(`SELECT u.id ${DUE} ORDER BY u.id LIMIT 200`, [lease.started_at]);
+      if (!rows.length) break;
+      let next = 0;
+      await Promise.all(Array.from({ length: Math.min(CONCURRENCY, rows.length) }, async () => {
+        while (next < rows.length && Date.now() < deadline) {
+          const { id } = rows[next++];
+          const r = await sendParentReport(id).catch((e) => recordFailure(id, e));
+          if (r.status === 'sent') sent++;
+          else failed++;
+        }
+      }));
+    }
+  } finally {
+    await db.query(`UPDATE job_runs SET locked_until = NULL WHERE name = $1`, [RUN]);
   }
-  return { students: rows.length, sent, failed };
+  return { sent, failed, remaining: await countDue() };
+}
+
+/** A report that could not even be built still counts as done for this run (so it is not retried forever). */
+async function recordFailure(userId, err) {
+  const day = toDate(new Date());
+  await db.query(
+    `INSERT INTO parent_reports (user_id, period_start, period_end, summary, channel, status, error)
+     VALUES ($1, $2, $2, '{}', 'log', 'failed', $3)`, [userId, day, String(err?.message || err).slice(0, 500)]).catch(() => {});
+  return { status: 'failed' };
 }
 
 const escapeHtml = (s) => s.replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 
-module.exports = { buildReport, formatReportText, sendParentReport, sendWeeklyReportsToAll };
+module.exports = { buildReport, formatReportText, sendParentReport, startWeeklyReports, sendDueReports, countDue };

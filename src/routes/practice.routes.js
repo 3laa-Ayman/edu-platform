@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const router = require('express').Router();
 const db = require('../config/db');
+const { cached } = require('../utils/cache');
 const { validate, idParam, z } = require('../middleware/validate');
 const { requireSubscription } = require('../middleware/subscription');
 const { recordAnswer, publicQuestions } = require('../services/answer.service');
@@ -22,7 +23,8 @@ async function getQuestion(id) {
 
 /** Subjects → lessons tree with question counts (for navigation menus). */
 router.get('/subjects', async (req, res) => {
-  const { rows } = await db.query(
+  // Same for every student and counts every question: cached briefly (admin changes clear it).
+  const { rows } = await cached('catalog:subjects', 60_000, () => db.query(
     `SELECT s.id, s.name,
             COALESCE(json_agg(json_build_object('id', l.id, 'name', l.name, 'lesson_type', l.lesson_type,
                      'questions', (SELECT COUNT(*) FROM questions q WHERE q.lesson_id = l.id AND q.is_active)))
@@ -30,7 +32,7 @@ router.get('/subjects', async (req, res) => {
             (SELECT COUNT(*)::int FROM questions q WHERE q.subject_id = s.id AND q.is_active) AS questions
        FROM subjects s LEFT JOIN lessons l ON l.subject_id = s.id
       GROUP BY s.id ORDER BY s.name`,
-  );
+  ));
   res.json({ subjects: rows });
 });
 

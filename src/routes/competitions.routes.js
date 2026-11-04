@@ -1,4 +1,5 @@
 const router = require('express').Router();
+const { cached } = require('../utils/cache');
 const db = require('../config/db');
 const { validate, idParam, z } = require('../middleware/validate');
 const { requireSubscription } = require('../middleware/subscription');
@@ -52,7 +53,8 @@ router.post('/:id/submit', validate({
 });
 
 router.get('/:id/leaderboard', validate({ params: idParam }), async (req, res) => {
-  res.json(await svc.leaderboard(req.p.id));
+  // Everyone refreshes the ranking at the same moments (end of a competition): computed once per 10 seconds.
+  res.json(await cached(`leaderboard:${req.p.id}`, 10_000, () => svc.leaderboard(req.p.id)));
 });
 
 router.get('/:id/review', validate({ params: idParam }), async (req, res) => {

@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const bcrypt = require('bcrypt');
@@ -7,13 +8,26 @@ const { parseQuestionSheet, importQuestions } = require('./services/excel.servic
 
 const MIGRATION_LOCK = 724002; // pg advisory lock key — serverless cold starts may migrate concurrently
 
-/** Applies db/schema.sql (idempotent). */
-async function migrate() {
+/**
+ * Applies db/schema.sql (idempotent). Skipped when this exact schema was already applied: serverless cold starts
+ * are frequent under load, and re-running the whole file each time would lock tables and rescan big ones.
+ * force: always apply (the CLI `npm run migrate`).
+ */
+async function migrate({ force = false } = {}) {
   const sql = fs.readFileSync(path.join(__dirname, '../db/schema.sql'), 'utf8');
+  const hash = crypto.createHash('sha256').update(sql).digest('hex');
+  const applied = async (c) => {
+    const { rows: [t] } = await c.query(`SELECT to_regclass('schema_migrations') IS NOT NULL AS ok`);
+    return t.ok && (await c.query(`SELECT 1 FROM schema_migrations WHERE hash = $1`, [hash])).rowCount > 0;
+  };
+  if (!force && await applied(db)) return { applied: false };
   await db.withTransaction(async (c) => {
     await c.query('SELECT pg_advisory_xact_lock($1)', [MIGRATION_LOCK]);
+    if (!force && await applied(c)) return; // another instance applied it while we waited
     await c.query(sql);
+    await c.query(`INSERT INTO schema_migrations (hash) VALUES ($1) ON CONFLICT (hash) DO UPDATE SET applied_at = now()`, [hash]);
   });
+  return { applied: true };
 }
 
 /**

@@ -13,7 +13,7 @@ router.get('/:job', async (req, res) => {
   const expected = Buffer.from(`Bearer ${secret}`);
   const given = Buffer.from(req.headers.authorization || '');
   if (given.length !== expected.length || !crypto.timingSafeEqual(given, expected)) throw unauthorized();
-  res.json({ job: req.params.job, result: await runJob(req.params.job) });
+  res.json({ job: req.params.job, result: await runJob(req.params.job, { baseUrl: `${req.protocol}://${req.get('host')}` }) });
 });
 
 module.exports = router;

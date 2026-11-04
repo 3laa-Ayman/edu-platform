@@ -332,11 +332,15 @@ async function markAnnouncementRead(b) {
 }
 
 /** The 🔔 in the top bar: unread count, and a list of every current announcement. */
-async function refreshBell() {
+const BELL_TTL_MS = 60_000; // page navigation reuses the last answer for a minute (fewer requests under load)
+let bellCache = { at: 0, data: null };
+async function refreshBell(force = true) {
   const b = $('#bell');
   if (!b) return null;
   try {
-    const data = await API.get('/announcements');
+    const fresh = !force && bellCache.data && Date.now() - bellCache.at < BELL_TTL_MS;
+    const data = fresh ? bellCache.data : await API.get('/announcements');
+    bellCache = fresh ? bellCache : { at: Date.now(), data };
     const n = $('.bell-count', b);
     n.textContent = data.unread > 9 ? '9+' : data.unread;
     n.hidden = !data.unread;

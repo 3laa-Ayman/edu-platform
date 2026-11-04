@@ -33,7 +33,7 @@ Admin.dashboard = async (el) => {
   onAction(el, {
     reports: (b) => run(b, async () => {
       const r = await API.post('/admin/reports/send-weekly');
-      toast(`تم: ${r.sent} تقرير، فشل ${r.failed}`);
+      toast(`اتبعت ${r.sent} تقرير${r.failed ? `، وفشل ${r.failed}` : ''}${r.remaining ? ` — والباقي (${r.remaining}) بيتبعت في الخلفية` : ''}`);
     }),
   });
 };

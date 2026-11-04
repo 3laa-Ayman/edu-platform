@@ -2,18 +2,21 @@ const cron = require('node-cron');
 const env = require('../config/env');
 const db = require('../config/db');
 const { autoAssignTeams } = require('../services/team.service');
-const { sendWeeklyReportsToAll } = require('../services/report.service');
+const { startWeeklyReports, sendDueReports } = require('../services/report.service');
 const { finalizeExpired } = require('../services/competition.service');
 
 /** Job registry — run by node-cron on a normal server, or by Vercel Cron via /api/cron/:job. */
 const JOBS = {
   // Group students without a team before the Friday competition.
   'auto-assign-teams': () => autoAssignTeams(),
-  // Weekly parent reports.
-  'parent-reports': sendWeeklyReportsToAll,
+  // Weekly parent reports: starts the run, then batch after batch (see report.service).
+  'parent-reports': async (ctx) => { await startWeeklyReports(); return continueReports(ctx); },
+  'parent-reports-continue': (ctx) => continueReports(ctx),
   // Housekeeping.
   cleanup: async () => {
     const competitions = await finalizeExpired();
+    // Safety net: finishes a report run whose batch chain stopped (e.g. a failed call).
+    const reports = await sendDueReports({ budgetMs: 20_000 });
     await db.query(`DELETE FROM rate_limits WHERE reset_at < now() - interval '1 day'`);
     await db.query(`DELETE FROM device_events WHERE created_at < now() - interval '1 year'`);
     const invites = await db.query(
@@ -25,12 +28,33 @@ const JOBS = {
     const payments = await db.query(
       `UPDATE payments SET status = 'failed', admin_note = 'expired', updated_at = now()
         WHERE status = 'pending' AND method_type = 'gateway' AND created_at < now() - interval '3 days'`);
-    return { competition_entries_finalized: competitions.finalized, invites_expired: invites.rowCount, otps_deleted: otps.rowCount, abandoned_registrations: abandoned.rowCount, payments_expired: payments.rowCount };
+    return { parent_reports: reports, competition_entries_finalized: competitions.finalized, invites_expired: invites.rowCount, otps_deleted: otps.rowCount, abandoned_registrations: abandoned.rowCount, payments_expired: payments.rowCount };
   },
 };
 
-async function runJob(name) {
-  const out = await JOBS[name]();
+/**
+ * Sends one batch; if students are left: on Vercel the next batch is a new call to this same endpoint
+ * (ctx.baseUrl, authorised by CRON_SECRET), on a normal server the loop just continues.
+ */
+async function continueReports(ctx = {}) {
+  let r = await sendDueReports();
+  if (r.remaining > 0 && !r.busy && ctx.baseUrl && process.env.CRON_SECRET) {
+    await fetch(`${ctx.baseUrl}/api/cron/parent-reports-continue`, {
+      headers: { Authorization: `Bearer ${process.env.CRON_SECRET}` },
+      signal: AbortSignal.timeout(3000), // only needs to start; that call runs on its own
+    }).catch(() => {});
+    return { ...r, continuing: true };
+  }
+  while (!ctx.baseUrl && r.remaining > 0 && !r.busy) {
+    const more = await sendDueReports();
+    if (!more.sent && !more.failed) break;
+    r = { ...more, sent: r.sent + more.sent, failed: r.failed + more.failed };
+  }
+  return r;
+}
+
+async function runJob(name, ctx) {
+  const out = await JOBS[name](ctx);
   console.log(`[job] ${name} done`, JSON.stringify(out));
   return out;
 }
@@ -45,4 +69,4 @@ function startJobs() {
   console.log(`[jobs] scheduled (timezone ${env.tz})`);
 }
 
-module.exports = { JOBS, runJob, startJobs };
+module.exports = { JOBS, runJob, startJobs, continueReports };

@@ -492,6 +492,33 @@ async function studentLogin(identifier, password, device) {
   ok((await call('PATCH', `/api/admin/admins/${na.data.admin.id}`, { token: AT, body: { is_active: false } })).data.admin.is_active === false, 'admin disables another admin');
   ok((await call('GET', '/api/admin/dashboard', { token: a2.data.token })).status === 401, 'disabled admin logged out');
 
+  // ---------------- Performance counters stay exact (answer → move question to another subject → delete it)
+  const cs1 = (await call('POST', '/api/admin/subjects', { token: AT, body: { name: `عدادات ${rnd}` } })).data.subject;
+  const cs2 = (await call('POST', '/api/admin/subjects', { token: AT, body: { name: `عدادات 2 ${rnd}` } })).data.subject;
+  const cq = (await call('POST', '/api/admin/questions', { token: AT, body: { subject_id: cs1.id, question_text: `سؤال العدادات ${rnd}`, option_a: '1', option_b: '2', option_c: '3', option_d: '4', correct_option: 'A' } })).data.question;
+  const perfOf = async (sidX) => (await call('GET', '/api/reports/performance', { token: A.token })).data.subjects.find((x) => x.subject_id === sidX);
+  const perf0 = (await call('GET', '/api/reports/performance', { token: A.token })).data.overall;
+  await call('POST', '/api/catalog/answer', { token: A.token, body: { question_id: cq.id, choice: 'A' } });
+  const c1 = await perfOf(cs1.id);
+  ok(c1 && c1.attempts === 1 && c1.correct === 1 && c1.percent === 100, 'answer counted in its subject', c1);
+  const perf1 = (await call('GET', '/api/reports/performance', { token: A.token })).data.overall;
+  ok(perf1.attempts === perf0.attempts + 1 && perf1.correct === perf0.correct + 1, 'overall counts the answer');
+  await call('PATCH', `/api/admin/questions/${cq.id}`, { token: AT, body: { subject_id: cs2.id } });
+  const c2 = await perfOf(cs2.id);
+  ok(!(await perfOf(cs1.id)) && c2 && c2.attempts === 1 && c2.correct === 1, 'question moved → its answers move to the new subject', c2);
+  ok((await call('DELETE', `/api/admin/questions/${cq.id}?force=true`, { token: AT })).data.deleted === true, 'answered question deleted permanently');
+  ok(!(await perfOf(cs2.id)), 'deleted question no longer counted');
+  const perf2 = (await call('GET', '/api/reports/performance', { token: A.token })).data.overall;
+  ok(perf2.attempts === perf0.attempts && perf2.correct === perf0.correct, 'overall back to before');
+  const adminPerf = (await call('GET', `/api/admin/students/${A.id}`, { token: AT })).data.performance.overall;
+  ok(adminPerf.attempts === perf2.attempts, 'admin student page reads the same counters');
+
+  // ---------------- Caching: admin changes show up at once
+  const subjBefore = (await call('GET', '/api/catalog/subjects', { token: A.token })).data.subjects.length;
+  const cs3 = (await call('POST', '/api/admin/subjects', { token: AT, body: { name: `مادة جديدة ${rnd}` } })).data.subject;
+  ok((await call('GET', '/api/catalog/subjects', { token: A.token })).data.subjects.length === subjBefore + 1, 'new subject visible right away (cache cleared)');
+  for (const x of [cs1, cs2, cs3]) await call('DELETE', `/api/admin/subjects/${x.id}`, { token: AT });
+
   // ---------------- Account sharing: 2 devices, one session at a time, email code for a new device
   const X = await registerStudent(77);
   const devB = `dev-b-${rnd}-1111111111`;

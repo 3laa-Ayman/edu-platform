@@ -87,11 +87,12 @@ function renderTopbar(path) {
   // The nav scrolls sideways when it doesn't fit: keep the current page's link visible.
   $('.nav a.active')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   $('#bell')?.addEventListener('click', openAnnouncements);
-  refreshBell();
+  refreshBell(false);
   $('#logout')?.addEventListener('click', () => {
     API.setToken(null);
     State.user = null;
     State.subscription = null;
+    bellCache = { at: 0, data: null }; // the next account starts with its own announcements
     location.hash = '#/login';
   });
 }

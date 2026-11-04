@@ -10,7 +10,8 @@ const { mediaMap } = require('../services/media.service');
 const { passageMap } = require('../services/passage.service');
 const { activatePayment } = require('../services/payment.service');
 const { autoAssignTeams } = require('../services/team.service');
-const { sendWeeklyReportsToAll } = require('../services/report.service');
+const { startWeeklyReports } = require('../services/report.service');
+const { continueReports } = require('../jobs');
 const { badRequest, notFound, conflict } = require('../utils/errors');
 
 // ------------------------------------------------------------------ Dashboard
@@ -195,8 +196,10 @@ router.post('/teams/auto-assign', validate({ body: z.object({ require_subscripti
 });
 
 // ------------------------------------------------------------------ Reports
+/** "Send parent reports now": first batch here, the rest continues in the background. */
 router.post('/reports/send-weekly', async (req, res) => {
-  res.json(await sendWeeklyReportsToAll());
+  await startWeeklyReports();
+  res.json(await continueReports({ baseUrl: `${req.protocol}://${req.get('host')}` }));
 });
 
 router.get('/ai-usage', async (req, res) => {

@@ -468,3 +468,91 @@ CREATE TABLE IF NOT EXISTS device_events (
   created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_device_events_user ON device_events (user_id, created_at DESC);
+
+-- ---------------------------------------------------------------------
+-- 13) Per-student, per-subject answer counters (home page / admin performance read these instead of
+--     re-counting every attempt). Kept exact by triggers: new answer, question deleted, question moved to
+--     another subject. Skipped questions (selected_option NULL) are never counted.
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS user_subject_stats (
+  user_id     BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  subject_id  INT NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
+  attempts    INT NOT NULL DEFAULT 0,
+  correct     INT NOT NULL DEFAULT 0,
+  PRIMARY KEY (user_id, subject_id)
+);
+
+CREATE OR REPLACE FUNCTION stats_on_attempt() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF NEW.selected_option IS NOT NULL THEN
+    INSERT INTO user_subject_stats (user_id, subject_id, attempts, correct)
+    SELECT NEW.user_id, q.subject_id, 1, CASE WHEN NEW.is_correct THEN 1 ELSE 0 END FROM questions q WHERE q.id = NEW.question_id
+    ON CONFLICT (user_id, subject_id) DO UPDATE
+      SET attempts = user_subject_stats.attempts + 1, correct = user_subject_stats.correct + EXCLUDED.correct;
+  END IF;
+  RETURN NULL;
+END $$;
+
+-- Before the question (and, by cascade, its attempts) is deleted: take its answers out of the counters.
+CREATE OR REPLACE FUNCTION stats_on_question_delete() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  UPDATE user_subject_stats st
+     SET attempts = st.attempts - a.n, correct = st.correct - a.c
+    FROM (SELECT user_id, COUNT(*)::int AS n, COUNT(*) FILTER (WHERE is_correct)::int AS c
+            FROM attempts WHERE question_id = OLD.id AND selected_option IS NOT NULL GROUP BY user_id) a
+   WHERE st.user_id = a.user_id AND st.subject_id = OLD.subject_id;
+  RETURN OLD;
+END $$;
+
+-- Question moved to another subject: its answers move with it.
+CREATE OR REPLACE FUNCTION stats_on_question_subject() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF NEW.subject_id IS DISTINCT FROM OLD.subject_id THEN
+    WITH a AS (SELECT user_id, COUNT(*)::int AS n, COUNT(*) FILTER (WHERE is_correct)::int AS c
+                 FROM attempts WHERE question_id = NEW.id AND selected_option IS NOT NULL GROUP BY user_id),
+         dec AS (UPDATE user_subject_stats st SET attempts = st.attempts - a.n, correct = st.correct - a.c
+                   FROM a WHERE st.user_id = a.user_id AND st.subject_id = OLD.subject_id)
+    INSERT INTO user_subject_stats (user_id, subject_id, attempts, correct)
+    SELECT user_id, NEW.subject_id, n, c FROM a
+    ON CONFLICT (user_id, subject_id) DO UPDATE
+      SET attempts = user_subject_stats.attempts + EXCLUDED.attempts, correct = user_subject_stats.correct + EXCLUDED.correct;
+  END IF;
+  RETURN NULL;
+END $$;
+
+DROP TRIGGER IF EXISTS trg_stats_attempt ON attempts;
+CREATE TRIGGER trg_stats_attempt AFTER INSERT ON attempts FOR EACH ROW EXECUTE FUNCTION stats_on_attempt();
+DROP TRIGGER IF EXISTS trg_stats_question_delete ON questions;
+CREATE TRIGGER trg_stats_question_delete BEFORE DELETE ON questions FOR EACH ROW EXECUTE FUNCTION stats_on_question_delete();
+DROP TRIGGER IF EXISTS trg_stats_question_subject ON questions;
+CREATE TRIGGER trg_stats_question_subject AFTER UPDATE OF subject_id ON questions FOR EACH ROW EXECUTE FUNCTION stats_on_question_subject();
+
+-- Background jobs that run in batches (e.g. weekly parent reports): when the current run started + a short lease
+-- so two batches never work at the same time.
+CREATE TABLE IF NOT EXISTS job_runs (
+  name          VARCHAR(40) PRIMARY KEY,
+  started_at    TIMESTAMPTZ,
+  locked_until  TIMESTAMPTZ,
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- One-time fill of the counters from the existing answers (attempts locked meanwhile, so nothing is missed).
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM job_runs WHERE name = 'backfill_user_subject_stats') THEN
+    LOCK TABLE attempts IN SHARE MODE;
+    TRUNCATE user_subject_stats;
+    INSERT INTO user_subject_stats (user_id, subject_id, attempts, correct)
+    SELECT a.user_id, q.subject_id, COUNT(*)::int, COUNT(*) FILTER (WHERE a.is_correct)::int
+      FROM attempts a JOIN questions q ON q.id = a.question_id
+     WHERE a.selected_option IS NOT NULL
+     GROUP BY a.user_id, q.subject_id;
+    INSERT INTO job_runs (name, started_at) VALUES ('backfill_user_subject_stats', now());
+  END IF;
+END $$;
+
+-- Which schema.sql versions were applied (cold starts skip the migration when the hash is already here).
+CREATE TABLE IF NOT EXISTS schema_migrations (
+  hash        CHAR(64) PRIMARY KEY,
+  applied_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
