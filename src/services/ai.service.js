@@ -77,7 +77,7 @@ async function callGemini(prompt, images = [], model) {
     res = await request(null);
     data = await res.json().catch(() => ({}));
   }
-  if (!res.ok) throw new Error(`Gemini HTTP ${res.status}: ${data?.error?.message || 'unknown error'}`);
+  if (!res.ok) throw Object.assign(new Error(`Gemini HTTP ${res.status}: ${data?.error?.message || 'unknown error'}`), { status: res.status });
 
   const text = (data.candidates?.[0]?.content?.parts || []).filter((p) => !p.thought).map((p) => p.text || '').join('').trim();
   if (!text) throw new Error(`Gemini returned an empty response (${data.candidates?.[0]?.finishReason || 'no candidates'})`);
@@ -87,6 +87,23 @@ async function callGemini(prompt, images = [], model) {
     // Thinking tokens (if any) are billed as output tokens.
     usage: { input: u.promptTokenCount || 0, output: (u.candidatesTokenCount || 0) + (u.thoughtsTokenCount || 0) },
   };
+}
+
+/**
+ * Main model, then the fallback one when Google answers "overloaded / unavailable / not found" (or times out),
+ * so students don't get an error during demand spikes. Returns the result + the model that answered.
+ */
+const RETRY_WITH_FALLBACK = new Set([404, 429, 500, 502, 503, 504]);
+async function callWithFallback(prompt, images, settings) {
+  const fallback = settings.ai_fallback_model;
+  try {
+    return { ...await callGemini(prompt, images, settings.ai_model), model: settings.ai_model };
+  } catch (err) {
+    const retryable = RETRY_WITH_FALLBACK.has(err.status) || err.name === 'TimeoutError' || err.name === 'AbortError';
+    if (!fallback || fallback === settings.ai_model || !retryable || err instanceof AppError) throw err;
+    console.warn(`[ai] ${settings.ai_model} failed (${err.message.slice(0, 120)}), using ${fallback}`);
+    return { ...await callGemini(prompt, images, fallback), model: fallback, fallback_reason: err.message.slice(0, 200) };
+  }
 }
 
 async function logUsage(row) {
@@ -116,7 +133,7 @@ async function explainWithBudget(userId, question) {
   ].filter((m) => m.mime !== 'image/gif');
   const prompt = buildPrompt(question, passage) + (images.length ? '\nملحوظة: السؤال يحتوي على صور مرفقة، اعتمد عليها في الشرح.' : '');
   const settings = await getSettings();
-  const { usd_to_egp: usdToEgp, ai_points_per_egp: rate, ai_model: model } = settings;
+  const { usd_to_egp: usdToEgp, ai_points_per_egp: rate } = settings;
   const reserve = reserveFor(prompt, settings, images.length);
 
   const reserved = await db.query(
@@ -138,10 +155,10 @@ async function explainWithBudget(userId, question) {
 
   let result;
   try {
-    result = await callGemini(prompt, images, model);
+    result = await callWithFallback(prompt, images, settings);
   } catch (err) {
     await db.query(`UPDATE users SET ai_spent_egp = GREATEST(ai_spent_egp - $2, 0) WHERE id = $1`, [userId, reserve.toFixed(6)]);
-    await logUsage({ userId, questionId: question.id, status: 'error', error: String(err.message).slice(0, 500) });
+    await logUsage({ userId, questionId: question.id, model: settings.ai_model, status: 'error', error: String(err.message).slice(0, 500) });
     if (err instanceof AppError) throw err;
     console.error('[ai] gemini call failed', err.message);
     throw new AppError(502, 'تعذر الحصول على الشرح حالياً، لم يتم خصم أي تكلفة. حاول مرة أخرى.', 'AI_UPSTREAM_ERROR');
@@ -154,14 +171,14 @@ async function explainWithBudget(userId, question) {
     [userId, reserve.toFixed(6), actualEgp.toFixed(6)],
   );
   await logUsage({
-    userId, questionId: question.id, status: 'success', input: result.usage.input, output: result.usage.output,
+    userId, questionId: question.id, model: result.model, status: 'success', input: result.usage.input, output: result.usage.output,
     costUsd: (actualEgp / usdToEgp).toFixed(8), costEgp: actualEgp.toFixed(6),
   });
   // Cache so every other student gets this explanation for free (never the mock, or it would hide the AI button for good).
   if (!result.mock) await db.query(
     `INSERT INTO ai_explanations (question_id, content, model, created_by) VALUES ($1, $2, $3, $4)
      ON CONFLICT (question_id) DO NOTHING`,
-    [question.id, result.text, model, userId],
+    [question.id, result.text, result.model, userId],
   );
 
   const { ai_spent_egp: spent, ai_limit_egp: limit } = rows[0];
@@ -194,10 +211,10 @@ async function testModel() {
   const settings = await getSettings();
   const started = Date.now();
   try {
-    const r = await callGemini('اكتب جملة واحدة قصيرة بالعربي تشجع طالب ثانوية عامة على المذاكرة.', [], settings.ai_model);
+    const r = await callWithFallback('اكتب جملة واحدة قصيرة بالعربي تشجع طالب ثانوية عامة على المذاكرة.', [], settings);
     return {
-      ok: !r.mock, mock: Boolean(r.mock), model: settings.ai_model, reply: r.text, ms: Date.now() - started,
-      tokens: r.usage, cost_egp: Number(costEgp(r.usage.input, r.usage.output, settings).toFixed(4)),
+      ok: !r.mock, mock: Boolean(r.mock), model: settings.ai_model, answered_by: r.model, fallback_reason: r.fallback_reason || null,
+      reply: r.text, ms: Date.now() - started, tokens: r.usage, cost_egp: Number(costEgp(r.usage.input, r.usage.output, settings).toFixed(4)),
     };
   } catch (err) {
     return { ok: false, model: settings.ai_model, error: String(err.message).slice(0, 400), ms: Date.now() - started };

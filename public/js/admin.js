@@ -833,7 +833,8 @@ Admin.settings = async (el) => {
       <p class="${aiKey ? 'notice good' : 'notice bad'}">${aiKey ? '✓ مفتاح Gemini متحط على السيرفر' : '⛔ مفتاح Gemini مش متحط — ضيف GEMINI_API_KEY في إعدادات Vercel'}</p>
       <form id="gf" class="form grid3">
         <label class="span3">اسم الموديل (زي ما هو مكتوب في Google AI Studio)<input name="ai_model" required list="ai-models" dir="ltr" value="${esc(s.ai_model)}">
-          <datalist id="ai-models"><option value="gemini-3.8-flash"><option value="gemini-2.5-flash"><option value="gemini-2.5-flash-lite"></datalist></label>
+          <datalist id="ai-models"><option value="gemini-3.5-flash-lite"><option value="gemini-3.1-flash-lite-preview"><option value="gemini-3.8-flash"></datalist></label>
+        <label class="span3">موديل احتياطي (بيشتغل لوحده لو الأساسي عليه ضغط أو واقف — فاضي = مفيش)<input name="ai_fallback_model" list="ai-models" dir="ltr" value="${esc(s.ai_fallback_model || '')}"></label>
         <label>سعر الإدخال (دولار لكل مليون توكن)<input type="number" name="ai_input_usd_per_m" min="0" step="0.01" required value="${s.ai_input_usd_per_m}"></label>
         <label>سعر الإخراج (دولار لكل مليون توكن)<input type="number" name="ai_output_usd_per_m" min="0" step="0.01" required value="${s.ai_output_usd_per_m}"></label>
         <div class="row" style="align-items:end"><button class="btn primary" type="submit">حفظ</button>
@@ -879,7 +880,7 @@ Admin.settings = async (el) => {
     toast('تم حفظ الإعدادات');
   });
   onSubmit($('#gf', el), async (v) => {
-    await API.patch('/admin/settings', { ai_model: v.ai_model, ai_input_usd_per_m: Number(v.ai_input_usd_per_m), ai_output_usd_per_m: Number(v.ai_output_usd_per_m) });
+    await API.patch('/admin/settings', { ai_model: v.ai_model, ai_fallback_model: v.ai_fallback_model ?? '', ai_input_usd_per_m: Number(v.ai_input_usd_per_m), ai_output_usd_per_m: Number(v.ai_output_usd_per_m) });
     toast('تم حفظ إعدادات الذكاء الاصطناعي');
   });
   onSubmit($('#af', el), async (v) => { await API.post('/admin/admins', v); toast('تمت إضافة الأدمن'); reload(); });
@@ -896,7 +897,7 @@ Admin.settings = async (el) => {
       box.innerHTML = '<p class="muted">جاري التجربة…</p>';
       const r = await API.post('/admin/ai/test');
       box.innerHTML = r.ok
-        ? `<div class="notice good">✓ شغال — الموديل <b dir="ltr">${esc(r.model)}</b> رد في ${(r.ms / 1000).toFixed(1)} ثانية (تكلفة ${fmtMoney(r.cost_egp, 4)}):<br>«${esc(r.reply)}»</div>`
+        ? `<div class="notice good">✓ شغال — ${r.answered_by !== r.model ? `الأساسي (<b dir="ltr">${esc(r.model)}</b>) عليه ضغط فرد الاحتياطي ` : 'الموديل '}<b dir="ltr">${esc(r.answered_by || r.model)}</b> رد في ${(r.ms / 1000).toFixed(1)} ثانية (تكلفة ${fmtMoney(r.cost_egp, 4)}):<br>«${esc(r.reply)}»</div>`
         : r.mock ? '<div class="notice mid">الوضع التجريبي: مفيش مفتاح Gemini، فالرد تجريبي.</div>'
           : `<div class="notice bad">⛔ مش شغال مع الموديل <b dir="ltr">${esc(r.model)}</b>:<br><span dir="ltr" class="mono small">${esc(r.error)}</span><br>اتأكد من المفتاح في Vercel ومن اسم الموديل.</div>`;
     }),

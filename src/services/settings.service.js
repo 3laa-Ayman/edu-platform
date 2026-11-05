@@ -17,6 +17,8 @@ const SCHEMA = z.object({
   ai_points_per_egp: z.number().int().min(1).max(100000),
   // Gemini model id exactly as Google AI Studio shows it (e.g. gemini-3.8-flash), and its price per 1M tokens.
   ai_model: z.string().trim().regex(/^[a-z0-9][a-z0-9.\-]{2,79}$/, 'اسم الموديل بالإنجليزي زي ما هو في Google AI Studio (مثلاً gemini-3.8-flash)'),
+  // Used automatically when the main model is overloaded / unavailable ('' = none).
+  ai_fallback_model: z.string().trim().regex(/^([a-z0-9][a-z0-9.\-]{2,79})?$/, 'اسم الموديل الاحتياطي بالإنجليزي زي ما هو في Google AI Studio'),
   ai_input_usd_per_m: z.number().min(0).max(1000),
   ai_output_usd_per_m: z.number().min(0).max(1000),
 });
@@ -32,6 +34,7 @@ const defaults = () => ({
   // Students see their AI budget in points: 100 points = 1 EGP of model cost (so 100 EGP = 10,000 points).
   ai_points_per_egp: 100,
   ai_model: env.gemini.model,
+  ai_fallback_model: 'gemini-3.1-flash-lite-preview',
   ai_input_usd_per_m: env.gemini.inputUsdPerM,
   ai_output_usd_per_m: env.gemini.outputUsdPerM,
 });
