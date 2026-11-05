@@ -374,3 +374,5 @@ select option { color: var(--text); }
 
 .card.danger-zone { border-color: var(--bad); }
 .card.danger-zone h2 { color: var(--bad); }
+
+.btn.big-btn { width: 100%; padding: 14px; font-size: 1.05rem; margin: 10px 0; }

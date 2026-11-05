@@ -161,6 +161,22 @@ router.get('/students/:id/parent-report', validate({ params: idParam }), async (
 /** Egyptian mobile 01XXXXXXXXX → 201XXXXXXXXX (the format wa.me links need). */
 const waNumber = (phone) => (/^01[0125]\d{8}$/.test(phone || '') ? `2${phone}` : null);
 
+/**
+ * WhatsApp sending queue for all parents (the admin sends one by one from their own WhatsApp — free; automatic bulk
+ * sending needs the paid WhatsApp Business API). Students whose parent got a report in the last 7 days are marked.
+ */
+router.get('/reports/whatsapp-queue', async (req, res) => {
+  const { rows } = await db.query(
+    `SELECT u.id, u.full_name, u.student_code, u.parent_phone,
+            EXISTS (SELECT 1 FROM parent_reports r WHERE r.user_id = u.id AND r.channel = 'whatsapp'
+                     AND r.sent_at > now() - interval '7 days') AS sent_recently
+       FROM users u
+      WHERE u.role = 'student' AND u.is_active AND u.student_code IS NOT NULL
+      ORDER BY u.full_name`);
+  const valid = rows.filter((r) => waNumber(r.parent_phone));
+  res.json({ students: valid.map(({ parent_phone: _p, ...r }) => r), invalid_phone: rows.length - valid.length });
+});
+
 /** The admin opened WhatsApp with the report: kept in the report history. */
 router.post('/students/:id/parent-report/whatsapp', validate({ params: idParam }), async (req, res) => {
   const { rows: [u] } = await db.query(`SELECT id FROM users WHERE id = $1 AND role = 'student'`, [req.p.id]);

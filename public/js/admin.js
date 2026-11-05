@@ -577,7 +577,7 @@ Admin.students = async (el, params, query) => {
   const search = query.search || '';
   const { items } = await API.get(`/admin/students?limit=100${search ? `&search=${encodeURIComponent(search)}` : ''}`);
   el.innerHTML = `<div class="page-head"><h1>الطلاب</h1><button class="btn primary" data-action="new">+ طالب جديد</button>
-      <button class="btn ghost" data-action="reportsAll">📨 إرسال تقارير أولياء الأمور لكل الطلاب</button></div>
+      <button class="btn wa" data-action="reportsAll">📱 إرسال تقارير أولياء الأمور على واتساب</button></div>
     <section class="card"><form id="sf" class="form inline"><input name="search" value="${esc(search)}" placeholder="كود الطالب، الإيميل أو الاسم"><button class="btn ghost" type="submit">بحث</button></form>
     ${items.length ? table(['الكود', 'الاسم', 'التواصل', 'الاشتراك', 'الحالة', ''],
       items.map((s) => [s.student_code ? `<span class="mono">${esc(s.student_code)}</span>` : badge('لم يكمل التسجيل', 'mid'), esc(s.full_name),
@@ -593,11 +593,7 @@ Admin.students = async (el, params, query) => {
   onSubmit($('#sf', el), async (v) => { location.hash = `#/admin/students${v.search ? `?search=${encodeURIComponent(v.search)}` : ''}`; });
   onAction(el, {
     wa: (b) => openWhatsAppReport(b, b.dataset.id),
-    reportsAll: (b) => run(b, async () => {
-      if (!confirm('إرسال تقرير لولي أمر كل الطلاب دلوقتي؟ (التقرير الأسبوعي بيتبعت لوحده كمان كل سبت)')) return;
-      const r = await API.post('/admin/reports/send-weekly');
-      toast(`اتبعت ${r.sent} تقرير${r.failed ? `، وفشل ${r.failed}` : ''}${r.remaining ? ` — والباقي (${r.remaining}) بيتبعت في الخلفية` : ''}`);
-    }),
+    reportsAll: (b) => run(b, () => whatsAppQueue()),
     new: () => {
       const m = modal(`<h2>إضافة طالب</h2><p class="muted">الحساب بيتفعّل على طول من غير رمز تحقق.</p>
         <form class="form grid2" id="nf">${studentFields()}
@@ -630,6 +626,44 @@ async function openWhatsAppReport(btn, studentId, after) {
       after?.();
     } catch (err) { win?.close(); throw err; }
   });
+}
+
+/**
+ * "Send to all parents on WhatsApp": a queue — one click per parent opens WhatsApp with that student's report
+ * (free, from the admin's own WhatsApp). Parents who got a report in the last 7 days are skipped unless the admin
+ * includes them.
+ */
+async function whatsAppQueue() {
+  const { students, invalid_phone: invalid } = await API.get('/admin/reports/whatsapp-queue');
+  const m = modal(`<h2>📱 تقارير أولياء الأمور على واتساب</h2><div id="waq"></div>`);
+  let includeSent = false;
+  const done = new Set(students.filter((s) => s.sent_recently).map((s) => s.id));
+  const render = () => {
+    const todo = students.filter((s) => includeSent || !done.has(s.id) || s.justSent);
+    const pending = todo.filter((s) => !s.justSent);
+    const next = pending[0];
+    const sentNow = students.filter((s) => s.justSent).length;
+    $('#waq', m).innerHTML = `
+      <p class="muted">دوس الزرار الأخضر ← واتساب هيفتح على ولي الأمر والتقرير مكتوب ← دوس إرسال وارجع هنا للي بعده.</p>
+      <div class="tiles"><div class="tile"><span class="tile-label">فاضل</span><b>${pending.length}</b></div>
+        <div class="tile"><span class="tile-label">اتبعت دلوقتي</span><b class="good">${sentNow}</b></div>
+        <div class="tile"><span class="tile-label">اتبعتلهم آخر 7 أيام</span><b>${students.filter((s) => s.sent_recently).length}</b></div></div>
+      ${invalid ? `<p class="notice mid small">${invalid} طالب رقم ولي أمرهم مش رقم موبايل مصري صحيح، فمش في القايمة.</p>` : ''}
+      <label class="check"><input type="checkbox" id="waq-all" ${includeSent ? 'checked' : ''}> ابعت كمان للي اتبعتلهم خلال آخر 7 أيام</label>
+      ${next ? `<button class="btn wa big-btn" data-wa-next="${next.id}">📱 التالي: ${esc(next.full_name)} (${sentNow + 1} من ${sentNow + pending.length})</button>`
+        : `<p class="notice good">✓ خلصت — مفيش حد فاضل.</p>`}
+      <details class="device-log"><summary>القايمة (${students.length})</summary><ul>${students.map((s) =>
+        `<li>${s.justSent ? '✅' : done.has(s.id) ? '☑️' : '⬜'} ${esc(s.full_name)} <small class="mono muted">${esc(s.student_code)}</small></li>`).join('')}</ul></details>`;
+    $('#waq-all', m).addEventListener('change', (e) => { includeSent = e.target.checked; render(); });
+    const btn = $('[data-wa-next]', m);
+    btn?.addEventListener('click', async () => {
+      const s = students.find((x) => String(x.id) === btn.dataset.waNext);
+      await openWhatsAppReport(btn, s.id);
+      s.justSent = true;
+      render();
+    });
+  };
+  render();
 }
 
 Admin.student = async (el, { id }, query = {}) => {

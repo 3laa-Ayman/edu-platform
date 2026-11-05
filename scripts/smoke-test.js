@@ -210,11 +210,17 @@ async function studentLogin(identifier, password, device) {
   ok(pa1.passage?.text && [pa2, pa3].every((q) => q.passage?.id === pa1.passage.id), 'reading passage written once is shared by its 3 questions');
   ok(fig1.passage?.image && !fig1.passage.text && fig2.passage?.id === fig1.passage.id && !fig1.media.question, 'shared figure (passage picture) linked to both questions');
   ok((await fetch(API + fig1.passage.image)).headers.get('content-type') === 'image/png', 'passage picture served');
-  const readQs = (await call('GET', `/api/catalog/questions?limit=50&subject_id=${pa1.subject_id}`, { token: A.token })).data.questions;
-  // (earlier runs re-use the same passage, so only the passage block as a whole is checked)
-  const pos = readQs.map((q, i) => (q.passage?.id === pa1.passage.id ? i : null)).filter((i) => i !== null);
-  ok(pos.length >= 3 && pos.at(-1) - pos[0] === pos.length - 1 && [pa1, pa2, pa3].every((q) => readQs.some((r) => r.id === q.id && r.passage.text === pa1.passage.text)),
-    'practice keeps a passage\'s questions together, with the passage', readQs.map((q) => [q.id, q.passage?.id]));
+  // (earlier runs re-use the same passage, so only the passage block as a whole is checked; practice returns a
+  // random sample, so look a few times until this passage is in it)
+  const passageTogether = (qs) => {
+    const pos = qs.map((q, i) => (q.passage?.id === pa1.passage.id ? i : null)).filter((i) => i !== null);
+    return pos.length >= 3 && pos.at(-1) - pos[0] === pos.length - 1 && pos.every((i) => qs[i].passage.text === pa1.passage.text);
+  };
+  let readQs = [];
+  for (let i = 0; i < 15 && !passageTogether(readQs); i++) {
+    readQs = (await call('GET', `/api/catalog/questions?limit=50&subject_id=${pa1.subject_id}`, { token: A.token })).data.questions;
+  }
+  ok(passageTogether(readQs), 'practice keeps a passage\'s questions together, with the passage', readQs.map((q) => [q.id, q.passage?.id]));
   const pinned = await (async () => {
     const fd = new FormData();
     fd.append('image', new Blob([fs.readFileSync(path.join(__dirname, '../templates/images/graph-b.png'))], { type: 'image/png' }), 'x.png');
@@ -377,6 +383,9 @@ async function studentLogin(identifier, password, device) {
   ok(/^201[0125]\d{8}$/.test(adminRep.data.whatsapp || ''), `WhatsApp number for the parent: +${adminRep.data.whatsapp}`);
   ok((await call('POST', `/api/admin/students/${A.id}/parent-report/whatsapp`, { token: AT })).status === 201, 'WhatsApp send is logged');
   ok((await call('GET', `/api/admin/students/${A.id}/parent-report`, { token: AT })).data.history.some((h) => h.channel === 'whatsapp'), 'WhatsApp report in the history');
+  const waq = await call('GET', '/api/admin/reports/whatsapp-queue', { token: AT });
+  ok(Array.isArray(waq.data.students) && waq.data.students.find((x) => x.id === A.id)?.sent_recently === true && !('parent_phone' in waq.data.students[0]), 'WhatsApp queue: all parents, recent ones marked');
+  ok((await call('GET', '/api/admin/reports/whatsapp-queue', { token: A.token })).status === 403, 'students cannot see the WhatsApp queue');
 
   // ---------------- Products, security
   const prods = await call('GET', '/api/products');
