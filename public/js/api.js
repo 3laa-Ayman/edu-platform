@@ -14,11 +14,23 @@ function deviceId() {
   return d;
 }
 
+/*
+ * Login token: each browser TAB keeps its own copy (sessionStorage, survives a refresh), so a student account in one
+ * tab and an admin account in another don't swap on refresh. localStorage holds the last login, used by new tabs.
+ */
+const tabStore = {
+  get(k) { try { return sessionStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { v == null ? sessionStorage.removeItem(k) : sessionStorage.setItem(k, v); } catch { /* storage unavailable */ } },
+};
+const initialToken = tabStore.get('token') || store.get('token');
+tabStore.set('token', initialToken);
+
 const API = {
-  token: store.get('token'),
+  token: initialToken,
 
   setToken(t) {
     this.token = t;
+    tabStore.set('token', t);
     store.set('token', t);
   },
 
