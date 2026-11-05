@@ -1060,7 +1060,7 @@ Views.subscribe = async (el) => {
 
         <div class="pay-step"><span class="step-no">3</span><div class="step-body"><b>ارفع صورة الإيصال</b>
           <div class="grid2">
-            <label>الرقم/الحساب اللي حوّلت منه<input name="sender_account" required minlength="5" dir="ltr" placeholder="01xxxxxxxxx"></label>
+            <label><span id="sender-label">الرقم اللي حوّلت منه</span><input name="sender_account" required minlength="5" dir="ltr"></label>
             <label>رقم العملية (من الإيصال)<input name="transfer_ref" dir="ltr"></label>
             <label class="span2">صورة الإيصال (سكرين شوت)<input type="file" name="receipt" accept="image/png,image/jpeg,image/webp,application/pdf" required></label>
           </div>
@@ -1106,6 +1106,18 @@ Views.subscribe = async (el) => {
   };
   $('#mf [name=plan_code]', el).addEventListener('change', showAmount);
   showAmount();
+  // "From" field follows the chosen method: a Vodafone Cash number, or an InstaPay account.
+  const showSender = () => {
+    const insta = $('#mf [name=provider]:checked', el)?.value === 'instapay';
+    const input = $('#mf [name=sender_account]', el);
+    $('#sender-label', el).textContent = insta ? 'حساب إنستاباي اللي حوّلت منه' : 'رقم فودافون كاش اللي حوّلت منه';
+    input.placeholder = insta ? 'name@instapay' : '01xxxxxxxxx';
+    input.inputMode = insta ? 'email' : 'numeric';
+    if (insta) input.removeAttribute('pattern');
+    else { input.pattern = '0?1[0125][0-9]{8}'; input.title = 'رقم موبايل مصري، مثال: 01012345678'; }
+  };
+  $$('#mf [name=provider]', el).forEach((r) => r.addEventListener('change', showSender));
+  showSender();
   onSubmit($('#mf', el), async (v, form) => {
     if (!v.provider) throw new Error('اختار إنت حوّلت على فودافون كاش ولا إنستاباي');
     const fd = new FormData();
