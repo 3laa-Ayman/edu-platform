@@ -569,5 +569,21 @@ async function studentLogin(identifier, password, device) {
   const dAdminAgain = await call('POST', '/api/auth/login', { body: { identifier: process.env.ADMIN_EMAIL || 'admin@example.com', password: process.env.ADMIN_PASSWORD || 'ChangeMe!2026', device_id: devC } });
   ok(dAdminAgain.status === 200 && dAdminAgain.data.token && (await call('GET', '/api/admin/dashboard', { token: AT })).status === 200, 'admins are not limited by devices/sessions');
 
+  // ---------------- Wrong passwords are limited per ACCOUNT (many students share one IP)
+  const G = await registerStudent(88);
+  const tryLogin = (pw, who = G.email) => call('POST', '/api/auth/login', { body: { identifier: who, password: pw, device_id: G.device } });
+  for (let i = 0; i < 3; i++) await tryLogin('Wrong-pass-1');
+  ok((await tryLogin('Passw0rd123')).status === 200, 'correct login after a few mistakes works (and clears them)');
+  for (let i = 0; i < 9; i++) await tryLogin('Wrong-pass-1');
+  ok((await tryLogin('Passw0rd123')).status === 200, 'count restarted after the successful login');
+  for (let i = 0; i < 10; i++) await tryLogin('Wrong-pass-1');
+  const locked = await tryLogin('Passw0rd123');
+  ok(locked.status === 429 && locked.data.error.code === 'ACCOUNT_LOCKED' && locked.data.error.message.includes('دقيقة'), '10 wrong passwords → only this account paused', locked.data);
+  ok((await call('POST', '/api/auth/login', { body: { identifier: X.email, password: 'Passw0rd123', device_id: devB } })).status === 200, 'other students on the same IP still log in');
+  const ghost = `nobody-${rnd}@t.com`;
+  let ghostLast;
+  for (let i = 0; i < 11; i++) ghostLast = await tryLogin('Wrong-pass-1', ghost);
+  ok(ghostLast.status === 429 && ghostLast.data.error.code === 'ACCOUNT_LOCKED', 'unknown email behaves the same (no account enumeration)');
+
   console.log(`\n🎉 All ${passed} checks passed`);
 })().catch((e) => { console.error(e); process.exit(1); });

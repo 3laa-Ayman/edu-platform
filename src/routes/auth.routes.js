@@ -11,7 +11,8 @@ const { nextStudentCode } = require('../utils/ids');
 const { issueOtp, consumeOtp } = require('../services/otp.service');
 const { sendOtpEmail } = require('../services/notify.service');
 const { getSettings } = require('../services/settings.service');
-const { badRequest, conflict, unauthorized, forbidden } = require('../utils/errors');
+const { AppError, badRequest, conflict, unauthorized, forbidden } = require('../utils/errors');
+const guard = require('../services/login-guard');
 
 const { egyptPhone, email, password, fullName } = require('../utils/schemas');
 const otpCode = z.string().trim().regex(/^\d{6}$/, 'رمز التحقق 6 أرقام');
@@ -127,8 +128,17 @@ router.post('/login', authLimiter, validate({
   const { rows } = await db.query(
     `SELECT * FROM users WHERE email = $1 OR student_code = UPPER($1)`, [id]);
   const user = rows[0];
+  const guardKey = guard.keyFor(user, id);
+  const mins = await guard.lockedFor(guardKey);
+  if (mins) {
+    throw new AppError(429, `محاولات كتير بكلمة مرور غلط على الحساب ده — حاول بعد ${mins} دقيقة، أو استخدم «نسيت كلمة المرور»`, 'ACCOUNT_LOCKED');
+  }
   const ok = await bcrypt.compare(req.body.password, user?.password_hash || DUMMY_HASH);
-  if (!user?.password_hash || !ok) throw unauthorized('البريد/الكود أو كلمة المرور غير صحيحة');
+  if (!user?.password_hash || !ok) {
+    await guard.recordFailure(guardKey);
+    throw unauthorized('البريد/الكود أو كلمة المرور غير صحيحة');
+  }
+  await guard.clearFailures(guardKey);
   if (!user.is_active) throw forbidden('تم إيقاف هذا الحساب، تواصل مع الدعم', 'ACCOUNT_DISABLED');
   if (!user.is_verified) throw forbidden('يجب تأكيد البريد الإلكتروني أولاً', 'EMAIL_NOT_VERIFIED');
   if (user.role === 'admin') return res.json({ token: signToken(user), user: profile(user) });
