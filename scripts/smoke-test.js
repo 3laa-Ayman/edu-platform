@@ -605,5 +605,36 @@ async function studentLogin(identifier, password, device) {
   for (let i = 0; i < 11; i++) ghostLast = await tryLogin('Wrong-pass-1', ghost);
   ok(ghostLast.status === 429 && ghostLast.data.error.code === 'ACCOUNT_LOCKED', 'unknown email behaves the same (no account enumeration)');
 
+  // ---------------- Admin deletes a student permanently (payments kept, team keeps a captain)
+  const Z = await registerStudent(66);
+  const W = await registerStudent(67);
+  const pay = async (st) => {
+    const co = await call('POST', '/api/payments/checkout', { token: st.token, body: { plan_code: 'premium', provider: 'paymob' } });
+    await call('POST', `/api/payments/${co.data.payment.reference}/dev-simulate-paid`, { token: st.token });
+  };
+  await pay(Z); await pay(W);
+  const pendingZ = await call('POST', '/api/payments/checkout', { token: Z.token, body: { plan_code: 'standard', provider: 'paymob' } });
+  const zTeam = await call('POST', '/api/teams', { token: Z.token, body: { name: `فريق الحذف ${rnd}` } });
+  await call('POST', '/api/teams/invites', { token: Z.token, body: { student_code: W.code } });
+  const wInv = await call('GET', '/api/teams/invites', { token: W.token });
+  await call('POST', `/api/teams/invites/${wInv.data.invites[0].id}/accept`, { token: W.token });
+  const revenueBefore = (await call('GET', '/api/admin/dashboard', { token: AT })).data.revenue_egp;
+  ok((await call('DELETE', `/api/admin/students/${Z.id}`, { token: AT, body: { confirm: 'STU-0000-0000' } })).status === 400, 'delete needs the exact student code');
+  ok((await call('DELETE', `/api/admin/students/${Z.id}`, { token: Z.token, body: { confirm: Z.code } })).status === 403, 'students cannot delete accounts');
+  const del = await call('DELETE', `/api/admin/students/${Z.id}`, { token: AT, body: { confirm: Z.code.toLowerCase() } });
+  ok(del.status === 200 && del.data.deleted, 'admin deletes the student permanently');
+  ok((await call('GET', `/api/admin/students/${Z.id}`, { token: AT })).status === 404, 'student is gone');
+  ok((await call('GET', '/api/auth/me', { token: Z.token })).status === 401, 'deleted student is signed out');
+  ok((await call('POST', '/api/auth/login', { body: { identifier: Z.email, password: 'Passw0rd123', device_id: Z.device } })).status === 401, 'deleted student cannot log in');
+  ok((await call('GET', '/api/admin/dashboard', { token: AT })).data.revenue_egp === revenueBefore, 'revenue unchanged (payments kept)');
+  const failedPays = (await call('GET', '/api/admin/payments?status=failed&limit=100', { token: AT })).data.items;
+  const kept = failedPays.find((x) => x.reference === pendingZ.data.payment.reference);
+  ok(kept && kept.full_name.includes('حساب محذوف'), 'unpaid payment closed and labelled with the deleted student', kept);
+  const wTeam = (await call('GET', '/api/teams/me', { token: W.token })).data;
+  ok(wTeam.team && wTeam.team.id === zTeam.data.team.id && wTeam.team.captain_id === W.id, 'team kept, the other member became captain', wTeam);
+  const wDel = await call('DELETE', `/api/admin/students/${W.id}`, { token: AT, body: { confirm: W.code } });
+  ok(wDel.status === 200 && (await call('GET', `/api/admin/teams?search=${encodeURIComponent(`فريق الحذف ${rnd}`)}`, { token: AT })).data.teams.length === 0, 'last member deleted → empty team removed');
+  ok((await call('DELETE', `/api/admin/students/${admin.data.user.id}`, { token: AT, body: { confirm: 'admin@example.com' } })).status === 404, 'admins cannot be deleted from the students page');
+
   console.log(`\n🎉 All ${passed} checks passed`);
 })().catch((e) => { console.error(e); process.exit(1); });

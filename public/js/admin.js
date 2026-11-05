@@ -668,7 +668,12 @@ Admin.student = async (el, { id }, query = {}) => {
       <span>${esc(x.subject)}</span>${bar(x.percent, percentTone(x.percent))}<b class="${percentTone(x.percent)}">${x.percent}%</b><small class="muted">${x.correct}/${x.attempts}</small></div>`).join('') : empty('لسه محلش أسئلة')}</section>
 
     <section class="card"><h2>المدفوعات</h2>${d.payments.length ? table(['التاريخ', 'الباقة', 'المبلغ', 'الطريقة', 'الحالة'],
-      d.payments.map((p) => [fmtDate(p.created_at), esc(p.plan_code), fmtMoney(p.amount_egp), esc(LABELS.provider[p.provider]), badge(LABELS.paymentStatus[p.status], LABELS.paymentTone[p.status])])) : empty('مفيش مدفوعات')}</section>`;
+      d.payments.map((p) => [fmtDate(p.created_at), esc(p.plan_code), fmtMoney(p.amount_egp), esc(LABELS.provider[p.provider]), badge(LABELS.paymentStatus[p.status], LABELS.paymentTone[p.status])])) : empty('مفيش مدفوعات')}</section>
+
+    <section class="card danger-zone"><h2>🗑️ حذف الحساب نهائياً</h2>
+      <p class="muted">بيمسح الطالب وكل بياناته: الإجابات، وبنك الأخطاء، والاشتراكات، والمسابقات، والتيم، والأجهزة، والتقارير. <b>مفيش رجوع.</b>
+        المدفوعات بتفضل محفوظة باسمه عشان حسابات الإيرادات. لو عايز توقفه بس من غير مسح، استخدم "الحساب نشط" فوق.</p>
+      <button class="btn danger" data-action="deleteStudent">حذف الطالب نهائياً</button></section>`;
 
   const reload = () => Admin.student(el, { id });
   // Parent report: preview of what the parent receives + what was sent before.
@@ -716,6 +721,20 @@ Admin.student = async (el, { id }, query = {}) => {
       await API.post(`/admin/subscriptions/${b.dataset.id}/cancel`);
       reload();
     }),
+    deleteStudent: () => {
+      const code = d.student.student_code || d.student.email;
+      const m = modal(`<h2>🗑️ حذف ${esc(d.student.full_name)} نهائياً؟</h2>
+        <p class="notice bad">كل بيانات الطالب هتتمسح ومفيش رجوع.</p>
+        <form class="form" id="delf"><label>للتأكيد اكتب ${d.student.student_code ? 'كود الطالب' : 'إيميل الطالب'}: <b class="mono">${esc(code)}</b>
+          <input name="confirm" required autocomplete="off" dir="ltr"></label>
+          <button class="btn danger" type="submit">حذف نهائي</button></form>`);
+      onSubmit($('#delf', m), async (v) => {
+        await API.req('DELETE', `/admin/students/${id}`, { confirm: v.confirm });
+        closeModal();
+        toast(`اتمسح حساب ${d.student.full_name}`);
+        location.hash = '#/admin/students';
+      });
+    },
     removeDevice: (b) => run(b, async () => {
       if (!confirm('تشيل الجهاز ده من حساب الطالب؟ لو فاتح منه هيتقفل.')) return;
       await API.del(`/admin/students/${id}/devices/${b.dataset.id}`);

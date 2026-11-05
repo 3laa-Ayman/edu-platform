@@ -102,6 +102,37 @@ router.patch('/students/:id', validate({
   res.json({ student: u });
 });
 
+/**
+ * Delete a student account permanently (answers, mistakes, subscriptions, devices, reports… go with it).
+ * Kept: their payments (revenue), labelled with the student's name; unpaid ones are closed. A team they captained
+ * gets another captain, or is removed if nobody is left. The admin must type the student's code (or email) to confirm.
+ */
+router.delete('/students/:id', validate({ params: idParam, body: z.object({ confirm: z.string().trim().min(3).max(255) }) }), async (req, res) => {
+  const deleted = await db.withTransaction(async (c) => {
+    const { rows: [u] } = await c.query(`SELECT id, full_name, email, student_code FROM users WHERE id = $1 AND role = 'student' FOR UPDATE`, [req.p.id]);
+    if (!u) throw notFound('الطالب غير موجود');
+    const expected = (u.student_code || u.email).toLowerCase();
+    if (req.body.confirm.toLowerCase() !== expected) throw badRequest(`للتأكيد اكتب ${u.student_code ? 'كود الطالب' : 'إيميل الطالب'} بالظبط: ${u.student_code || u.email}`);
+    const label = `${u.full_name} (${u.student_code || u.email}) — حساب محذوف`;
+    await c.query(
+      `UPDATE payments SET student_label = $2, updated_at = now(),
+              status = CASE WHEN status IN ('pending', 'under_review') THEN 'failed' ELSE status END,
+              admin_note = CASE WHEN status IN ('pending', 'under_review') THEN 'الحساب اتمسح' ELSE admin_note END
+        WHERE user_id = $1`, [u.id, label]);
+    // Teams this student captained: the longest-standing other member becomes captain; empty teams are removed.
+    const { rows: teams } = await c.query(`SELECT id FROM teams WHERE captain_id = $1`, [u.id]);
+    for (const t of teams) {
+      const { rows: [next] } = await c.query(
+        `SELECT user_id FROM team_members WHERE team_id = $1 AND user_id <> $2 ORDER BY joined_at LIMIT 1`, [t.id, u.id]);
+      if (next) await c.query(`UPDATE teams SET captain_id = $2 WHERE id = $1`, [t.id, next.user_id]);
+      else await c.query(`DELETE FROM teams WHERE id = $1`, [t.id]);
+    }
+    await c.query(`DELETE FROM users WHERE id = $1`, [u.id]);
+    return u;
+  });
+  res.json({ deleted: true, student: { full_name: deleted.full_name, student_code: deleted.student_code } });
+});
+
 /** Remove one of the student's devices (signs it out if it is the active one). */
 router.delete('/students/:id/devices/:deviceId', validate({ params: z.object({ id: z.coerce.number().int().positive(), deviceId: z.coerce.number().int().positive() }) }), async (req, res) => {
   res.json(await devices.removeByAdmin(req.p.id, req.p.deviceId));

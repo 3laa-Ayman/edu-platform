@@ -21,7 +21,7 @@ async function activatePayment(client, paymentId, { providerTxnId = null, rawPay
             raw_payload = COALESCE($3, raw_payload),
             reviewed_by = COALESCE($4, reviewed_by),
             reviewed_at = CASE WHEN $4::bigint IS NULL THEN reviewed_at ELSE now() END
-      WHERE id = $1 AND status IN ('pending', 'under_review')
+      WHERE id = $1 AND status IN ('pending', 'under_review') AND user_id IS NOT NULL  -- deleted student: never activated
       RETURNING *`,
     [paymentId, providerTxnId, rawPayload ? JSON.stringify(rawPayload) : null, reviewerId],
   );

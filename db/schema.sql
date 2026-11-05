@@ -560,3 +560,10 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 -- Parent reports can also be sent by the admin on WhatsApp (wa.me link from the admin's own WhatsApp): logged as 'whatsapp'.
 ALTER TABLE parent_reports DROP CONSTRAINT IF EXISTS parent_reports_channel_check;
 ALTER TABLE parent_reports ADD CONSTRAINT parent_reports_channel_check CHECK (channel IN ('email', 'sms', 'log', 'whatsapp'));
+
+-- Deleting a student keeps their payments (revenue / accounting): the payment loses its link to the account and
+-- keeps the student's name in student_label.
+ALTER TABLE payments ADD COLUMN IF NOT EXISTS student_label VARCHAR(200);
+ALTER TABLE payments ALTER COLUMN user_id DROP NOT NULL;
+ALTER TABLE payments DROP CONSTRAINT IF EXISTS payments_user_id_fkey;
+ALTER TABLE payments ADD CONSTRAINT payments_user_id_fkey FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL;

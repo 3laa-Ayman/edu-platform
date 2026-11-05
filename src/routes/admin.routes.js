@@ -92,8 +92,8 @@ router.get('/payments', validate({
   const { rows } = await db.query(
     `SELECT p.id, p.reference, p.plan_code, p.amount_egp, p.provider, p.method_type, p.status, p.sender_account,
             p.transfer_ref, (p.receipt_data IS NOT NULL OR p.receipt_path IS NOT NULL) AS has_receipt, p.admin_note, p.created_at, p.paid_at,
-            u.student_code, u.full_name, u.phone
-       FROM payments p JOIN users u ON u.id = p.user_id
+            u.student_code, COALESCE(u.full_name, p.student_label) AS full_name, u.phone
+       FROM payments p LEFT JOIN users u ON u.id = p.user_id
       WHERE p.status = $1 ORDER BY p.created_at ASC LIMIT $2 OFFSET $3`,
     [status, limit, (page - 1) * limit],
   );

@@ -371,3 +371,6 @@ select option { color: var(--text); }
 
 /* "مش فاهم" — simpler AI explanation under the saved one */
 .ai-more { margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--border); }
+
+.card.danger-zone { border-color: var(--bad); }
+.card.danger-zone h2 { color: var(--bad); }
