@@ -577,7 +577,7 @@ Admin.students = async (el, params, query) => {
   const search = query.search || '';
   const { items } = await API.get(`/admin/students?limit=100${search ? `&search=${encodeURIComponent(search)}` : ''}`);
   el.innerHTML = `<div class="page-head"><h1>الطلاب</h1><button class="btn primary" data-action="new">+ طالب جديد</button>
-      <button class="btn wa" data-action="reportsAll">📱 إرسال تقارير أولياء الأمور على واتساب</button></div>
+      <button class="btn parent" data-action="reportsAll">📨 إرسال تقارير أولياء الأمور على واتساب</button></div>
     <section class="card"><form id="sf" class="form inline"><input name="search" value="${esc(search)}" placeholder="كود الطالب، الإيميل، الاسم أو رقم الموبايل (الطالب أو ولي الأمر)"><button class="btn ghost" type="submit">بحث</button></form>
     ${items.length ? table(['الكود', 'الاسم', 'التواصل', 'الاشتراك', 'الحالة', ''],
       items.map((s) => [s.student_code ? `<span class="mono">${esc(s.student_code)}</span>` : badge('لم يكمل التسجيل', 'mid'), esc(s.full_name),
@@ -587,8 +587,8 @@ Admin.students = async (el, params, query) => {
           ${s.blocked_device_attempts ? `<span title="محاولات دخول من أجهزة زيادة في آخر 30 يوم">${badge(`⚠️ أجهزة زيادة ×${s.blocked_device_attempts}`, 'bad')}</span>` : ''}
           <br><small class="muted">📱 ${s.devices}/2</small>`,
         `<div class="row"><a class="btn primary tiny" href="#/admin/student/${s.id}">إدارة</a>
-          ${s.student_code ? `<a class="btn ghost tiny" href="#/admin/student/${s.id}?tab=report" title="تقرير ولي الأمر">📨 تقرير</a>
-            <button class="btn wa tiny" data-action="wa" data-id="${s.id}" title="إرسال التقرير لولي الأمر على واتساب">📱 واتساب</button>` : ''}</div>`])) : empty('مفيش طلاب')}
+          ${waLink(s.phone) ? `<a class="btn wa tiny" href="${waLink(s.phone)}" target="_blank" rel="noopener" title="فتح شات واتساب مع الطالب">💬 واتساب الطالب</a>` : ''}
+          ${s.student_code ? `<button class="btn parent tiny" data-action="wa" data-id="${s.id}" title="إرسال تقرير الأسبوع لولي الأمر على واتساب">📨 تقرير ولي الأمر</button>` : ''}</div>`])) : empty('مفيش طلاب')}
     </section>`;
   onSubmit($('#sf', el), async (v) => { location.hash = `#/admin/students${v.search ? `?search=${encodeURIComponent(v.search)}` : ''}`; });
   onAction(el, {
@@ -613,6 +613,9 @@ Admin.students = async (el, params, query) => {
  * Parent report on WhatsApp: opens the admin's WhatsApp on the parent's chat with the report already written
  * (wa.me link, free — the admin just presses send). The window opens first so the browser doesn't block it.
  */
+/** WhatsApp chat link for an Egyptian mobile (01xxxxxxxxx → wa.me/201xxxxxxxxx), or null. */
+const waLink = (phone) => (/^01[0125]\d{8}$/.test(phone || '') ? `https://wa.me/2${phone}` : null);
+
 async function openWhatsAppReport(btn, studentId, after) {
   const win = window.open('', '_blank');
   await run(btn, async () => {
@@ -650,7 +653,7 @@ async function whatsAppQueue() {
         <div class="tile"><span class="tile-label">اتبعتلهم آخر 7 أيام</span><b>${students.filter((s) => s.sent_recently).length}</b></div></div>
       ${invalid ? `<p class="notice mid small">${invalid} طالب رقم ولي أمرهم مش رقم موبايل مصري صحيح، فمش في القايمة.</p>` : ''}
       <label class="check"><input type="checkbox" id="waq-all" ${includeSent ? 'checked' : ''}> ابعت كمان للي اتبعتلهم خلال آخر 7 أيام</label>
-      ${next ? `<button class="btn wa big-btn" data-wa-next="${next.id}">📱 التالي: ${esc(next.full_name)} (${sentNow + 1} من ${sentNow + pending.length})</button>`
+      ${next ? `<button class="btn parent big-btn" data-wa-next="${next.id}">📱 التالي: ${esc(next.full_name)} (${sentNow + 1} من ${sentNow + pending.length})</button>`
         : `<p class="notice good">✓ خلصت — مفيش حد فاضل.</p>`}
       <details class="device-log"><summary>القايمة (${students.length})</summary><ul>${students.map((s) =>
         `<li>${s.justSent ? '✅' : done.has(s.id) ? '☑️' : '⬜'} ${esc(s.full_name)} <small class="mono muted">${esc(s.student_code)}</small></li>`).join('')}</ul></details>`;
@@ -680,7 +683,8 @@ Admin.student = async (el, { id }, query = {}) => {
       <div class="tile"><span class="tile-label">نقاط AI المستهلكة</span><b>${fmtPoints(egpToPoints(s.ai_spent_egp))}</b><small>من ${fmtPoints(egpToPoints(s.ai_limit_egp))} · تكلفة فعلية ${fmtMoney(s.ai_spent_egp, 3)}</small>${bar(aiPct, aiPct > 80 ? 'bad' : 'good')}</div>
     </section>
 
-    <section class="card"><h2>بيانات الطالب</h2>
+    <section class="card"><div class="card-head"><h2>بيانات الطالب</h2>
+      ${waLink(d.student.phone) ? `<a class="btn wa tiny" href="${waLink(d.student.phone)}" target="_blank" rel="noopener">💬 واتساب الطالب</a>` : ''}</div>
       <form id="pf" class="form grid2">${studentFields(s)}
         <label class="check"><input type="checkbox" name="is_verified" ${s.is_verified ? 'checked' : ''}> الحساب مفعّل (تم تأكيد الإيميل)</label>
         <label class="check"><input type="checkbox" name="is_active" ${s.is_active ? 'checked' : ''}> الحساب نشط (إلغاؤه بيمنع الدخول)</label>
@@ -710,7 +714,7 @@ Admin.student = async (el, { id }, query = {}) => {
     </div>
 
     <section class="card" id="parent-report"><div class="card-head"><h2>📨 تقرير ولي الأمر</h2>
-      ${d.student.student_code ? `<div class="row"><button class="btn wa tiny" data-action="waReport">📱 إرسال على واتساب</button>
+      ${d.student.student_code ? `<div class="row"><button class="btn parent tiny" data-action="waReport">📨 إرسال التقرير لولي الأمر (واتساب)</button>
         <button class="btn primary tiny" data-action="sendReport">✉️ إرسال بالإيميل</button></div>` : ''}</div>
       <div id="report-body"><div class="loading">جارٍ تجهيز التقرير…</div></div></section>
 

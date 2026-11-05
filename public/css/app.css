@@ -396,3 +396,9 @@ select option { color: var(--text); }
 :root[data-theme="dark"] .pay-method.instapay .pm-title { color: #b794f6; }
 .pm-title { font-weight: 700; font-size: 1.05rem; }
 .pm-value { font-size: clamp(1.05rem, 5.2vw, 1.6rem); font-weight: 700; letter-spacing: .02em; overflow-wrap: anywhere; }
+/* Parent report on WhatsApp (red) vs chatting with the student (green .btn.wa) */
+.btn.parent { background: #dc2626; color: #fff; border-color: #dc2626; }
+.btn.parent:hover { filter: brightness(1.08); }
+/* Table actions and codes stay on one line (the row wraps the buttons instead) */
+td .btn, td .mono { white-space: nowrap; }
+td .row { flex-wrap: wrap; }
