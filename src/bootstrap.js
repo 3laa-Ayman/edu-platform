@@ -37,7 +37,10 @@ async function migrate({ force = false } = {}) {
 async function seed({ overwriteAdminPassword = false, log = console.log } = {}) {
   const email = (process.env.ADMIN_EMAIL || 'admin@example.com').toLowerCase();
   const password = process.env.ADMIN_PASSWORD;
-  if (password) {
+  // Boot seeding only bootstraps a brand-new install: once any admin exists (the owner may have deleted or disabled
+  // the default one), it is never re-created from the environment.
+  const { rowCount: hasAdmin } = await db.query(`SELECT 1 FROM users WHERE role = 'admin' LIMIT 1`);
+  if (password && (overwriteAdminPassword || !hasAdmin)) {
     const hash = await bcrypt.hash(password, env.bcryptRounds);
     const r = await db.query(
       `INSERT INTO users (full_name, email, password_hash, phone, parent_phone, role, is_verified)

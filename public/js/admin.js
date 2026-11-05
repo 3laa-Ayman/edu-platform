@@ -1084,7 +1084,8 @@ Admin.settings = async (el) => {
 
     <section class="card"><h2>حسابات الأدمن</h2>
       ${table(['الاسم', 'الإيميل', 'الحالة', ''], admins.map((a) => [esc(a.full_name), esc(a.email), a.is_active ? badge('نشط', 'good') : badge('موقوف', 'bad'),
-        a.id === me ? '<small class="muted">(أنت)</small>' : `<button class="btn ${a.is_active ? 'danger' : 'primary'} tiny" data-action="toggleAdmin" data-id="${a.id}" data-active="${a.is_active}">${a.is_active ? 'إيقاف' : 'تفعيل'}</button>`]))}
+        a.id === me ? '<small class="muted">(أنت)</small>' : `<div class="row"><button class="btn ${a.is_active ? 'ghost' : 'primary'} tiny" data-action="toggleAdmin" data-id="${a.id}" data-active="${a.is_active}">${a.is_active ? 'إيقاف' : 'تفعيل'}</button>
+          <button class="btn danger tiny" data-action="deleteAdmin" data-id="${a.id}" data-email="${esc(a.email)}">🗑️ حذف</button></div>`]))}
       <h3>إضافة أدمن</h3>
       <form id="af" class="form grid3">
         <label>الاسم<input name="full_name" required minlength="3"></label>
@@ -1144,6 +1145,12 @@ Admin.settings = async (el) => {
       if (!confirm('تطبيق الحد الافتراضي على كل الطلاب؟')) return;
       const r = await API.post('/admin/settings/apply-ai-limit');
       toast(`تم تحديث ${r.updated} طالب إلى ${fmtPoints(egpToPoints(r.limit_egp))}`);
+    }),
+    deleteAdmin: (b) => run(b, async () => {
+      if (!confirm(`حذف حساب الأدمن ${b.dataset.email} نهائياً؟`)) return;
+      await API.del(`/admin/admins/${b.dataset.id}`);
+      toast('تم حذف حساب الأدمن');
+      reload();
     }),
     toggleAdmin: (b) => run(b, async () => {
       await API.patch(`/admin/admins/${b.dataset.id}`, { is_active: b.dataset.active !== 'true' });

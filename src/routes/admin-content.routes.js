@@ -325,6 +325,20 @@ router.patch('/admins/:id', validate({ params: idParam, body: z.object({ is_acti
   res.json({ admin: a });
 });
 
+/** Delete another admin account. You can't delete yourself, and at least one other active admin must remain. */
+router.delete('/admins/:id', validate({ params: idParam }), async (req, res) => {
+  if (req.p.id === req.user.id) throw forbidden('لا يمكنك حذف حسابك أنت');
+  const deleted = await db.withTransaction(async (c) => {
+    const { rows: [a] } = await c.query(`SELECT id, email FROM users WHERE id = $1 AND role = 'admin' FOR UPDATE`, [req.p.id]);
+    if (!a) throw notFound('الأدمن غير موجود');
+    const { rows: [n] } = await c.query(`SELECT COUNT(*)::int AS n FROM users WHERE role = 'admin' AND is_active AND id <> $1`, [a.id]);
+    if (!n.n) throw conflict('لازم يفضل أدمن واحد نشط على الأقل');
+    await c.query(`DELETE FROM users WHERE id = $1`, [a.id]);
+    return a;
+  });
+  res.json({ deleted: true, email: deleted.email });
+});
+
 /** Change my own password (requires the current one). Other sessions are logged out. */
 router.post('/me/password', validate({ body: z.object({ current_password: z.string().min(1).max(72), new_password: password }) }), async (req, res) => {
   const { rows: [u] } = await db.query(`SELECT password_hash FROM users WHERE id = $1`, [req.user.id]);

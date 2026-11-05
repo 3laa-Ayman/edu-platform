@@ -520,6 +520,9 @@ async function studentLogin(identifier, password, device) {
   ok((await call('POST', '/api/admin/me/password', { token: a2.data.token, body: { current_password: 'wrong', new_password: 'Another99x' } })).status === 400, 'change password needs current password');
   ok((await call('PATCH', `/api/admin/admins/${na.data.admin.id}`, { token: AT, body: { is_active: false } })).data.admin.is_active === false, 'admin disables another admin');
   ok((await call('GET', '/api/admin/dashboard', { token: a2.data.token })).status === 401, 'disabled admin logged out');
+  ok((await call('DELETE', `/api/admin/admins/${admin.data.user.id}`, { token: AT })).status === 403, 'admin cannot delete self');
+  ok((await call('DELETE', `/api/admin/admins/${na.data.admin.id}`, { token: AT })).data.deleted === true, 'admin deletes another admin');
+  ok((await call('POST', '/api/auth/login', { body: { identifier: `admin2-${rnd}@t.com`, password: 'Assist4nt99' } })).status === 401, 'deleted admin cannot log in');
 
   // ---------------- Performance counters stay exact (answer → move question to another subject → delete it)
   const cs1 = (await call('POST', '/api/admin/subjects', { token: AT, body: { name: `عدادات ${rnd}` } })).data.subject;
