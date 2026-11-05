@@ -668,5 +668,15 @@ async function studentLogin(identifier, password, device) {
   ok(!(await paidOf(P1)), 'deleted payment gone from the student page');
   ok((await call('DELETE', `/api/admin/payments/${pay1.id}`, { token: AT, body: {} })).status === 404, 'deleting twice → 404');
 
+  // ---------------- Admin searches students by phone (student's or parent's, any format)
+  const Ainfo = (await call('GET', `/api/admin/students/${A.id}`, { token: AT })).data.student;
+  const findBy = async (q) => (await call('GET', `/api/admin/students?search=${encodeURIComponent(q)}`, { token: AT })).data.items.some((x) => x.id === A.id);
+  const toArabic = (t) => t.replace(/\d/g, (d) => '٠١٢٣٤٥٦٧٨٩'[d]);
+  ok(await findBy(Ainfo.phone), 'search by the student phone');
+  ok(await findBy(Ainfo.parent_phone), 'search by the parent phone');
+  ok(await findBy(Ainfo.phone.slice(-7)), 'search by part of the number');
+  ok(await findBy(`+20 ${Ainfo.phone.slice(1, 4)} ${Ainfo.phone.slice(4)}`), 'search with +20 and spaces');
+  ok(await findBy(toArabic(Ainfo.phone)), 'search with Arabic digits');
+
   console.log(`\n🎉 All ${passed} checks passed`);
 })().catch((e) => { console.error(e); process.exit(1); });

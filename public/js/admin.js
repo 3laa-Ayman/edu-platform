@@ -578,7 +578,7 @@ Admin.students = async (el, params, query) => {
   const { items } = await API.get(`/admin/students?limit=100${search ? `&search=${encodeURIComponent(search)}` : ''}`);
   el.innerHTML = `<div class="page-head"><h1>الطلاب</h1><button class="btn primary" data-action="new">+ طالب جديد</button>
       <button class="btn wa" data-action="reportsAll">📱 إرسال تقارير أولياء الأمور على واتساب</button></div>
-    <section class="card"><form id="sf" class="form inline"><input name="search" value="${esc(search)}" placeholder="كود الطالب، الإيميل أو الاسم"><button class="btn ghost" type="submit">بحث</button></form>
+    <section class="card"><form id="sf" class="form inline"><input name="search" value="${esc(search)}" placeholder="كود الطالب، الإيميل، الاسم أو رقم الموبايل (الطالب أو ولي الأمر)"><button class="btn ghost" type="submit">بحث</button></form>
     ${items.length ? table(['الكود', 'الاسم', 'التواصل', 'الاشتراك', 'الحالة', ''],
       items.map((s) => [s.student_code ? `<span class="mono">${esc(s.student_code)}</span>` : badge('لم يكمل التسجيل', 'mid'), esc(s.full_name),
         `${esc(s.email)}<br><small class="muted">طالب ${esc(s.phone)} · ولي أمر ${esc(s.parent_phone)}</small>`,

@@ -153,6 +153,18 @@ router.delete('/payments/:id', validate({ params: idParam, body: z.object({ canc
   res.json(out);
 });
 
+/**
+ * A search text that looks like a phone number → its digits as stored (01xxxxxxxxx): Arabic digits, spaces, dashes
+ * and the +20 / 0020 / 20 country code are accepted. Fewer than 4 digits → not a phone search.
+ */
+function phoneDigits(text) {
+  if (!text) return null;
+  let d = text.replace(/[٠-٩]/g, (c) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(c))).replace(/[\s\-()+]/g, '');
+  if (!/^\d{4,15}$/.test(d)) return null;
+  d = d.replace(/^0020/, '0').replace(/^20(?=1\d{9}$)/, '0');
+  return d;
+}
+
 // ------------------------------------------------------------------ Students
 router.get('/students', validate({ query: z.object({ search: z.string().max(100).optional(), ...pagination }) }), async (req, res) => {
   const { search, page, limit } = req.q;
@@ -167,9 +179,11 @@ router.get('/students', validate({ query: z.object({ search: z.string().max(100)
             (SELECT COUNT(*)::int FROM device_events e WHERE e.user_id = u.id AND e.type = 'blocked_limit'
                 AND e.created_at > now() - interval '30 days') AS blocked_device_attempts
        FROM users u
-      WHERE u.role = 'student' AND ($1::text IS NULL OR u.student_code ILIKE $1 || '%' OR u.email ILIKE $1 || '%' OR u.full_name ILIKE '%' || $1 || '%')
+      WHERE u.role = 'student' AND ($1::text IS NULL OR u.student_code ILIKE $1 || '%' OR u.email ILIKE $1 || '%' OR u.full_name ILIKE '%' || $1 || '%'
+            -- phone search: student's or parent's number, any part of it (01012345678, 1234567…)
+            OR ($4::text IS NOT NULL AND (u.phone LIKE '%' || $4 || '%' OR u.parent_phone LIKE '%' || $4 || '%')))
       ORDER BY u.id DESC LIMIT $2 OFFSET $3`,
-    [search ? search.replace(/[%_\\]/g, (m) => `\\${m}`) : null, limit, (page - 1) * limit],
+    [search ? search.replace(/[%_\\]/g, (m) => `\\${m}`) : null, limit, (page - 1) * limit, phoneDigits(search)],
   );
   res.json({ items: rows });
 });
