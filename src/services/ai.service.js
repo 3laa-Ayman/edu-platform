@@ -5,7 +5,7 @@ const { getSettings, toPoints } = require('./settings.service');
 const { mediaForAi } = require('./media.service');
 const { passageForAi } = require('./passage.service');
 
-const { model, inputUsdPerM, outputUsdPerM, maxOutputTokens } = env.gemini;
+const { maxOutputTokens } = env.gemini;
 
 function buildPrompt(q, passage = null) {
   const correctText = q[`option_${q.correct_option.toLowerCase()}`];
@@ -25,18 +25,25 @@ function buildPrompt(q, passage = null) {
   ].join('\n');
 }
 
-const costEgp = (inputTokens, outputTokens, usdToEgp) =>
-  ((inputTokens * inputUsdPerM + outputTokens * outputUsdPerM) / 1e6) * usdToEgp;
+/** s: settings (model prices per 1M tokens + USD→EGP), chosen by the admin. */
+const costEgp = (inputTokens, outputTokens, s) =>
+  ((inputTokens * s.ai_input_usd_per_m + outputTokens * s.ai_output_usd_per_m) / 1e6) * s.usd_to_egp;
 
 /** Conservative worst-case cost reserved BEFORE calling the model (Arabic ≈ 1 token per 1–2 chars). */
 // Each image costs a few hundred input tokens (Gemini bills ~258 tokens per image tile).
 const IMAGE_TOKEN_ALLOWANCE = 1100;
-const reserveFor = (prompt, usdToEgp, imageCount = 0) =>
-  costEgp(Math.ceil(prompt.length / 1.5) + 50 + imageCount * IMAGE_TOKEN_ALLOWANCE, maxOutputTokens, usdToEgp);
+const reserveFor = (prompt, s, imageCount = 0) =>
+  costEgp(Math.ceil(prompt.length / 1.5) + 50 + imageCount * IMAGE_TOKEN_ALLOWANCE, maxOutputTokens, s);
+
+/**
+ * Keep "thinking" short (cheaper, faster): Gemini 2.x turns it off with thinkingBudget 0, Gemini 3+ uses
+ * thinkingLevel. If a model rejects the setting, the call is retried without it.
+ */
+const thinkingFor = (model) => (/^gemini-2\./.test(model) ? { thinkingBudget: 0 } : { thinkingLevel: 'low' });
 
 const SLOT_NAME = { passage: 'الرسمة/صورة القطعة المرتبطة بالسؤال', question: 'صورة السؤال', option_a: 'صورة الاختيار أ', option_b: 'صورة الاختيار ب', option_c: 'صورة الاختيار ج', option_d: 'صورة الاختيار د' };
 
-async function callGemini(prompt, images = []) {
+async function callGemini(prompt, images = [], model) {
   if (!env.gemini.apiKey) {
     if (!env.allowMocks) throw new AppError(503, 'خدمة الذكاء الاصطناعي غير مهيأة', 'AI_NOT_CONFIGURED');
     // Development mock — mirrors the real response shape so the cost pipeline is exercised end to end.
@@ -47,8 +54,8 @@ async function callGemini(prompt, images = []) {
     };
   }
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
-  const res = await fetch(url, {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
+  const request = (thinkingConfig) => fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.gemini.apiKey },
     body: JSON.stringify({
@@ -60,15 +67,20 @@ async function callGemini(prompt, images = []) {
           ...images.flatMap((m) => [{ text: `${SLOT_NAME[m.slot]}:` }, { inline_data: { mime_type: m.mime, data: m.data.toString('base64') } }]),
         ],
       }],
-      generationConfig: { maxOutputTokens, temperature: 0.3, thinkingConfig: { thinkingBudget: 0 } },
+      generationConfig: { maxOutputTokens, temperature: 0.3, ...(thinkingConfig ? { thinkingConfig } : {}) },
     }),
     signal: AbortSignal.timeout(25_000),
   });
-  const data = await res.json().catch(() => ({}));
+  let res = await request(thinkingFor(model));
+  let data = await res.json().catch(() => ({}));
+  if (res.status === 400 && /thinking/i.test(data?.error?.message || '')) {
+    res = await request(null);
+    data = await res.json().catch(() => ({}));
+  }
   if (!res.ok) throw new Error(`Gemini HTTP ${res.status}: ${data?.error?.message || 'unknown error'}`);
 
-  const text = (data.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('').trim();
-  if (!text) throw new Error('Gemini returned an empty response');
+  const text = (data.candidates?.[0]?.content?.parts || []).filter((p) => !p.thought).map((p) => p.text || '').join('').trim();
+  if (!text) throw new Error(`Gemini returned an empty response (${data.candidates?.[0]?.finishReason || 'no candidates'})`);
   const u = data.usageMetadata || {};
   return {
     text,
@@ -78,6 +90,7 @@ async function callGemini(prompt, images = []) {
 }
 
 async function logUsage(row) {
+  const model = row.model || (await getSettings()).ai_model;
   await db.query(
     `INSERT INTO ai_usage_logs (user_id, question_id, model, input_tokens, output_tokens, total_tokens, cost_usd, cost_egp, status, error)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
@@ -102,8 +115,9 @@ async function explainWithBudget(userId, question) {
     ...await mediaForAi(question.id),
   ].filter((m) => m.mime !== 'image/gif');
   const prompt = buildPrompt(question, passage) + (images.length ? '\nملحوظة: السؤال يحتوي على صور مرفقة، اعتمد عليها في الشرح.' : '');
-  const { usd_to_egp: usdToEgp, ai_points_per_egp: rate } = await getSettings();
-  const reserve = reserveFor(prompt, usdToEgp, images.length);
+  const settings = await getSettings();
+  const { usd_to_egp: usdToEgp, ai_points_per_egp: rate, ai_model: model } = settings;
+  const reserve = reserveFor(prompt, settings, images.length);
 
   const reserved = await db.query(
     `UPDATE users SET ai_spent_egp = ai_spent_egp + $2
@@ -124,7 +138,7 @@ async function explainWithBudget(userId, question) {
 
   let result;
   try {
-    result = await callGemini(prompt, images);
+    result = await callGemini(prompt, images, model);
   } catch (err) {
     await db.query(`UPDATE users SET ai_spent_egp = GREATEST(ai_spent_egp - $2, 0) WHERE id = $1`, [userId, reserve.toFixed(6)]);
     await logUsage({ userId, questionId: question.id, status: 'error', error: String(err.message).slice(0, 500) });
@@ -133,7 +147,7 @@ async function explainWithBudget(userId, question) {
     throw new AppError(502, 'تعذر الحصول على الشرح حالياً، لم يتم خصم أي تكلفة. حاول مرة أخرى.', 'AI_UPSTREAM_ERROR');
   }
 
-  const actualEgp = costEgp(result.usage.input, result.usage.output, usdToEgp);
+  const actualEgp = costEgp(result.usage.input, result.usage.output, settings);
   const { rows } = await db.query(
     `UPDATE users SET ai_spent_egp = GREATEST(ai_spent_egp - $2 + $3, 0) WHERE id = $1
      RETURNING ai_spent_egp, ai_limit_egp`,
@@ -172,4 +186,22 @@ async function explainWithBudget(userId, question) {
   };
 }
 
-module.exports = { explainWithBudget, buildPrompt, costEgp };
+/**
+ * Admin "test the AI" button: one tiny request with the current key + model (no student budget used).
+ * Returns what Google answered, or its error message, so a wrong key/model name is obvious.
+ */
+async function testModel() {
+  const settings = await getSettings();
+  const started = Date.now();
+  try {
+    const r = await callGemini('اكتب جملة واحدة قصيرة بالعربي تشجع طالب ثانوية عامة على المذاكرة.', [], settings.ai_model);
+    return {
+      ok: !r.mock, mock: Boolean(r.mock), model: settings.ai_model, reply: r.text, ms: Date.now() - started,
+      tokens: r.usage, cost_egp: Number(costEgp(r.usage.input, r.usage.output, settings).toFixed(4)),
+    };
+  } catch (err) {
+    return { ok: false, model: settings.ai_model, error: String(err.message).slice(0, 400), ms: Date.now() - started };
+  }
+}
+
+module.exports = { explainWithBudget, buildPrompt, costEgp, testModel };

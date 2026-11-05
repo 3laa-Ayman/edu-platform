@@ -813,7 +813,7 @@ Admin.announcements = async (el) => {
 
 // ---------------------------------------------------------------- Settings & admin accounts
 Admin.settings = async (el) => {
-  const [{ settings: s }, { admins, me }] = await Promise.all([API.get('/admin/settings'), API.get('/admin/admins')]);
+  const [{ settings: s, ai_key_configured: aiKey }, { admins, me }] = await Promise.all([API.get('/admin/settings'), API.get('/admin/admins')]);
   el.innerHTML = `<h1 class="page-head">الإعدادات</h1>
     <section class="card"><h2>إعدادات المنصة</h2><form id="sf" class="form grid2">
       <label>اسم المنصة<input name="site_name" required value="${esc(s.site_name)}"></label>
@@ -827,6 +827,20 @@ Admin.settings = async (el) => {
       <label>سعر الدولار بالجنيه (لحساب تكلفة Gemini)<input type="number" name="usd_to_egp" min="1" step="0.01" value="${s.usd_to_egp}"></label>
       <button class="btn primary span2" type="submit">حفظ الإعدادات</button></form>
       <p class="muted">حد الذكاء الاصطناعي بيتطبق على الطلاب الجدد. <button class="btn ghost tiny" data-action="applyAi">طبّقه على كل الطلاب الحاليين</button></p>
+    </section>
+
+    <section class="card"><h2>الذكاء الاصطناعي (Gemini)</h2>
+      <p class="${aiKey ? 'notice good' : 'notice bad'}">${aiKey ? '✓ مفتاح Gemini متحط على السيرفر' : '⛔ مفتاح Gemini مش متحط — ضيف GEMINI_API_KEY في إعدادات Vercel'}</p>
+      <form id="gf" class="form grid3">
+        <label class="span3">اسم الموديل (زي ما هو مكتوب في Google AI Studio)<input name="ai_model" required list="ai-models" dir="ltr" value="${esc(s.ai_model)}">
+          <datalist id="ai-models"><option value="gemini-3.8-flash"><option value="gemini-2.5-flash"><option value="gemini-2.5-flash-lite"></datalist></label>
+        <label>سعر الإدخال (دولار لكل مليون توكن)<input type="number" name="ai_input_usd_per_m" min="0" step="0.01" required value="${s.ai_input_usd_per_m}"></label>
+        <label>سعر الإخراج (دولار لكل مليون توكن)<input type="number" name="ai_output_usd_per_m" min="0" step="0.01" required value="${s.ai_output_usd_per_m}"></label>
+        <div class="row" style="align-items:end"><button class="btn primary" type="submit">حفظ</button>
+          <button class="btn ghost" type="button" data-action="testAi">🧪 جرّب الذكاء الاصطناعي</button></div>
+      </form>
+      <p class="muted small">الأسعار بتستخدم في حساب نقط الطلاب. حطها زي صفحة أسعار Gemini، ولو مش متأكد خليها أعلى شوية (الطالب بيتخصم منه التكلفة الفعلية بس).</p>
+      <div id="ai-test"></div>
     </section>
 
     <section class="card"><h2>حسابات الأدمن</h2>
@@ -864,6 +878,10 @@ Admin.settings = async (el) => {
     renderTopbar(location.hash.slice(1).split('?')[0]);
     toast('تم حفظ الإعدادات');
   });
+  onSubmit($('#gf', el), async (v) => {
+    await API.patch('/admin/settings', { ai_model: v.ai_model, ai_input_usd_per_m: Number(v.ai_input_usd_per_m), ai_output_usd_per_m: Number(v.ai_output_usd_per_m) });
+    toast('تم حفظ إعدادات الذكاء الاصطناعي');
+  });
   onSubmit($('#af', el), async (v) => { await API.post('/admin/admins', v); toast('تمت إضافة الأدمن'); reload(); });
   onSubmit($('#mf', el), async (v) => {
     const r = await API.post('/admin/me/password', v);
@@ -873,6 +891,16 @@ Admin.settings = async (el) => {
     location.hash = '#/login';
   });
   onAction(el, {
+    testAi: (b) => run(b, async () => {
+      const box = $('#ai-test', el);
+      box.innerHTML = '<p class="muted">جاري التجربة…</p>';
+      const r = await API.post('/admin/ai/test');
+      box.innerHTML = r.ok
+        ? `<div class="notice good">✓ شغال — الموديل <b dir="ltr">${esc(r.model)}</b> رد في ${(r.ms / 1000).toFixed(1)} ثانية (تكلفة ${fmtMoney(r.cost_egp, 4)}):<br>«${esc(r.reply)}»</div>`
+        : r.mock ? '<div class="notice mid">الوضع التجريبي: مفيش مفتاح Gemini، فالرد تجريبي.</div>'
+          : `<div class="notice bad">⛔ مش شغال مع الموديل <b dir="ltr">${esc(r.model)}</b>:<br><span dir="ltr" class="mono small">${esc(r.error)}</span><br>اتأكد من المفتاح في Vercel ومن اسم الموديل.</div>`;
+    }),
+
     applyAi: (b) => run(b, async () => {
       if (!confirm('تطبيق الحد الافتراضي على كل الطلاب؟')) return;
       const r = await API.post('/admin/settings/apply-ai-limit');

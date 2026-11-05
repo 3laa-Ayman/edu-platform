@@ -48,10 +48,12 @@ module.exports = {
 
   gemini: {
     apiKey: process.env.GEMINI_API_KEY,
-    model: process.env.GEMINI_MODEL || 'gemini-2.5-flash-lite',
-    inputUsdPerM: num(process.env.GEMINI_INPUT_USD_PER_M, 0.1),
-    outputUsdPerM: num(process.env.GEMINI_OUTPUT_USD_PER_M, 0.4),
-    maxOutputTokens: num(process.env.GEMINI_MAX_OUTPUT_TOKENS, 700),
+    // Defaults only: the admin picks the model and its prices in the dashboard (settings ai_model / ai_*_usd_per_m).
+    model: process.env.GEMINI_MODEL || 'gemini-3.8-flash',
+    inputUsdPerM: num(process.env.GEMINI_INPUT_USD_PER_M, 1.5),
+    outputUsdPerM: num(process.env.GEMINI_OUTPUT_USD_PER_M, 7.5),
+    // Room for the model's short "thinking" + the ~180-word answer (thinking counts as output).
+    maxOutputTokens: num(process.env.GEMINI_MAX_OUTPUT_TOKENS, 2048),
     usdToEgp: num(process.env.USD_TO_EGP, 50),
   },
   aiLimitEgp: num(process.env.AI_LIMIT_EGP, 100),

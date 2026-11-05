@@ -278,7 +278,8 @@ router.patch('/plans/:code', validate({ params: z.object({ code: z.string().max(
 
 // ------------------------------------------------------------------ Settings
 router.get('/settings', async (req, res) => {
-  res.json({ settings: await getSettings() });
+  // ai_key_configured: whether GEMINI_API_KEY is set on the server (the key itself is never sent).
+  res.json({ settings: await getSettings(), ai_key_configured: Boolean(env.gemini.apiKey) });
 });
 
 router.patch('/settings', validate({ body: SETTINGS_SCHEMA.partial() }), async (req, res) => {
@@ -286,6 +287,11 @@ router.patch('/settings', validate({ body: SETTINGS_SCHEMA.partial() }), async (
 });
 
 /** Applies the current default AI limit to every existing student. */
+/** "Test the AI": one tiny request with the current key + model, no student budget used. */
+router.post('/ai/test', async (req, res) => {
+  res.json(await require('../services/ai.service').testModel());
+});
+
 router.post('/settings/apply-ai-limit', async (req, res) => {
   const { default_ai_limit_egp: limit } = await getSettings();
   const r = await db.query(`UPDATE users SET ai_limit_egp = $1, updated_at = now() WHERE role = 'student'`, [limit]);
