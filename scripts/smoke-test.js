@@ -636,5 +636,28 @@ async function studentLogin(identifier, password, device) {
   ok(wDel.status === 200 && (await call('GET', `/api/admin/teams?search=${encodeURIComponent(`فريق الحذف ${rnd}`)}`, { token: AT })).data.teams.length === 0, 'last member deleted → empty team removed');
   ok((await call('DELETE', `/api/admin/students/${admin.data.user.id}`, { token: AT, body: { confirm: 'admin@example.com' } })).status === 404, 'admins cannot be deleted from the students page');
 
+  // ---------------- Admin deletes payments (paid: optionally cancelling the subscription it bought)
+  const P1 = await registerStudent(55);
+  const P2 = await registerStudent(56);
+  const buy = async (st) => {
+    const co = await call('POST', '/api/payments/checkout', { token: st.token, body: { plan_code: 'premium', provider: 'paymob' } });
+    await call('POST', `/api/payments/${co.data.payment.reference}/dev-simulate-paid`, { token: st.token });
+    return co.data.payment.reference;
+  };
+  await buy(P1); await buy(P2);
+  const paidOf = async (st) => (await call('GET', `/api/admin/students/${st.id}`, { token: AT })).data.payments.find((x) => x.status === 'paid');
+  const pay1 = await paidOf(P1); const pay2 = await paidOf(P2);
+  const rev0 = (await call('GET', '/api/admin/dashboard', { token: AT })).data.revenue_egp;
+  ok((await call('DELETE', `/api/admin/payments/${pay1.id}`, { token: P1.token, body: {} })).status === 403, 'students cannot delete payments');
+  const d1 = await call('DELETE', `/api/admin/payments/${pay1.id}`, { token: AT, body: { cancel_subscription: true } });
+  ok(d1.status === 200 && d1.data.subscription_cancelled, 'paid payment deleted + its subscription cancelled');
+  ok((await call('GET', '/api/auth/me', { token: P1.token })).data.subscription === null, 'student no longer subscribed');
+  const d2 = await call('DELETE', `/api/admin/payments/${pay2.id}`, { token: AT, body: {} });
+  ok(d2.status === 200 && !d2.data.subscription_cancelled && (await call('GET', '/api/auth/me', { token: P2.token })).data.subscription?.plan_code === 'premium', 'paid payment deleted, subscription kept');
+  const rev1 = (await call('GET', '/api/admin/dashboard', { token: AT })).data.revenue_egp;
+  ok(Math.abs(rev0 - rev1 - Number(pay1.amount_egp) - Number(pay2.amount_egp)) < 0.01, `revenue reduced by the deleted payments (${rev0} → ${rev1})`);
+  ok(!(await paidOf(P1)), 'deleted payment gone from the student page');
+  ok((await call('DELETE', `/api/admin/payments/${pay1.id}`, { token: AT, body: {} })).status === 404, 'deleting twice → 404');
+
   console.log(`\n🎉 All ${passed} checks passed`);
 })().catch((e) => { console.error(e); process.exit(1); });

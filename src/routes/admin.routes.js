@@ -94,7 +94,10 @@ router.get('/payments', validate({
             p.transfer_ref, (p.receipt_data IS NOT NULL OR p.receipt_path IS NOT NULL) AS has_receipt, p.admin_note, p.created_at, p.paid_at,
             u.student_code, COALESCE(u.full_name, p.student_label) AS full_name, u.phone
        FROM payments p LEFT JOIN users u ON u.id = p.user_id
-      WHERE p.status = $1 ORDER BY p.created_at ASC LIMIT $2 OFFSET $3`,
+      WHERE p.status = $1
+      -- queues (waiting for review/payment): oldest first; history (paid, rejected…): newest first
+      ORDER BY CASE WHEN p.status IN ('under_review', 'pending') THEN p.created_at END ASC, p.created_at DESC
+      LIMIT $2 OFFSET $3`,
     [status, limit, (page - 1) * limit],
   );
   res.json({ items: rows });
@@ -130,6 +133,24 @@ router.post('/payments/:id/reject', validate({ params: idParam, body: z.object({
     [req.p.id, req.body.note, req.user.id]);
   if (!r.rowCount) throw conflict('لا يمكن رفض هذه العملية');
   res.json({ message: 'تم رفض الإيصال' });
+});
+
+/**
+ * Delete a payment (and its receipt image). For a paid one the admin chooses whether the subscription it bought is
+ * cancelled too; otherwise the subscription stays (it just loses its link to the payment). Revenue drops by its amount.
+ */
+router.delete('/payments/:id', validate({ params: idParam, body: z.object({ cancel_subscription: z.boolean().default(false) }).default({}) }), async (req, res) => {
+  const out = await db.withTransaction(async (c) => {
+    const { rows: [p] } = await c.query(`SELECT id, status FROM payments WHERE id = $1 FOR UPDATE`, [req.p.id]);
+    if (!p) throw notFound('العملية غير موجودة');
+    let cancelled = 0;
+    if (req.body.cancel_subscription) {
+      cancelled = (await c.query(`UPDATE subscriptions SET status = 'cancelled' WHERE payment_id = $1 AND status = 'active'`, [p.id])).rowCount;
+    }
+    await c.query(`DELETE FROM payments WHERE id = $1`, [p.id]);
+    return { deleted: true, subscription_cancelled: cancelled > 0 };
+  });
+  res.json(out);
 });
 
 // ------------------------------------------------------------------ Students

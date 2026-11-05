@@ -344,7 +344,8 @@ Admin.payments = async (el, params, query) => {
         `${esc(p.sender_account || '—')}<br><small class="mono">${esc(p.transfer_ref || '')}</small>`,
         `<div class="row">${p.has_receipt ? `<button class="btn ghost tiny" data-action="receipt" data-id="${p.id}">الإيصال</button>` : ''}
         ${p.status === 'under_review' ? `<button class="btn primary tiny" data-action="approve" data-id="${p.id}">قبول</button>
-          <button class="btn danger tiny" data-action="reject" data-id="${p.id}">رفض</button>` : esc(p.admin_note || '')}</div>`]))
+          <button class="btn danger tiny" data-action="reject" data-id="${p.id}">رفض</button>` : esc(p.admin_note || '')}
+        <button class="btn ghost tiny" data-action="del" data-id="${p.id}" data-status="${p.status}" title="حذف العملية">🗑️</button></div>`]))
       : empty('مفيش عمليات هنا')}</section>`;
   const reload = () => Admin.payments(el, params, query);
   onAction(el, {
@@ -361,6 +362,23 @@ Admin.payments = async (el, params, query) => {
       toast('تم تفعيل الاشتراك');
       reload();
     }),
+    del: (b) => {
+      const p = items.find((x) => String(x.id) === b.dataset.id);
+      const paid = p.status === 'paid';
+      const m = modal(`<h2>🗑️ حذف العملية؟</h2>
+        <p>${esc(p.full_name)} — ${esc(p.plan_code)} — <b>${fmtMoney(p.amount_egp)}</b> (${esc(LABELS.paymentStatus[p.status])})</p>
+        <p class="notice bad">العملية وصورة الإيصال هيتمسحوا نهائياً${paid ? '، والإيرادات هتقل بالمبلغ ده' : ''}.</p>
+        <form class="form" id="pdf">
+          ${paid ? `<label class="check"><input type="checkbox" name="cancel_subscription"> إلغاء الاشتراك اللي الطالب أخده بالدفع ده كمان</label>
+            <p class="muted small">لو مش متعلّم عليه، اشتراك الطالب بيفضل شغال عادي.</p>` : ''}
+          <button class="btn danger" type="submit">حذف</button></form>`);
+      onSubmit($('#pdf', m), async (v) => {
+        const r = await API.req('DELETE', `/admin/payments/${p.id}`, { cancel_subscription: Boolean(v.cancel_subscription) });
+        closeModal();
+        toast(r.subscription_cancelled ? 'اتمسحت العملية واتلغى الاشتراك' : 'اتمسحت العملية');
+        reload();
+      });
+    },
     reject: (b) => {
       const m = modal(`<h2>رفض الإيصال</h2><form class="form" id="rf"><label>السبب (هيظهر للطالب)<input name="note" required minlength="3" value="الإيصال غير واضح أو المبلغ غير مطابق"></label>
         <button class="btn danger" type="submit">رفض</button></form>`);
