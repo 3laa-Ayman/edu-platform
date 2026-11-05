@@ -200,6 +200,7 @@ router.post('/competitions', validate({
     random: z.object({
       count: z.number().int().min(1).max(200),
       subject_id: z.number().int().positive().optional(),
+      lesson_id: z.number().int().positive().optional(),
       category: z.enum(['lesson', 'past_exam']).optional(),
     }).optional(),
   }).refine((b) => b.ends_at > b.starts_at, { message: 'وقت النهاية يجب أن يكون بعد البداية', path: ['ends_at'] })
@@ -218,8 +219,9 @@ router.post('/competitions', validate({
         `INSERT INTO competition_questions (competition_id, question_id)
          SELECT $1, id FROM questions
           WHERE is_active AND ($2::int IS NULL OR subject_id = $2) AND ($3::text IS NULL OR category = $3)
+            AND ($5::int IS NULL OR lesson_id = $5)
           ORDER BY random() LIMIT $4`,
-        [comp.id, b.random.subject_id ?? null, b.random.category ?? null, b.random.count]);
+        [comp.id, b.random.subject_id ?? null, b.random.category ?? null, b.random.count, b.random.lesson_id ?? null]);
     if (!ins.rowCount) throw badRequest('لم يتم العثور على أسئلة مطابقة');
     return { ...comp, question_count: ins.rowCount };
   });

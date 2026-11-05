@@ -442,6 +442,77 @@ Admin.plans = async (el) => {
 };
 
 // ---------------------------------------------------------------- Competitions
+/**
+ * Question picker for competitions: filter by subject / lesson / category / text, tick questions (kept across
+ * filters and pages). `selected` is a Set of question ids, updated in place; onDone runs on the main button.
+ */
+function pickQuestions({ subjects, selected, title = 'اختار أسئلة المسابقة', saveLabel = 'تم', onDone }) {
+  const m = modal(`<h2>${esc(title)}</h2>
+    <form class="form grid3" id="pkf">
+      <label>المادة<select name="subject_id"><option value="">كل المواد</option>${subjects.map((s) => opt(s.id, s.name)).join('')}</select></label>
+      <label>الدرس<select name="lesson_id"><option value="">كل الدروس</option></select></label>
+      <label>التصنيف<select name="category"><option value="">الكل</option><option value="lesson">دروس</option><option value="past_exam">امتحانات سابقة</option></select></label>
+      <label class="span3">بحث في نص السؤال<input name="search" placeholder="كلمة من السؤال"></label>
+    </form>
+    <div class="row wrap pick-bar"><span class="badge good" id="pk-count"></span>
+      <button class="btn ghost tiny" type="button" id="pk-page">اختار كل اللي ظاهر</button>
+      <button class="btn ghost tiny" type="button" id="pk-clear">إلغاء الاختيار</button></div>
+    <div id="pk-list" class="pick-list"></div>
+    <button class="btn ghost tiny" type="button" id="pk-more" hidden>عرض المزيد</button>
+    <button class="btn primary big-btn" type="button" id="pk-done"></button>`);
+  const f = $('#pkf', m);
+  let page = 1;
+  let items = [];
+  const count = () => {
+    $('#pk-count', m).textContent = `${selected.size} سؤال مختار`;
+    $('#pk-done', m).textContent = `${saveLabel} (${selected.size} سؤال)`;
+  };
+  const row = (q) => `<label class="pick-q"><input type="checkbox" value="${q.id}" ${selected.has(q.id) ? 'checked' : ''}>
+    <span class="pick-body"><span class="pick-text">${rich(q.question_text || '(سؤال صورة)')}</span>
+      <small class="muted"><span class="mono">#${q.id}</span> · ${esc(q.subject)}${q.lesson ? ` · ${esc(q.lesson)}` : ''}${q.category === 'past_exam' ? ' · امتحان سابق' : ''}${q.passage ? ' · 📄 قطعة' : ''}</small></span></label>`;
+  async function load(reset) {
+    if (reset) { page = 1; items = []; }
+    const v = formValues(f);
+    const qs = new URLSearchParams({ limit: 50, page });
+    for (const k of ['subject_id', 'lesson_id', 'category', 'search']) if (v[k]) qs.set(k, v[k]);
+    const r = await API.get(`/admin/questions?${qs}`);
+    items = items.concat(r.items.filter((q) => q.is_active)); // hidden questions can't be in a competition
+    $('#pk-list', m).innerHTML = items.length ? items.map(row).join('') : empty('مفيش أسئلة بالفلتر ده');
+    $('#pk-more', m).hidden = page * 50 >= r.total;
+  }
+  f.subject_id.addEventListener('change', () => {
+    const s = subjects.find((x) => String(x.id) === f.subject_id.value);
+    f.lesson_id.innerHTML = `<option value="">كل الدروس</option>${(s?.lessons || []).map((l) => opt(l.id, l.name)).join('')}`;
+  });
+  f.addEventListener('change', (e) => { if (e.target.name !== 'search') load(true); });
+  let t;
+  f.search.addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => load(true), 400); });
+  f.addEventListener('submit', (e) => e.preventDefault());
+  $('#pk-list', m).addEventListener('change', (e) => {
+    const id = Number(e.target.value);
+    if (e.target.checked) selected.add(id); else selected.delete(id);
+    count();
+  });
+  $('#pk-page', m).addEventListener('click', () => {
+    items.forEach((q) => selected.add(q.id));
+    $$('#pk-list input', m).forEach((c) => { c.checked = true; });
+    count();
+  });
+  $('#pk-clear', m).addEventListener('click', () => {
+    selected.clear();
+    $$('#pk-list input', m).forEach((c) => { c.checked = false; });
+    count();
+  });
+  $('#pk-more', m).addEventListener('click', (e) => run(e.target, () => { page++; return load(false); }));
+  $('#pk-done', m).addEventListener('click', (e) => run(e.target, async () => {
+    if (!selected.size) throw new Error('اختار سؤال واحد على الأقل');
+    await onDone?.();
+    closeModal();
+  }));
+  count();
+  load(true);
+}
+
 Admin.competitions = async (el) => {
   const [{ competitions }, { subjects }] = await Promise.all([API.get('/competitions'), API.get('/admin/subjects')]);
   const now = new Date();
@@ -453,9 +524,18 @@ Admin.competitions = async (el) => {
         <label>تبدأ<input type="datetime-local" name="starts_at" required value="${toLocalInput(now)}"></label>
         <label>تنتهي<input type="datetime-local" name="ends_at" required value="${toLocalInput(new Date(now.getTime() + 2 * 3600000))}"></label>
         <label>مدة الحل (دقيقة)<input type="number" name="duration_minutes" min="1" max="600" value="30"></label>
-        <label>عدد الأسئلة (عشوائي)<input type="number" name="count" min="1" max="200" value="10"></label>
-        <label>المادة<select name="subject_id"><option value="">كل المواد</option>${subjects.map((s) => opt(s.id, `${s.name} (${s.questions})`)).join('')}</select></label>
-        <label>التصنيف<select name="category"><option value="">الكل</option><option value="lesson">دروس</option><option value="past_exam">امتحانات سابقة</option></select></label>
+        <div class="span3 q-mode"><b>الأسئلة:</b>
+          <label class="check"><input type="radio" name="q_mode" value="random" checked> 🎲 عشوائي من البنك</label>
+          <label class="check"><input type="radio" name="q_mode" value="manual"> ✋ أختارها بنفسي</label></div>
+        <div class="span3 grid3" id="q-random">
+          <label>عدد الأسئلة<input type="number" name="count" min="1" max="200" value="10"></label>
+          <label>المادة<select name="subject_id"><option value="">كل المواد</option>${subjects.map((s) => opt(s.id, `${s.name} (${s.questions})`)).join('')}</select></label>
+          <label>الدرس<select name="lesson_id"><option value="">كل الدروس</option></select></label>
+          <label>التصنيف<select name="category"><option value="">الكل</option><option value="lesson">دروس</option><option value="past_exam">امتحانات سابقة</option></select></label>
+        </div>
+        <div class="span3" id="q-manual" hidden>
+          <button class="btn ghost" type="button" data-action="pick">✋ اختار الأسئلة <span class="badge" id="picked-count">0 مختار</span></button>
+        </div>
         <button class="btn primary span3" type="submit">إنشاء المسابقة</button>
       </form></section>
     <section class="card"><h2>كل المسابقات</h2>${competitions.length ? table(['المسابقة', 'النوع', 'الوقت', 'الحالة', ''],
@@ -463,20 +543,53 @@ Admin.competitions = async (el) => {
         `${fmtDate(c.starts_at)}<br><small class="muted">${fmtDate(c.ends_at)}</small>`,
         badge(LABELS.compStatus[c.status], LABELS.compTone[c.status]),
         `<div class="row"><a class="btn ghost tiny" href="#/competition/${c.id}">الترتيب</a>
+          <button class="btn ghost tiny" data-action="questions" data-id="${c.id}">الأسئلة</button>
           <button class="btn ghost tiny" data-action="edit" data-id="${c.id}">تعديل</button>
           <button class="btn danger tiny" data-action="del" data-id="${c.id}">حذف</button></div>`])) : empty('مفيش مسابقات')}</section>`;
   const reload = () => Admin.competitions(el);
-  onSubmit($('#cf', el), async (v) => {
+  // Questions: random from the bank (subject / lesson / category) or picked one by one.
+  const picked = new Set();
+  const cf = $('#cf', el);
+  const showMode = () => {
+    const manual = cf.q_mode.value === 'manual';
+    $('#q-random', el).hidden = manual;
+    $('#q-manual', el).hidden = !manual;
+  };
+  cf.querySelectorAll('[name=q_mode]').forEach((r) => r.addEventListener('change', showMode));
+  cf.subject_id.addEventListener('change', () => {
+    const s = subjects.find((x) => String(x.id) === cf.subject_id.value);
+    cf.lesson_id.innerHTML = `<option value="">كل الدروس</option>${(s?.lessons || []).map((l) => opt(l.id, `${l.name} (${l.questions})`)).join('')}`;
+  });
+  const showPicked = () => { $('#picked-count', el).textContent = `${picked.size} مختار`; };
+  onSubmit(cf, async (v) => {
+    const manual = v.q_mode === 'manual';
+    if (manual && !picked.size) throw new Error('اختار الأسئلة الأول (زرار «اختار الأسئلة»)');
     const r = await API.post('/admin/competitions', {
       title: v.title, type: v.type,
       starts_at: new Date(v.starts_at).toISOString(), ends_at: new Date(v.ends_at).toISOString(),
       duration_minutes: Number(v.duration_minutes),
-      random: { count: Number(v.count), subject_id: num(v.subject_id), category: v.category },
+      ...(manual ? { question_ids: [...picked] }
+        : { random: { count: Number(v.count), subject_id: num(v.subject_id), lesson_id: num(v.lesson_id), category: v.category } }),
     });
     toast(`تم إنشاء المسابقة بـ ${r.competition.question_count} سؤال`);
     reload();
   });
   onAction(el, {
+    pick: () => pickQuestions({ subjects, selected: picked, onDone: showPicked }),
+    questions: (b) => run(b, async () => {
+      const c = competitions.find((x) => String(x.id) === b.dataset.id);
+      const { questions } = await API.get(`/admin/competitions/${c.id}/questions`);
+      const sel = new Set(questions.map((q) => q.id));
+      pickQuestions({
+        subjects, selected: sel, title: `أسئلة «${c.title}»`,
+        saveLabel: 'حفظ الأسئلة',
+        onDone: async () => {
+          const r = await API.put(`/admin/competitions/${c.id}/questions`, { question_ids: [...sel] });
+          toast(`تم حفظ ${r.question_count} سؤال`);
+          reload();
+        },
+      });
+    }),
     edit: (b) => {
       const c = competitions.find((x) => String(x.id) === b.dataset.id);
       const m = modal(`<h2>تعديل المسابقة</h2><form class="form" id="ef">

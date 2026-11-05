@@ -330,6 +330,35 @@ router.patch('/competitions/:id', validate({
   res.json({ competition: c });
 });
 
+/** The competition's questions (admin view, with the correct answer). */
+router.get('/competitions/:id/questions', validate({ params: idParam }), async (req, res) => {
+  const { rows } = await db.query(
+    `SELECT q.id, q.question_text, q.correct_option, q.category, s.name AS subject, l.name AS lesson
+       FROM competition_questions cq JOIN questions q ON q.id = cq.question_id
+       JOIN subjects s ON s.id = q.subject_id LEFT JOIN lessons l ON l.id = q.lesson_id
+      WHERE cq.competition_id = $1 ORDER BY q.id`, [req.p.id]);
+  res.json({ questions: rows });
+});
+
+/** Replace the competition's questions — only before any student has started it (everyone must get the same set). */
+router.put('/competitions/:id/questions', validate({
+  params: idParam, body: z.object({ question_ids: z.array(z.number().int().positive()).min(1).max(200) }),
+}), async (req, res) => {
+  const count = await db.withTransaction(async (c) => {
+    const { rows: [comp] } = await c.query(`SELECT id FROM competitions WHERE id = $1 FOR UPDATE`, [req.p.id]);
+    if (!comp) throw notFound('المسابقة غير موجودة');
+    const { rowCount: started } = await c.query(`SELECT 1 FROM competition_entries WHERE competition_id = $1 LIMIT 1`, [comp.id]);
+    if (started) throw conflict('فيه طلاب بدأوا المسابقة بالفعل، فمينفعش تتغير أسئلتها دلوقتي');
+    await c.query(`DELETE FROM competition_questions WHERE competition_id = $1`, [comp.id]);
+    const ins = await c.query(
+      `INSERT INTO competition_questions (competition_id, question_id)
+       SELECT $1, id FROM questions WHERE id = ANY($2::bigint[]) AND is_active`, [comp.id, req.body.question_ids]);
+    if (!ins.rowCount) throw badRequest('لم يتم العثور على أسئلة مطابقة');
+    return ins.rowCount;
+  });
+  res.json({ question_count: count });
+});
+
 /** Deletes the competition with all entries/results (student attempts stay in their history). */
 router.delete('/competitions/:id', validate({ params: idParam }), async (req, res) => {
   const r = await db.query(`DELETE FROM competitions WHERE id = $1`, [req.p.id]);

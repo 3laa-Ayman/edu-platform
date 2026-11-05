@@ -678,5 +678,27 @@ async function studentLogin(identifier, password, device) {
   ok(await findBy(`+20 ${Ainfo.phone.slice(1, 4)} ${Ainfo.phone.slice(4)}`), 'search with +20 and spaces');
   ok(await findBy(toArabic(Ainfo.phone)), 'search with Arabic digits');
 
+  // ---------------- Competitions: questions picked by hand, or random from a lesson
+  const nowC = Date.now();
+  const manualIds = [qWithExp.id, qNoExp.id, qNoExp2.id];
+  const manualComp = await call('POST', '/api/admin/competitions', { token: AT, body: {
+    title: `مسابقة يدوي ${rnd}`, type: 'individual_monthly', starts_at: new Date(nowC - 60000).toISOString(),
+    ends_at: new Date(nowC + 3600000).toISOString(), duration_minutes: 10, question_ids: manualIds } });
+  ok(manualComp.status === 201 && manualComp.data.competition.question_count === 3, 'competition with hand-picked questions');
+  const manualCompQs = await call('GET', `/api/admin/competitions/${manualComp.data.competition.id}/questions`, { token: AT });
+  ok(JSON.stringify(manualCompQs.data.questions.map((q) => q.id).sort()) === JSON.stringify([...manualIds].sort()), 'exactly the picked questions');
+  const swapQs = await call('PUT', `/api/admin/competitions/${manualComp.data.competition.id}/questions`, { token: AT, body: { question_ids: [qWithExp.id, qNoExp.id] } });
+  ok(swapQs.status === 200 && swapQs.data.question_count === 2, 'questions changed before anyone started');
+  await call('POST', `/api/competitions/${manualComp.data.competition.id}/start`, { token: A.token });
+  ok((await call('PUT', `/api/admin/competitions/${manualComp.data.competition.id}/questions`, { token: AT, body: { question_ids: manualIds } })).status === 409, 'questions locked once a student started');
+  ok((await call('GET', `/api/admin/competitions/${manualComp.data.competition.id}/questions`, { token: A.token })).status === 403, 'students cannot see the competition answers list');
+  const lessonQ = (await call('GET', `/api/admin/questions?limit=100&subject_id=${physics.id}`, { token: AT })).data.items.find((q) => q.lesson_id && q.is_active);
+  const lessonComp = await call('POST', '/api/admin/competitions', { token: AT, body: {
+    title: `مسابقة درس ${rnd}`, type: 'individual_monthly', starts_at: new Date(nowC + 3600000).toISOString(),
+    ends_at: new Date(nowC + 7200000).toISOString(), random: { count: 50, subject_id: physics.id, lesson_id: lessonQ.lesson_id } } });
+  const lessonCompQs = (await call('GET', `/api/admin/competitions/${lessonComp.data.competition.id}/questions`, { token: AT })).data.questions;
+  const lessonName = lessonQ.lesson;
+  ok(lessonComp.status === 201 && lessonCompQs.length >= 1 && lessonCompQs.every((q) => q.lesson === lessonName), `random questions from one lesson only (${lessonName})`);
+
   console.log(`\n🎉 All ${passed} checks passed`);
 })().catch((e) => { console.error(e); process.exit(1); });

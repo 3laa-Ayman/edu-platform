@@ -402,3 +402,12 @@ select option { color: var(--text); }
 /* Table actions and codes stay on one line (the row wraps the buttons instead) */
 td .btn, td .mono { white-space: nowrap; }
 td .row { flex-wrap: wrap; }
+/* Competition question picker */
+.q-mode { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; }
+.pick-bar { margin: 8px 0; align-items: center; }
+.pick-list { max-height: 50vh; overflow: auto; display: grid; gap: 6px; padding: 2px; }
+.pick-q { display: flex; gap: 10px; align-items: flex-start; padding: 10px; border: 1px solid var(--border); border-radius: 10px; cursor: pointer; color: var(--text); flex-direction: row; }
+.pick-q:has(input:checked) { border-color: var(--primary); background: var(--primary-soft); }
+.pick-q input { margin-top: 4px; flex: none; }
+.pick-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.pick-text { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
