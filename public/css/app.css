@@ -52,7 +52,8 @@ p { margin: .4rem 0; }
 .container { max-width: 1080px; margin: 0 auto; padding: 0 16px; }
 main.container { padding-top: 20px; padding-bottom: 60px; }
 .muted { color: var(--muted); }
-.mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; direction: ltr; unicode-bidi: isolate; }
+/* Codes & numbers (STU-2026-0003, phones): the site font with equal-width digits — a plain 0, no slashed/dotted zero. */
+.mono { font-family: inherit; font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1, "zero" 0; letter-spacing: .02em; direction: ltr; unicode-bidi: isolate; }
 .center { text-align: center; }
 .good { color: var(--good); } .mid { color: var(--mid); } .bad { color: var(--bad); }
 .loading { padding: 40px; text-align: center; color: var(--muted); }
