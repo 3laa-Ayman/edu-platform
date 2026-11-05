@@ -556,3 +556,7 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
   hash        CHAR(64) PRIMARY KEY,
   applied_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Parent reports can also be sent by the admin on WhatsApp (wa.me link from the admin's own WhatsApp): logged as 'whatsapp'.
+ALTER TABLE parent_reports DROP CONSTRAINT IF EXISTS parent_reports_channel_check;
+ALTER TABLE parent_reports ADD CONSTRAINT parent_reports_channel_check CHECK (channel IN ('email', 'sms', 'log', 'whatsapp'));

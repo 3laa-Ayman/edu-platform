@@ -364,3 +364,7 @@ select option { color: var(--text); }
 .device-log ul { margin: 8px 0 0; padding-inline-start: 1.2em; display: grid; gap: 4px; font-size: .9rem; }
 .device-main > .badge, .device-main > b + .badge { align-self: flex-start; }
 .bell-count { direction: ltr; }
+
+/* WhatsApp button */
+.btn.wa { background: #25d366; color: #0b2e17; border-color: #25d366; }
+.btn.wa:hover { filter: brightness(1.05); }

@@ -120,7 +120,25 @@ router.get('/students/:id/parent-report', validate({ params: idParam }), async (
     buildReport(u.id),
     db.query(`SELECT id, period_start, period_end, channel, status, error, sent_at FROM parent_reports WHERE user_id = $1 ORDER BY sent_at DESC LIMIT 20`, [u.id]),
   ]);
-  res.json({ text: formatReportText(report), to: u.parent_email || u.parent_phone, channel: u.parent_email ? 'email' : 'sms', history: history.rows });
+  res.json({
+    text: formatReportText(report), to: u.parent_email || u.parent_phone, channel: u.parent_email ? 'email' : 'sms',
+    // WhatsApp: the admin sends it from their own WhatsApp (wa.me link with the report already written).
+    whatsapp: waNumber(u.parent_phone), history: history.rows,
+  });
+});
+
+/** Egyptian mobile 01XXXXXXXXX → 201XXXXXXXXX (the format wa.me links need). */
+const waNumber = (phone) => (/^01[0125]\d{8}$/.test(phone || '') ? `2${phone}` : null);
+
+/** The admin opened WhatsApp with the report: kept in the report history. */
+router.post('/students/:id/parent-report/whatsapp', validate({ params: idParam }), async (req, res) => {
+  const { rows: [u] } = await db.query(`SELECT id FROM users WHERE id = $1 AND role = 'student'`, [req.p.id]);
+  if (!u) throw notFound('الطالب غير موجود');
+  const report = await buildReport(u.id);
+  await db.query(
+    `INSERT INTO parent_reports (user_id, period_start, period_end, summary, channel, status) VALUES ($1, $2, $3, $4, 'whatsapp', 'sent')`,
+    [u.id, report.period.from, report.period.to, JSON.stringify(report)]);
+  res.status(201).json({ logged: true });
 });
 
 router.post('/students/:id/parent-report', validate({ params: idParam }), async (req, res) => {

@@ -366,6 +366,9 @@ async function studentLogin(identifier, password, device) {
   ok(sent.data.status === 'sent', `admin sends the parent report via ${sent.data.channel}`);
   ok((await call('GET', `/api/admin/students/${A.id}/parent-report`, { token: AT })).data.history.length >= 1, 'sent report appears in the history');
   ok((await call('POST', `/api/admin/students/${A.id}/parent-report`, { token: A.token })).status === 403, 'students cannot use the admin send');
+  ok(/^201[0125]\d{8}$/.test(adminRep.data.whatsapp || ''), `WhatsApp number for the parent: +${adminRep.data.whatsapp}`);
+  ok((await call('POST', `/api/admin/students/${A.id}/parent-report/whatsapp`, { token: AT })).status === 201, 'WhatsApp send is logged');
+  ok((await call('GET', `/api/admin/students/${A.id}/parent-report`, { token: AT })).data.history.some((h) => h.channel === 'whatsapp'), 'WhatsApp report in the history');
 
   // ---------------- Products, security
   const prods = await call('GET', '/api/products');

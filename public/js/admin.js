@@ -569,10 +569,12 @@ Admin.students = async (el, params, query) => {
           ${s.blocked_device_attempts ? `<span title="محاولات دخول من أجهزة زيادة في آخر 30 يوم">${badge(`⚠️ أجهزة زيادة ×${s.blocked_device_attempts}`, 'bad')}</span>` : ''}
           <br><small class="muted">📱 ${s.devices}/2</small>`,
         `<div class="row"><a class="btn primary tiny" href="#/admin/student/${s.id}">إدارة</a>
-          ${s.student_code ? `<a class="btn ghost tiny" href="#/admin/student/${s.id}?tab=report" title="تقرير ولي الأمر">📨 تقرير</a>` : ''}</div>`])) : empty('مفيش طلاب')}
+          ${s.student_code ? `<a class="btn ghost tiny" href="#/admin/student/${s.id}?tab=report" title="تقرير ولي الأمر">📨 تقرير</a>
+            <button class="btn wa tiny" data-action="wa" data-id="${s.id}" title="إرسال التقرير لولي الأمر على واتساب">📱 واتساب</button>` : ''}</div>`])) : empty('مفيش طلاب')}
     </section>`;
   onSubmit($('#sf', el), async (v) => { location.hash = `#/admin/students${v.search ? `?search=${encodeURIComponent(v.search)}` : ''}`; });
   onAction(el, {
+    wa: (b) => openWhatsAppReport(b, b.dataset.id),
     reportsAll: (b) => run(b, async () => {
       if (!confirm('إرسال تقرير لولي أمر كل الطلاب دلوقتي؟ (التقرير الأسبوعي بيتبعت لوحده كمان كل سبت)')) return;
       const r = await API.post('/admin/reports/send-weekly');
@@ -592,6 +594,25 @@ Admin.students = async (el, params, query) => {
     },
   });
 };
+
+/**
+ * Parent report on WhatsApp: opens the admin's WhatsApp on the parent's chat with the report already written
+ * (wa.me link, free — the admin just presses send). The window opens first so the browser doesn't block it.
+ */
+async function openWhatsAppReport(btn, studentId, after) {
+  const win = window.open('', '_blank');
+  await run(btn, async () => {
+    try {
+      const r = await API.get(`/admin/students/${studentId}/parent-report`);
+      if (!r.whatsapp) throw new Error('رقم ولي الأمر مش رقم موبايل مصري صحيح — عدّله من بيانات الطالب');
+      const url = `https://wa.me/${r.whatsapp}?text=${encodeURIComponent(r.text)}`;
+      if (win) win.location.href = url; else location.href = url;
+      await API.post(`/admin/students/${studentId}/parent-report/whatsapp`);
+      toast('اتفتح واتساب — دوس إرسال هناك');
+      after?.();
+    } catch (err) { win?.close(); throw err; }
+  });
+}
 
 Admin.student = async (el, { id }, query = {}) => {
   const [d, { plans }] = await Promise.all([API.get(`/admin/students/${id}`), API.get('/admin/plans')]);
@@ -637,7 +658,8 @@ Admin.student = async (el, { id }, query = {}) => {
     </div>
 
     <section class="card" id="parent-report"><div class="card-head"><h2>📨 تقرير ولي الأمر</h2>
-      ${d.student.student_code ? '<button class="btn primary tiny" data-action="sendReport">إرسال لولي الأمر دلوقتي</button>' : ''}</div>
+      ${d.student.student_code ? `<div class="row"><button class="btn wa tiny" data-action="waReport">📱 إرسال على واتساب</button>
+        <button class="btn primary tiny" data-action="sendReport">✉️ إرسال بالإيميل</button></div>` : ''}</div>
       <div id="report-body"><div class="loading">جارٍ تجهيز التقرير…</div></div></section>
 
     ${deviceSection(d.devices)}
@@ -650,13 +672,14 @@ Admin.student = async (el, { id }, query = {}) => {
 
   const reload = () => Admin.student(el, { id });
   // Parent report: preview of what the parent receives + what was sent before.
-  const CHANNEL = { email: 'إيميل', sms: 'رسالة', log: 'متسجل بس (مفيش إيميل)' };
+  const CHANNEL = { email: 'إيميل', sms: 'رسالة', log: 'متسجل بس (مفيش إيميل)', whatsapp: 'واتساب' };
   async function loadReport() {
     const box = $('#report-body', el);
     if (!box) return;
     try {
       const r = await API.get(`/admin/students/${id}/parent-report`);
-      box.innerHTML = `<p class="muted small">هيتبعت على: <b dir="ltr">${esc(r.to || '—')}</b> (${r.channel === 'email' ? 'إيميل ولي الأمر' : 'رقم ولي الأمر — الرسائل مش متربطة، ضيف إيميل ولي الأمر عشان يوصل'})</p>
+      box.innerHTML = `<p class="muted small">📱 واتساب: <b dir="ltr">${esc(r.whatsapp ? `+${r.whatsapp}` : 'رقم ولي الأمر مش صحيح')}</b> ·
+          ✉️ إيميل: <b dir="ltr">${esc(r.channel === 'email' ? r.to : 'مفيش إيميل لولي الأمر')}</b></p>
         <pre class="report">${esc(r.text)}</pre>
         ${r.history.length ? `<details class="device-log"><summary>التقارير اللي اتبعتت (${r.history.length})</summary>${table(['التاريخ', 'الطريقة', 'الحالة'],
           r.history.map((h) => [fmtDate(h.sent_at), esc(CHANNEL[h.channel] || h.channel), h.status === 'sent' ? badge('تم', 'good') : `${badge('فشل', 'bad')} <small class="muted">${esc(h.error || '')}</small>`]))}</details>` : '<p class="muted small">لسه متبعتش تقارير للطالب ده.</p>'}`;
@@ -699,6 +722,7 @@ Admin.student = async (el, { id }, query = {}) => {
       toast('تم شيل الجهاز');
       reload();
     }),
+    waReport: (b) => openWhatsAppReport(b, id, loadReport),
     sendReport: (b) => run(b, async () => {
       if (!confirm('إرسال التقرير ده لولي الأمر دلوقتي؟')) return;
       const r = await API.post(`/admin/students/${id}/parent-report`);
