@@ -259,8 +259,9 @@ Views.home = async (el) => {
     State.refresh(), API.get('/reports/performance'), API.get('/mistakes/summary'), API.get('/planner/tasks'), API.get('/ai/usage'),
     API.get('/announcements').catch(() => ({ announcements: [], unread: 0 })),
   ]);
-  // Plan that unlocks AI (named in the locked tile); only looked up when the student's plan lacks it.
-  const aiPlanName = me.subscription && !me.subscription.features?.ai_explanations
+  // No subscription, or a plan without AI: the points can't be used, so the tile shows which plan unlocks them.
+  const aiLocked = !me.subscription?.features?.ai_explanations;
+  const aiPlanName = aiLocked
     ? ((await API.get('/payments/plans').catch(() => ({ plans: [] }))).plans.find((p) => p.features?.ai_explanations)?.name_ar || 'Premium')
     : '';
   // Unread announcements (and pinned ones, always) on top of the home page.
@@ -287,7 +288,7 @@ Views.home = async (el) => {
       <a class="tile" href="#/practice"><span class="tile-label">أسئلة النهارده</span><b>${perf.today.answered}</b><small>${perf.today.answered ? `منهم ${perf.today.correct} صح` : 'لسه محلتش أسئلة النهارده'}</small></a>
       <a class="tile" href="#/mistakes"><span class="tile-label">بنك الأخطاء</span><b>${mist.total}</b><small>سؤال محتاج مراجعة</small></a>
       <a class="tile" href="#/planner"><span class="tile-label">مهام النهارده</span><b>${tasks.summary.done}/${tasks.summary.total}</b><small>${tasks.summary.planned_minutes} دقيقة مذاكرة</small></a>
-      ${sub && !sub.features?.ai_explanations
+      ${aiLocked
         ? `<a class="tile" href="#/subscribe"><span class="tile-label">نقاط الذكاء الاصطناعي</span><b>🔒</b><small>الشرح بالذكاء الاصطناعي متاح في باقة ${esc(aiPlanName)}</small></a>`
         : `<div class="tile"><span class="tile-label">نقاط الذكاء الاصطناعي</span><b>${fmtPoints(ai.remaining_points)}</b><small>متبقي من ${fmtPoints(ai.limit_points)}</small>${bar(100 - ai.used_percent, ai.used_percent > 80 ? 'bad' : 'good')}</div>`}
     </section>
