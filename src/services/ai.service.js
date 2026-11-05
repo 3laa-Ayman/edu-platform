@@ -7,7 +7,8 @@ const { passageForAi } = require('./passage.service');
 
 const { maxOutputTokens } = env.gemini;
 
-function buildPrompt(q, passage = null) {
+/** notUnderstood: the saved explanation the student read and did not understand → explain it another, simpler way. */
+function buildPrompt(q, passage = null, notUnderstood = null) {
   const correctText = q[`option_${q.correct_option.toLowerCase()}`];
   return [
     'أنت مدرس خبير لطلاب الثانوية العامة في مصر. اشرح بالعربية الفصحى المبسطة وباختصار (لا يزيد عن 180 كلمة):',
@@ -22,6 +23,7 @@ function buildPrompt(q, passage = null) {
     `د) ${q.option_d}`,
     `الإجابة الصحيحة: (${q.correct_option}) ${correctText}`,
     q.law_note ? `ملحوظة/قانون مرتبط: ${q.law_note}` : '',
+    notUnderstood ? `\nالطالب قرأ الشرح ده ومفهمهوش:\n${notUnderstood}\nاشرح بطريقة مختلفة وأبسط، خطوة بخطوة وبمثال قريب من الطالب لو ينفع، من غير ما تكرر نفس الكلام.` : '',
   ].join('\n');
 }
 
@@ -124,14 +126,14 @@ async function logUsage(row) {
  * from usageMetadata — or refunded if the call fails. So parallel requests can never push a
  * student past their limit.
  */
-async function explainWithBudget(userId, question) {
+async function explainWithBudget(userId, question, { notUnderstood = null } = {}) {
   // GIF is not accepted by Gemini; other formats are sent so the model can read diagrams/figures.
   const passage = await passageForAi(question.passage_id);
   const images = [
     ...(passage?.image_data ? [{ slot: 'passage', mime: passage.image_mime, data: passage.image_data }] : []),
     ...await mediaForAi(question.id),
   ].filter((m) => m.mime !== 'image/gif');
-  const prompt = buildPrompt(question, passage) + (images.length ? '\nملحوظة: السؤال يحتوي على صور مرفقة، اعتمد عليها في الشرح.' : '');
+  const prompt = buildPrompt(question, passage, notUnderstood) + (images.length ? '\nملحوظة: السؤال يحتوي على صور مرفقة، اعتمد عليها في الشرح.' : '');
   const settings = await getSettings();
   const { usd_to_egp: usdToEgp, ai_points_per_egp: rate } = settings;
   const reserve = reserveFor(prompt, settings, images.length);

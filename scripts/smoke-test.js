@@ -255,6 +255,14 @@ async function studentLogin(identifier, password, device) {
   const plusAi = await call('POST', `/api/ai/explain/${qNoExp.id}`, { token: B.token });
   ok(plusAi.status === 403 && plusAi.data.error.code === 'PLAN_UPGRADE_REQUIRED' && plusAi.data.error.message.includes(price.premium ? 'Premium' : '')
     && plusAi.data.error.details?.plan_code === 'premium', `Plus → "${plusAi.data.error?.message}"`, plusAi.data);
+  // "مش فاهم": a question WITH a saved explanation → simpler AI explanation on request
+  ok((await call('POST', `/api/ai/explain/${qWithExp.id}`, { token: A.token })).data.source === 'question_bank', 'saved explanation still served first (free)');
+  const simpler = await call('POST', `/api/ai/explain/${qWithExp.id}?simpler=1`, { token: A.token });
+  ok(simpler.status === 200 && simpler.data.source === 'gemini' && simpler.data.usage.cost_egp > 0, '"مش فاهم" → AI explains the saved explanation another way', simpler.data);
+  ok((await call('POST', `/api/ai/explain/${qWithExp.id}?simpler=1`, { token: B.token })).status === 403, '"مش فاهم" also needs Premium');
+  const { buildPrompt } = require('../src/services/ai.service');
+  const pr = buildPrompt({ question_text: 'س', option_a: 'أ', option_b: 'ب', option_c: 'ج', option_d: 'د', correct_option: 'A' }, null, 'الشرح القديم');
+  ok(pr.includes('الشرح القديم') && pr.includes('بطريقة مختلفة'), 'prompt includes the explanation the student did not understand');
   const ai2 = await call('POST', `/api/ai/explain/${qNoExp.id}`, { token: AT });
   if (ai1.data.explanation.startsWith('[شرح تجريبي')) {
     // No GEMINI_API_KEY: the mock must never be cached, or it would hide the AI button from everyone.
@@ -264,7 +272,7 @@ async function studentLogin(identifier, password, device) {
     ok(ai2.data.source === 'ai_cache' && ai2.data.usage.cost_egp === 0, 'second student gets cached AI explanation free');
   }
   const usage = await call('GET', '/api/ai/usage', { token: A.token });
-  ok(usage.data.spent_egp > 0 && usage.data.limit_egp === 100 && usage.data.requests === 1, 'AI usage tracked per student', usage.data);
+  ok(usage.data.spent_egp > 0 && usage.data.limit_egp === 100 && usage.data.requests === 2, 'AI usage tracked per student (normal + "مش فاهم")', usage.data);
   ok(usage.data.limit_points === 10000 && usage.data.points_per_egp === 100 && usage.data.remaining_points < 10000, `AI budget shown as points: ${usage.data.remaining_points} / ${usage.data.limit_points}`, usage.data);
   ok(ai1.data.usage.cost_points > 0 && ai1.data.usage.limit_points === 10000, 'explanation reports cost in points');
 

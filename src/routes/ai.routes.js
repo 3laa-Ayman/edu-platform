@@ -13,19 +13,22 @@ const { getSettings, toPoints } = require('../services/settings.service');
  *   1. saved explanation in the question bank → free
  *   2. AI explanation already generated for this question by anyone → free
  *   3. Gemini call → tokens counted, cost added to the student's balance, blocked at the cap (100 EGP)
+ * ?simpler=1 ("مش فاهم"): the question has a saved explanation the student didn't understand → an AI explanation
+ * in another, simpler way (generated once, then free for everyone like any AI explanation).
  */
 router.post('/explain/:id', aiLimiter, requireSubscription('ai_explanations'), validate({ params: idParam }), async (req, res) => {
   const q = await getQuestion(req.p.id);
   const answered = await db.query(`SELECT 1 FROM attempts WHERE user_id = $1 AND question_id = $2 LIMIT 1`, [req.user.id, q.id]);
   if (!answered.rowCount && req.user.role !== 'admin') throw badRequest('أجب على السؤال أولاً لطلب الشرح');
 
-  if (q.explanation) {
+  const simpler = req.query.simpler === '1' && Boolean(q.explanation);
+  if (q.explanation && !simpler) {
     return res.json({ source: 'question_bank', explanation: q.explanation, law_note: q.law_note, usage: { cost_egp: 0 } });
   }
   const { rows: [cached] } = await db.query(`SELECT content FROM ai_explanations WHERE question_id = $1`, [q.id]);
   if (cached) return res.json({ source: 'ai_cache', explanation: cached.content, law_note: q.law_note, usage: { cost_egp: 0 } });
 
-  res.json(await explainWithBudget(req.user.id, q));
+  res.json(await explainWithBudget(req.user.id, q, { notUnderstood: simpler ? q.explanation : null }));
 });
 
 router.get('/usage', async (req, res) => {

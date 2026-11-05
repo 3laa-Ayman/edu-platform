@@ -457,7 +457,8 @@ async function showExplanation(card, qid, btn) {
   box.hidden = false;
   const law = r.law_note ? `<p class="law">📐 ${rich(r.law_note)}</p>` : '';
   if (r.explanation || r.explanation_image) {
-    box.innerHTML = `<div class="src">${r.source === 'question_bank' ? 'شرح من بنك الأسئلة — مجاني' : 'شرح محفوظ — مجاني'}</div>${r.explanation ? `<p>${rich(r.explanation)}</p>` : ''}${qImage(r.explanation_image, 'صورة الشرح')}${law}`;
+    box.innerHTML = `<div class="src">${r.source === 'question_bank' ? 'شرح من بنك الأسئلة — مجاني' : 'شرح محفوظ — مجاني'}</div>${r.explanation ? `<p>${rich(r.explanation)}</p>` : ''}${qImage(r.explanation_image, 'صورة الشرح')}${law}
+      ${r.source === 'question_bank' ? '<div class="ai-more"><button class="btn ai" data-action="ai" data-simpler="1">🤔 مش فاهم؟ اشرحلي بالذكاء الاصطناعي</button></div>' : ''}`;
     btn.remove();
     return;
   }
@@ -465,14 +466,15 @@ async function showExplanation(card, qid, btn) {
   btn.remove();
 }
 
-async function askAI(card, qid) {
-  const box = $('.explain', card);
+/** simpler: "مش فاهم" under a saved explanation — the AI answer goes below it instead of replacing it. */
+async function askAI(card, qid, simpler = false) {
+  const box = simpler ? $('.explain .ai-more', card) : $('.explain', card);
   try {
-    const r = await API.post(`/ai/explain/${qid}`);
+    const r = await API.post(`/ai/explain/${qid}${simpler ? '?simpler=1' : ''}`);
     const cost = r.usage?.cost_egp
       ? `<div class="src">✨ شرح بالذكاء الاصطناعي · استهلك ${fmtPoints(r.usage.cost_points)} · متبقي ${fmtPoints(r.usage.remaining_points)}</div>`
-      : '<div class="src">شرح محفوظ — مجاني</div>';
-    box.innerHTML = `${cost}<p class="pre">${rich(r.explanation)}</p>${r.law_note ? `<p class="law">📐 ${rich(r.law_note)}</p>` : ''}
+      : `<div class="src">${simpler ? '✨ شرح أبسط بالذكاء الاصطناعي — مجاني' : 'شرح محفوظ — مجاني'}</div>`;
+    box.innerHTML = `${cost}<p class="pre">${rich(r.explanation)}</p>${r.law_note && !simpler ? `<p class="law">📐 ${rich(r.law_note)}</p>` : ''}
       ${r.warning ? `<p class="notice bad">${esc(r.warning)}</p>` : ''}`;
   } catch (err) {
     if (err.code === 'AI_LIMIT_REACHED') box.innerHTML = `<p class="notice bad">⛔ ${esc(err.message)}</p>`;
@@ -556,7 +558,7 @@ function runQuiz(el, questions, { answerFn, onDone, allowExplain = true }) {
     explain: (b) => run(b, () => showExplanation(card(), questions[i].id, b)),
     ai: (b) => run(b, async () => {
       b.textContent = 'جاري التوليد…';
-      await askAI(card(), questions[i].id);
+      await askAI(card(), questions[i].id, b.dataset.simpler === '1');
     }),
     next: advance,
   });

@@ -368,3 +368,6 @@ select option { color: var(--text); }
 /* WhatsApp button */
 .btn.wa { background: #25d366; color: #0b2e17; border-color: #25d366; }
 .btn.wa:hover { filter: brightness(1.05); }
+
+/* "مش فاهم" — simpler AI explanation under the saved one */
+.ai-more { margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--border); }
