@@ -1103,12 +1103,9 @@ Views.offers = async (el) => {
 Views.report = async (el) => {
   const [{ text }, { reports }] = await Promise.all([API.get('/reports/parent/preview'), API.get('/reports/parent/history')]);
   el.innerHTML = `<h1 class="page-head">تقرير ولي الأمر</h1>
-    <section class="card"><div class="card-head"><h2>التقرير الأسبوعي</h2><button class="btn primary tiny" data-action="send">إرسال لولي الأمر الآن</button></div>
+    <section class="card"><h2>التقرير الأسبوعي</h2>
       <pre class="report">${esc(text)}</pre>
-      <p class="muted">بيتبعت تلقائياً كل سبت (بالإيميل لو موجود، وإلا رسالة على رقم ولي الأمر).</p></section>
+      <p class="muted">ده اللي ولي أمرك بيشوفه — الإدارة هي اللي بتبعته.</p></section>
     <section class="card"><h2>التقارير المرسلة</h2>${reports.length ? table(['التاريخ', 'الفترة', 'الطريقة', 'الحالة'],
       reports.map((r) => [fmtDate(r.sent_at), `${esc(r.period_start.slice(0, 10))} ← ${esc(r.period_end.slice(0, 10))}`, esc({ email: 'إيميل', sms: 'رسالة', log: 'تجريبي' }[r.channel]), badge(r.status === 'sent' ? 'تم' : 'فشل', r.status === 'sent' ? 'good' : 'bad')])) : empty('لسه متبعتش تقارير')}</section>`;
-  onAction(el, {
-    send: (b) => run(b, async () => { await API.post('/reports/parent/send'); toast('تم إرسال التقرير'); Views.report(el); }),
-  });
 };

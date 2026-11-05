@@ -198,8 +198,12 @@ async function studentLogin(identifier, password, device) {
   const imgRes = await fetch(API + triQ.media.question);
   ok(imgRes.status === 200 && imgRes.headers.get('content-type') === 'image/png' && /immutable/.test(imgRes.headers.get('cache-control')), 'image served (png, cached)');
   ok((await fetch(API + triQ.media.question.replace(/[0-9a-f]{16}$/, '0000000000000000'))).status === 404, 'wrong image hash → 404');
-  const practiceAll = await call('GET', `/api/catalog/questions?limit=50&subject_id=${triQ.subject_id}`, { token: A.token });
-  const pTri = practiceAll.data.questions.find((q) => q.id === triQ.id);
+  // Practice returns a random sample, so look a few times (the local DB keeps growing with every test run).
+  let pTri;
+  for (let i = 0; i < 15 && !pTri; i++) {
+    const practiceAll = await call('GET', `/api/catalog/questions?limit=50&subject_id=${triQ.subject_id}`, { token: A.token });
+    pTri = practiceAll.data.questions.find((q) => q.id === triQ.id);
+  }
   ok(pTri && pTri.image === triQ.media.question, 'students get question image in practice');
   // Shared passages: same "رقم القطعة" → one passage; its questions come together in practice.
   const [pa1, pa2, pa3, fig1, fig2] = ['لسطح الأرض', 'يتجمد أغلب', 'الفكرة الرئيسية', 'الضلع الأفقي', 'مساحة المثلث'].map(byText);
@@ -354,9 +358,14 @@ async function studentLogin(identifier, password, device) {
   ok(perf.data.subjects.length >= 1 && perf.data.subjects.every((s) => typeof s.percent === 'number' && s.rating), 'performance % per subject', perf.data);
   const prev = await call('GET', '/api/reports/parent/preview', { token: A.token });
   ok(prev.data.text.includes(A.code) && prev.data.report.competitions.length === 1, 'parent report preview');
-  const sent = await call('POST', '/api/reports/parent/send', { token: A.token });
-  ok(sent.data.status === 'sent', `parent report sent via ${sent.data.channel}`);
-  ok((await call('POST', '/api/reports/parent/send', { token: A.token })).status === 429, 'parent report throttled (1/24h)');
+  // Only the admin sends parent reports (students page); students can just preview.
+  ok((await call('POST', '/api/reports/parent/send', { token: A.token })).status === 404, 'students cannot send parent reports');
+  const adminRep = await call('GET', `/api/admin/students/${A.id}/parent-report`, { token: AT });
+  ok(adminRep.data.text.includes(A.code) && adminRep.data.to === `p0-${rnd}@test.com` && adminRep.data.channel === 'email', 'admin previews the parent report (to the parent email)');
+  const sent = await call('POST', `/api/admin/students/${A.id}/parent-report`, { token: AT });
+  ok(sent.data.status === 'sent', `admin sends the parent report via ${sent.data.channel}`);
+  ok((await call('GET', `/api/admin/students/${A.id}/parent-report`, { token: AT })).data.history.length >= 1, 'sent report appears in the history');
+  ok((await call('POST', `/api/admin/students/${A.id}/parent-report`, { token: A.token })).status === 403, 'students cannot use the admin send');
 
   // ---------------- Products, security
   const prods = await call('GET', '/api/products');

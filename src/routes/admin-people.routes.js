@@ -4,6 +4,7 @@ const bcrypt = require('bcrypt');
 const env = require('../config/env');
 const db = require('../config/db');
 const devices = require('../services/device.service');
+const { buildReport, formatReportText, sendParentReport } = require('../services/report.service');
 const { validate, idParam, z } = require('../middleware/validate');
 const { nextStudentCode } = require('../utils/ids');
 const { egyptPhone, email, password, fullName } = require('../utils/schemas');
@@ -109,6 +110,24 @@ router.delete('/students/:id/devices/:deviceId', validate({ params: z.object({ i
 /** Remove all of the student's devices: they sign out, and the next login (email code) registers devices again. */
 router.post('/students/:id/devices/reset', validate({ params: idParam }), async (req, res) => {
   res.json(await devices.removeByAdmin(req.p.id));
+});
+
+/** Parent report (admin only): what the parent will receive, and send it now. */
+router.get('/students/:id/parent-report', validate({ params: idParam }), async (req, res) => {
+  const { rows: [u] } = await db.query(`SELECT id, parent_email, parent_phone FROM users WHERE id = $1 AND role = 'student'`, [req.p.id]);
+  if (!u) throw notFound('الطالب غير موجود');
+  const [report, history] = await Promise.all([
+    buildReport(u.id),
+    db.query(`SELECT id, period_start, period_end, channel, status, error, sent_at FROM parent_reports WHERE user_id = $1 ORDER BY sent_at DESC LIMIT 20`, [u.id]),
+  ]);
+  res.json({ text: formatReportText(report), to: u.parent_email || u.parent_phone, channel: u.parent_email ? 'email' : 'sms', history: history.rows });
+});
+
+router.post('/students/:id/parent-report', validate({ params: idParam }), async (req, res) => {
+  const { rows: [u] } = await db.query(`SELECT id FROM users WHERE id = $1 AND role = 'student' AND student_code IS NOT NULL`, [req.p.id]);
+  if (!u) throw notFound('الطالب غير موجود');
+  const { status, channel } = await sendParentReport(u.id);
+  res.json({ status, channel });
 });
 
 /** Set a new password for a student (logs them out of all devices). */

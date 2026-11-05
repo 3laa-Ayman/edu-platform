@@ -29,13 +29,7 @@ Admin.dashboard = async (el) => {
       <a class="btn ghost" href="#/admin/competitions">إنشاء مسابقة</a>
       <a class="btn ghost" href="#/admin/plans">الباقات والأسعار</a>
       <a class="btn ghost" href="#/admin/settings">الإعدادات</a>
-      <button class="btn ghost" data-action="reports">إرسال تقارير أولياء الأمور الآن</button></div></section>`;
-  onAction(el, {
-    reports: (b) => run(b, async () => {
-      const r = await API.post('/admin/reports/send-weekly');
-      toast(`اتبعت ${r.sent} تقرير${r.failed ? `، وفشل ${r.failed}` : ''}${r.remaining ? ` — والباقي (${r.remaining}) بيتبعت في الخلفية` : ''}`);
-    }),
-  });
+      <a class="btn ghost" href="#/admin/students">تقارير أولياء الأمور</a></div></section>`;
 };
 
 // ---------------------------------------------------------------- Subjects & lessons
@@ -564,7 +558,8 @@ const studentFields = (s = {}) => `
 Admin.students = async (el, params, query) => {
   const search = query.search || '';
   const { items } = await API.get(`/admin/students?limit=100${search ? `&search=${encodeURIComponent(search)}` : ''}`);
-  el.innerHTML = `<div class="page-head"><h1>الطلاب</h1><button class="btn primary" data-action="new">+ طالب جديد</button></div>
+  el.innerHTML = `<div class="page-head"><h1>الطلاب</h1><button class="btn primary" data-action="new">+ طالب جديد</button>
+      <button class="btn ghost" data-action="reportsAll">📨 إرسال تقارير أولياء الأمور لكل الطلاب</button></div>
     <section class="card"><form id="sf" class="form inline"><input name="search" value="${esc(search)}" placeholder="كود الطالب، الإيميل أو الاسم"><button class="btn ghost" type="submit">بحث</button></form>
     ${items.length ? table(['الكود', 'الاسم', 'التواصل', 'الاشتراك', 'الحالة', ''],
       items.map((s) => [s.student_code ? `<span class="mono">${esc(s.student_code)}</span>` : badge('لم يكمل التسجيل', 'mid'), esc(s.full_name),
@@ -573,10 +568,16 @@ Admin.students = async (el, params, query) => {
         `${s.is_verified ? '' : badge('غير مفعّل', 'mid')} ${s.is_active ? badge('نشط', 'good') : badge('موقوف', 'bad')}
           ${s.blocked_device_attempts ? `<span title="محاولات دخول من أجهزة زيادة في آخر 30 يوم">${badge(`⚠️ أجهزة زيادة ×${s.blocked_device_attempts}`, 'bad')}</span>` : ''}
           <br><small class="muted">📱 ${s.devices}/2</small>`,
-        `<a class="btn primary tiny" href="#/admin/student/${s.id}">إدارة</a>`])) : empty('مفيش طلاب')}
+        `<div class="row"><a class="btn primary tiny" href="#/admin/student/${s.id}">إدارة</a>
+          ${s.student_code ? `<a class="btn ghost tiny" href="#/admin/student/${s.id}?tab=report" title="تقرير ولي الأمر">📨 تقرير</a>` : ''}</div>`])) : empty('مفيش طلاب')}
     </section>`;
   onSubmit($('#sf', el), async (v) => { location.hash = `#/admin/students${v.search ? `?search=${encodeURIComponent(v.search)}` : ''}`; });
   onAction(el, {
+    reportsAll: (b) => run(b, async () => {
+      if (!confirm('إرسال تقرير لولي أمر كل الطلاب دلوقتي؟ (التقرير الأسبوعي بيتبعت لوحده كمان كل سبت)')) return;
+      const r = await API.post('/admin/reports/send-weekly');
+      toast(`اتبعت ${r.sent} تقرير${r.failed ? `، وفشل ${r.failed}` : ''}${r.remaining ? ` — والباقي (${r.remaining}) بيتبعت في الخلفية` : ''}`);
+    }),
     new: () => {
       const m = modal(`<h2>إضافة طالب</h2><p class="muted">الحساب بيتفعّل على طول من غير رمز تحقق.</p>
         <form class="form grid2" id="nf">${studentFields()}
@@ -592,7 +593,7 @@ Admin.students = async (el, params, query) => {
   });
 };
 
-Admin.student = async (el, { id }) => {
+Admin.student = async (el, { id }, query = {}) => {
   const [d, { plans }] = await Promise.all([API.get(`/admin/students/${id}`), API.get('/admin/plans')]);
   const s = d.student;
   const aiPct = s.ai_limit_egp ? (s.ai_spent_egp / s.ai_limit_egp) * 100 : 0;
@@ -635,6 +636,10 @@ Admin.student = async (el, { id }) => {
         <button class="btn primary" type="submit">تغيير كلمة المرور</button></form></section>
     </div>
 
+    <section class="card" id="parent-report"><div class="card-head"><h2>📨 تقرير ولي الأمر</h2>
+      ${d.student.student_code ? '<button class="btn primary tiny" data-action="sendReport">إرسال لولي الأمر دلوقتي</button>' : ''}</div>
+      <div id="report-body"><div class="loading">جارٍ تجهيز التقرير…</div></div></section>
+
     ${deviceSection(d.devices)}
 
     <section class="card"><h2>الأداء في المواد</h2>${d.performance.subjects.length ? d.performance.subjects.map((x) => `<div class="perf-row">
@@ -644,6 +649,21 @@ Admin.student = async (el, { id }) => {
       d.payments.map((p) => [fmtDate(p.created_at), esc(p.plan_code), fmtMoney(p.amount_egp), esc(LABELS.provider[p.provider]), badge(LABELS.paymentStatus[p.status], LABELS.paymentTone[p.status])])) : empty('مفيش مدفوعات')}</section>`;
 
   const reload = () => Admin.student(el, { id });
+  // Parent report: preview of what the parent receives + what was sent before.
+  const CHANNEL = { email: 'إيميل', sms: 'رسالة', log: 'متسجل بس (مفيش إيميل)' };
+  async function loadReport() {
+    const box = $('#report-body', el);
+    if (!box) return;
+    try {
+      const r = await API.get(`/admin/students/${id}/parent-report`);
+      box.innerHTML = `<p class="muted small">هيتبعت على: <b dir="ltr">${esc(r.to || '—')}</b> (${r.channel === 'email' ? 'إيميل ولي الأمر' : 'رقم ولي الأمر — الرسائل مش متربطة، ضيف إيميل ولي الأمر عشان يوصل'})</p>
+        <pre class="report">${esc(r.text)}</pre>
+        ${r.history.length ? `<details class="device-log"><summary>التقارير اللي اتبعتت (${r.history.length})</summary>${table(['التاريخ', 'الطريقة', 'الحالة'],
+          r.history.map((h) => [fmtDate(h.sent_at), esc(CHANNEL[h.channel] || h.channel), h.status === 'sent' ? badge('تم', 'good') : `${badge('فشل', 'bad')} <small class="muted">${esc(h.error || '')}</small>`]))}</details>` : '<p class="muted small">لسه متبعتش تقارير للطالب ده.</p>'}`;
+    } catch (err) { box.innerHTML = `<p class="notice bad">${esc(errorText(err))}</p>`; }
+  }
+  loadReport();
+  if (query.tab === 'report') setTimeout(() => $('#parent-report', el)?.scrollIntoView({ behavior: 'smooth' }), 50);
   onSubmit($('#pf', el), async (v) => {
     await API.patch(`/admin/students/${id}`, {
       full_name: v.full_name, email: v.email, phone: v.phone, parent_phone: v.parent_phone,
@@ -678,6 +698,12 @@ Admin.student = async (el, { id }) => {
       await API.del(`/admin/students/${id}/devices/${b.dataset.id}`);
       toast('تم شيل الجهاز');
       reload();
+    }),
+    sendReport: (b) => run(b, async () => {
+      if (!confirm('إرسال التقرير ده لولي الأمر دلوقتي؟')) return;
+      const r = await API.post(`/admin/students/${id}/parent-report`);
+      toast(r.status === 'sent' ? (r.channel === 'log' ? 'اتسجل التقرير (مفيش إيميل لولي الأمر — الرسائل SMS مش متربطة)' : 'تم إرسال التقرير لولي الأمر ✓') : 'فشل الإرسال — شوف السجل تحت', r.status === 'sent' ? undefined : 'err');
+      loadReport();
     }),
     resetDevices: (b) => run(b, async () => {
       if (!confirm('تمسح كل أجهزة الطالب؟ هيتقفل من كل حاجة، وأول دخول بعد كده محتاج رمز على إيميله.')) return;
