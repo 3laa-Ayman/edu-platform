@@ -61,7 +61,8 @@ Views.verifyDevice = async (el) => {
   const devOtp = sessionStorage.getItem('devOtp');
   el.innerHTML = `<div class="auth card">
     <h1>📱 جهاز جديد</h1>
-    <p class="muted">بتدخل من جهاز أول مرة. أرسلنا رمز من 6 أرقام على ${hint ? `<b class="mono">${esc(hint)}</b>` : 'إيميلك'} — لو مش لاقيه بص في الـ Spam.</p>
+    <p class="muted">بتدخل من جهاز أول مرة. أرسلنا رمز من 6 أرقام على ${hint ? `<b class="mono">${esc(hint)}</b>` : 'إيميلك'}.</p>
+    <div class="notice mid small spam-tip">📩 <b>مش لاقي الرسالة؟</b> افتح فولدر <b>Spam</b> (الرسائل غير المرغوب فيها) — ولو لقيتها هناك دوس <b>«Not spam / ليست رسالة غير مرغوب فيها»</b> عشان رسايلنا الجاية توصلك في الـ Inbox.</div>
     <p class="notice">الحساب يشتغل على جهازين بالكتير، وعلى جهاز واحد بس في نفس الوقت.</p>
     ${devOtp ? `<p class="notice">وضع تجريبي — الرمز: <b class="mono">${esc(devOtp)}</b></p>` : ''}
     <div id="device-limit"></div>
@@ -158,7 +159,8 @@ Views.verify = async (el) => {
   el.innerHTML = `<div class="auth card">
     <h1>تأكيد البريد الإلكتروني</h1>
     ${regSteps(2)}
-    <p class="muted">أرسلنا رمز من 6 أرقام إلى ${email ? `<b>${esc(email)}</b>` : 'بريدك'}. لو مش لاقيه، بص في الـ Spam.</p>
+    <p class="muted">أرسلنا رمز من 6 أرقام إلى ${email ? `<b>${esc(email)}</b>` : 'بريدك'}.</p>
+    <div class="notice mid small spam-tip">📩 <b>مش لاقي الرسالة؟</b> افتح فولدر <b>Spam</b> (الرسائل غير المرغوب فيها) — ولو لقيتها هناك دوس <b>«Not spam / ليست رسالة غير مرغوب فيها»</b> عشان رسايلنا الجاية توصلك في الـ Inbox.</div>
     ${devOtp ? `<p class="notice">وضع تجريبي — الرمز: <b class="mono">${esc(devOtp)}</b></p>` : ''}
     <form id="f" class="form">
       <label ${email ? 'hidden' : ''}>البريد الإلكتروني<input name="email" type="email" required value="${esc(email)}"></label>
@@ -231,6 +233,7 @@ Views.forgot = async (el) => {
     </form>
     <form id="f2" class="form" hidden>
       <p id="dev" class="notice" hidden></p>
+      <div class="notice mid small spam-tip">📩 <b>مش لاقي الرسالة؟</b> افتح فولدر <b>Spam</b> — ولو لقيتها هناك دوس <b>«Not spam»</b> عشان رسايلنا الجاية توصلك في الـ Inbox.</div>
       <label>رمز التحقق<input name="code" required inputmode="numeric" maxlength="6" class="otp"></label>
       <label>كلمة المرور الجديدة<input name="new_password" type="password" required minlength="8" autocomplete="new-password"></label>
       <button class="btn primary" type="submit">تغيير كلمة المرور</button>
