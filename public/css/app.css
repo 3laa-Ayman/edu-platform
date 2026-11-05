@@ -377,3 +377,22 @@ select option { color: var(--text); }
 .card.danger-zone h2 { color: var(--bad); }
 
 .btn.big-btn { width: 100%; padding: 14px; font-size: 1.05rem; margin: 10px 0; }
+
+/* Manual payment (Vodafone Cash / InstaPay): 3 clear steps, big numbers with copy */
+.manual-pay .pay-step { display: flex; gap: 12px; align-items: flex-start; padding: 14px 0; border-top: 1px solid var(--border); }
+.manual-pay .pay-step:first-of-type { border-top: 0; padding-top: 4px; }
+.step-no { flex: none; width: 30px; height: 30px; border-radius: 50%; background: var(--primary); color: var(--primary-ink); display: grid; place-items: center; font-weight: 700; }
+.step-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.pay-amount { font-size: 1.05rem; }
+.pay-amount b { font-size: 1.5rem; color: var(--good); }
+.pay-methods { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.pay-method { position: relative; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 16px; border: 2px solid var(--border);
+  border-radius: 14px; background: var(--surface-2); cursor: pointer; color: var(--text); text-align: center; }
+.pay-method input { position: absolute; inset-inline-start: 12px; top: 12px; accent-color: var(--primary); }
+.pay-method:has(input:checked) { border-color: var(--primary); background: var(--primary-soft); }
+.pay-method.vodafone .pm-title { color: #e60000; }
+:root[data-theme="dark"] .pay-method.vodafone .pm-title { color: #ff5a5a; }
+.pay-method.instapay .pm-title { color: #7c3aed; }
+:root[data-theme="dark"] .pay-method.instapay .pm-title { color: #b794f6; }
+.pm-title { font-weight: 700; font-size: 1.05rem; }
+.pm-value { font-size: clamp(1.05rem, 5.2vw, 1.6rem); font-weight: 700; letter-spacing: .02em; overflow-wrap: anywhere; }

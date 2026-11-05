@@ -1035,19 +1035,37 @@ Views.subscribe = async (el) => {
       <div class="col">
         ${gateways.paymob ? `<button class="btn primary" data-action="pay" data-plan="${p.code}" data-provider="paymob">ادفع بالكارت / المحفظة</button>` : ''}
         ${gateways.fawry ? `<button class="btn ghost" data-action="pay" data-plan="${p.code}" data-provider="fawry">ادفع بفوري</button>` : ''}
-        ${!gateways.paymob && !gateways.fawry ? '<button class="btn primary" data-action="toManual">ادفع بفودافون كاش / انستاباي ↓</button>' : ''}
+        ${!gateways.paymob && !gateways.fawry ? `<button class="btn primary" data-action="toManual" data-plan="${p.code}">ادفع بفودافون كاش / انستاباي ↓</button>` : ''}
       </div>
     </div>`).join('')}</div>
 
-    <section class="card"><h2>تحويل فودافون كاش / انستاباي</h2>
-      <p class="muted">حوّل المبلغ لـ: فودافون كاش <b class="mono">${esc(mp.vodafone_cash || '—')}</b> · انستاباي <b class="mono">${esc(mp.instapay || '—')}</b><br>${esc(mp.instructions)}</p>
-      <form id="mf" class="form grid2">
-        <label>الباقة<select name="plan_code">${plans.map((p) => `<option value="${p.code}">${esc(p.name_ar)} — ${Number(p.price_egp)} ج</option>`).join('')}</select></label>
-        <label>طريقة التحويل<select name="provider"><option value="vodafone_cash">فودافون كاش</option><option value="instapay">انستاباي</option></select></label>
-        <label>الرقم/الحساب اللي حوّلت منه<input name="sender_account" required minlength="5"></label>
-        <label>رقم العملية (من الإيصال)<input name="transfer_ref"></label>
-        <label class="span2">صورة الإيصال<input type="file" name="receipt" accept="image/png,image/jpeg,image/webp,application/pdf" required></label>
-        <button class="btn primary span2" type="submit">رفع الإيصال للمراجعة</button>
+    <section class="card manual-pay"><h2>الدفع بفودافون كاش أو إنستاباي</h2>
+      <form id="mf" class="form">
+        <div class="pay-step"><span class="step-no">1</span><div class="step-body"><b>اختار الباقة</b>
+          <select name="plan_code">${plans.map((p) => `<option value="${p.code}" data-price="${Number(p.price_egp)}">باقة ${esc(p.name_ar)}\u200F — ${Number(p.price_egp)} جنيه</option>`).join('')}</select>
+          <div class="pay-amount">المبلغ المطلوب: <b id="pay-amount"></b></div></div></div>
+
+        <div class="pay-step"><span class="step-no">2</span><div class="step-body"><b>حوّل المبلغ على واحد من دول</b> <small class="muted">(دوس على اللي هتحوّل عليه)</small>
+          <div class="pay-methods">
+            ${mp.vodafone_cash ? `<label class="pay-method vodafone"><input type="radio" name="provider" value="vodafone_cash" checked>
+              <span class="pm-title">📱 فودافون كاش</span>
+              <span class="pm-value mono">${esc(mp.vodafone_cash)}</span>
+              <button class="btn ghost tiny" type="button" data-action="copy" data-copy="${esc(mp.vodafone_cash)}">نسخ الرقم</button></label>` : ''}
+            ${mp.instapay ? `<label class="pay-method instapay"><input type="radio" name="provider" value="instapay" ${mp.vodafone_cash ? '' : 'checked'}>
+              <span class="pm-title">🏦 إنستاباي</span>
+              <span class="pm-value mono">${esc(mp.instapay)}</span>
+              <button class="btn ghost tiny" type="button" data-action="copy" data-copy="${esc(mp.instapay)}">نسخ العنوان</button></label>` : ''}
+          </div>
+          ${mp.instructions ? `<p class="muted small">${esc(mp.instructions)}</p>` : ''}</div></div>
+
+        <div class="pay-step"><span class="step-no">3</span><div class="step-body"><b>ارفع صورة الإيصال</b>
+          <div class="grid2">
+            <label>الرقم/الحساب اللي حوّلت منه<input name="sender_account" required minlength="5" dir="ltr" placeholder="01xxxxxxxxx"></label>
+            <label>رقم العملية (من الإيصال)<input name="transfer_ref" dir="ltr"></label>
+            <label class="span2">صورة الإيصال (سكرين شوت)<input type="file" name="receipt" accept="image/png,image/jpeg,image/webp,application/pdf" required></label>
+          </div>
+          <button class="btn primary" type="submit">رفع الإيصال للمراجعة</button>
+          <p class="muted small">الإدارة بتراجع الإيصال وتفعّل اشتراكك، وهتلاقي الحالة تحت في «مدفوعاتي».</p></div></div>
       </form></section>
 
     <section class="card"><h2>مدفوعاتي</h2>${mine.payments.length ? table(['التاريخ', 'الباقة', 'المبلغ', 'الطريقة', 'الحالة'],
@@ -1056,7 +1074,12 @@ Views.subscribe = async (el) => {
 
   const reload = () => Views.subscribe(el);
   onAction(el, {
-    toManual: () => $('#mf', el).scrollIntoView({ behavior: 'smooth', block: 'start' }),
+    toManual: (b) => {
+      const sel = $('#mf [name=plan_code]', el);
+      sel.value = b.dataset.plan; showAmount();
+      $('#mf', el).scrollIntoView({ behavior: 'smooth', block: 'start' });
+    },
+    copy: (b) => navigator.clipboard?.writeText(b.dataset.copy).then(() => toast('اتنسخ ✓')),
     pay: (b) => run(b, async () => {
       const r = await API.post('/payments/checkout', { plan_code: b.dataset.plan, provider: b.dataset.provider });
       if (r.checkout_url) { location.href = r.checkout_url; return; }
@@ -1077,7 +1100,14 @@ Views.subscribe = async (el) => {
       }));
     }),
   });
+  const showAmount = () => {
+    const opt = $('#mf [name=plan_code]', el).selectedOptions[0];
+    $('#pay-amount', el).textContent = opt ? `${opt.dataset.price} جنيه` : '';
+  };
+  $('#mf [name=plan_code]', el).addEventListener('change', showAmount);
+  showAmount();
   onSubmit($('#mf', el), async (v, form) => {
+    if (!v.provider) throw new Error('اختار إنت حوّلت على فودافون كاش ولا إنستاباي');
     const fd = new FormData();
     for (const [k, val] of Object.entries(v)) if (val !== undefined) fd.append(k, val);
     fd.append('receipt', form.receipt.files[0]);
