@@ -40,22 +40,41 @@ async function buildReport(userId, days = 7) {
   };
 }
 
+/** Parent report rating: 85+ ممتاز · 75+ جيد جداً · 70+ جيد · 60+ يحتاج تحسين · below 60 ضعيف. */
+function reportGrade(percent) {
+  if (percent === null || percent === undefined) return 'لا توجد إجابات';
+  if (percent >= 85) return 'ممتاز';
+  if (percent >= 75) return 'جيد جداً';
+  if (percent >= 70) return 'جيد';
+  if (percent >= 60) return 'يحتاج تحسين';
+  return 'ضعيف';
+}
+
+/** The text the parent receives (WhatsApp / email), in the format chosen by the platform owner. */
 function formatReportText(r) {
+  const block = (percent, correct, attempts) => [
+    percent === null || percent === undefined ? 'لا توجد إجابات في هذه الفترة' : `${percent}% (${reportGrade(percent)})`,
+    `عدد الإجابات الصحيحة: ${correct} من ${attempts}`,
+  ];
+  const [overallLine, overallCount] = block(r.overall.percent, r.overall.correct, r.overall.attempts);
   const lines = [
     `تقرير متابعة الطالب: ${r.student.name} (${r.student.code})`,
     `الفترة: ${r.period.from} إلى ${r.period.to}`,
-    `الأداء العام: ${r.overall.percent ?? '-'}% (${r.overall.rating}) — ${r.overall.correct}/${r.overall.attempts} إجابة صحيحة`,
     '',
-    'الأداء حسب المادة:',
-    ...(r.subjects.length ? r.subjects.map((s) => `• ${s.subject}: ${s.percent}% (${s.rating})`) : ['• لا يوجد حل أسئلة في هذه الفترة']),
+    `الأداء العام: ${overallLine}`,
+    overallCount,
     '',
-    `مهام المذاكرة: ${r.study_tasks.done}/${r.study_tasks.total} مكتملة`,
-    `أسئلة في بنك الأخطاء لم تُحل بعد: ${r.open_mistakes}`,
+    'الأداء في المواد الدراسية:',
   ];
-  if (r.competitions.length) {
-    lines.push('', 'المسابقات:');
-    for (const c of r.competitions) lines.push(`• ${c.title}: ${c.score}/${c.total_questions} — الترتيب ${c.rank}`);
+  if (r.subjects.length) {
+    for (const s of r.subjects) {
+      const [line, count] = block(s.percent, s.correct, s.attempts);
+      lines.push(`• ${s.subject}: ${line}`, `   ${count}`);
+    }
+  } else {
+    lines.push('• لم يحل الطالب أسئلة في هذه الفترة');
   }
+  lines.push('', 'مع تمنياتنا لكم بالتوفيق والنجاح');
   return lines.join('\n');
 }
 
@@ -151,4 +170,4 @@ async function recordFailure(userId, err) {
 
 const escapeHtml = (s) => s.replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 
-module.exports = { buildReport, formatReportText, sendParentReport, startWeeklyReports, sendDueReports, countDue };
+module.exports = { buildReport, formatReportText, reportGrade, sendParentReport, startWeeklyReports, sendDueReports, countDue };
