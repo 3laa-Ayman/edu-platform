@@ -116,6 +116,17 @@ const IMAGE_HEADER = { question: 'صورة السؤال', A: 'أ', B: 'ب', C: '
   const totalPassages = new Set(data.questions.filter((q) => q.passage_no).map((q) => q.passage_no)).size;
   sum.addRow(['الإجمالي', data.questions.length, data.questions.filter((q) => Object.values(q.images || {}).some(Boolean)).length, totalPassages]).font = { bold: true };
 
+  // Optional «ملاحظات» sheet: per-question source/notes (q.note, e.g. «من الملف — ص 9» or «تأليف»).
+  if (data.questions.some((q) => q.note)) {
+    const ns = wb.addWorksheet('ملاحظات', { views: [{ rightToLeft: true, state: 'frozen', ySplit: 1 }] });
+    ns.columns = [{ header: 'رقم', width: 7 }, { header: 'الدرس', width: 32 }, { header: 'السؤال', width: 70 }, { header: 'المصدر / ملاحظات', width: 30 }];
+    ns.getRow(1).font = { bold: true };
+    data.questions.forEach((q, i) => {
+      const r = ns.addRow([i + 1, q.lesson ?? defaults.lesson ?? '', q.question, q.note || '']);
+      r.alignment = { wrapText: true, vertical: 'top' };
+    });
+  }
+
   await wb.xlsx.writeFile(out);
   console.log(`✅ ${data.questions.length} questions (${images} images) → ${out}`);
 })().catch((e) => { console.error(e.message); process.exit(1); });
