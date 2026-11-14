@@ -66,7 +66,7 @@ const safe = (name) => () => runJob(name).catch((err) => console.error(`[job] ${
 function startJobs() {
   const opts = { timezone: env.tz };
   cron.schedule('0 21 * * 4', safe('auto-assign-teams'), opts); // Thursday 21:00 Cairo
-  cron.schedule('0 10 * * 6', safe('parent-reports'), opts); // Saturday 10:00 Cairo
+  // Parent reports are sent by the admin (WhatsApp, from the students page) — no automatic weekly run.
   cron.schedule('0 3 * * *', safe('cleanup'), opts); // daily 03:00
   console.log(`[jobs] scheduled (timezone ${env.tz})`);
 }
