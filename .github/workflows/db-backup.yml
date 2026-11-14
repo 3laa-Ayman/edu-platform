@@ -37,7 +37,11 @@ jobs:
           set -euo pipefail
           STAMP=$(date -u +%Y-%m-%d_%H%M)
           # pg_dump from a recent Postgres image (a newer pg_dump can dump older servers)
-          docker run --rm postgres:18 pg_dump --format=custom --no-owner --no-privileges "$DATABASE_URL" > db.dump
+          # Neon: dump through the direct host (not the "-pooler" one), and verify SSL against the runner's system CAs
+          # (the URL may ask for sslmode=verify-full, which needs a root certificate inside the container).
+          DIRECT_URL="${DATABASE_URL/-pooler./.}"
+          docker run --rm -v /etc/ssl/certs:/etc/ssl/certs:ro -e PGSSLROOTCERT=/etc/ssl/certs/ca-certificates.crt \
+            postgres:18 pg_dump --format=custom --no-owner --no-privileges "$DIRECT_URL" > db.dump
           test -s db.dump
           gpg --batch --yes --pinentry-mode loopback --passphrase "$BACKUP_PASSPHRASE" \
               --symmetric --cipher-algo AES256 -o "edu-db-$STAMP.dump.gpg" db.dump
