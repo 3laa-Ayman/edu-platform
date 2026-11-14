@@ -725,7 +725,7 @@ Views.competitions = async (el) => {
         <p class="muted">${fmtDate(c.starts_at)} ← ${fmtDate(c.ends_at)}</p>
         <p>${c.question_count} سؤال · ${c.duration_minutes} دقيقة</p>
         ${c.my_submitted_at
-          ? (c.results_published ? `<p class="good">درجتك: <b>${c.my_score}/${c.question_count}</b></p>` : '<p class="muted">✅ سلّمت — 🔒 النتيجة هتتعلن قريباً</p>')
+          ? (c.results_published ? `<p class="good">درجتك: <b>${c.my_score}/${c.question_count}</b></p>` : '<p class="good">✅ تم التسليم بنجاح</p>')
           : c.status === 'active' ? '<span class="btn primary tiny">ادخل المسابقة</span>' : ''}
       </a>`).join('')}</div>` : empty('مفيش مسابقات لسه.')}`;
 };
@@ -744,9 +744,9 @@ Views.competition = async (el, { id }) => {
     if (lb.results_hidden) {
       // Results not announced yet: nothing about scores, ranking or correct answers.
       el.innerHTML = `<div class="page-head"><h1>${esc(c.title)}</h1>${badge(LABELS.compStatus[c.status], LABELS.compTone[c.status])}</div>
-        <section class="card center results-hidden"><div class="big">🔒</div>
-          <h2>${c.my_submitted_at ? 'تم تسليم إجاباتك ✅' : 'النتيجة لسه ماتعلنتش'}</h2>
-          <p class="muted">النتيجة والترتيب والإجابات الصحيحة هيظهروا هنا لما الإدارة تعلن النتيجة.</p></section>`;
+        ${c.my_submitted_at
+          ? '<section class="card center results-hidden submitted-ok"><div class="check-big" aria-hidden="true">✓</div><h2>تم التسليم بنجاح</h2></section>'
+          : '<section class="card center results-hidden"><div class="big">🔒</div><h2>النتيجة لسه ماتعلنتش</h2></section>'}`;
       return;
     }
     let review = '';
@@ -872,7 +872,7 @@ Views.competition = async (el, { id }) => {
           sessionStorage.removeItem(key);
           c.my_submitted_at = r.submitted_at;
           if (r.results_hidden) {
-            toast('تم تسليم إجاباتك ✅ — النتيجة هتتعلن قريباً');
+            toast('تم التسليم بنجاح ✅');
             await showBoard();
             return;
           }

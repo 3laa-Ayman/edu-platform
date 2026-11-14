@@ -411,3 +411,8 @@ td .row { flex-wrap: wrap; }
 .pick-q input { margin-top: 4px; flex: none; }
 .pick-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .pick-text { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+/* "تم التسليم بنجاح" after a competition whose results aren't announced yet */
+.submitted-ok { padding: 36px 16px; }
+.check-big { width: 88px; height: 88px; margin: 0 auto 14px; border-radius: 50%; background: var(--good); color: #fff;
+  display: grid; place-items: center; font-size: 52px; font-weight: 700; line-height: 1; }
+:root[data-theme="dark"] .check-big { color: #0b2e17; }
