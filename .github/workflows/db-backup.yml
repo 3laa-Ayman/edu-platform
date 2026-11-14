@@ -1,0 +1,54 @@
+# Daily encrypted backup of the production database (Neon), kept OUTSIDE Neon as a GitHub Actions artifact.
+# Needs two repository secrets (Settings → Secrets and variables → Actions):
+#   BACKUP_DATABASE_URL  the Neon connection string (same as DATABASE_URL on Vercel)
+#   BACKUP_PASSPHRASE    a long password; without it the backup files can't be opened (keep it somewhere safe!)
+# Restore steps: docs/BACKUP.md
+name: Daily database backup
+
+on:
+  schedule:
+    - cron: '30 1 * * *' # every day 01:30 UTC (03:30 / 04:30 Cairo)
+  workflow_dispatch: {}   # "Run workflow" button for a backup now
+
+permissions:
+  contents: read
+
+concurrency:
+  group: db-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+      BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+    steps:
+      - name: Check the secrets are set
+        run: |
+          if [ -z "$DATABASE_URL" ] || [ -z "$BACKUP_PASSPHRASE" ]; then
+            echo "::error::Add the BACKUP_DATABASE_URL and BACKUP_PASSPHRASE secrets (see docs/BACKUP.md)"
+            exit 1
+          fi
+
+      - name: Dump the database and encrypt it
+        run: |
+          set -euo pipefail
+          STAMP=$(date -u +%Y-%m-%d_%H%M)
+          # pg_dump from a recent Postgres image (a newer pg_dump can dump older servers)
+          docker run --rm postgres:18 pg_dump --format=custom --no-owner --no-privileges "$DATABASE_URL" > db.dump
+          test -s db.dump
+          gpg --batch --yes --pinentry-mode loopback --passphrase "$BACKUP_PASSPHRASE" \
+              --symmetric --cipher-algo AES256 -o "edu-db-$STAMP.dump.gpg" db.dump
+          rm -f db.dump
+          ls -la edu-db-*.dump.gpg
+          echo "STAMP=$STAMP" >> "$GITHUB_ENV"
+
+      - name: Keep the encrypted backup (30 days)
+        uses: actions/upload-artifact@v4
+        with:
+          name: edu-db-${{ env.STAMP }}
+          path: edu-db-*.dump.gpg
+          retention-days: 30
+          if-no-files-found: error
