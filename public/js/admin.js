@@ -541,8 +541,11 @@ Admin.competitions = async (el) => {
     <section class="card"><h2>كل المسابقات</h2>${competitions.length ? table(['المسابقة', 'النوع', 'الوقت', 'الحالة', ''],
       competitions.map((c) => [`${esc(c.title)}<br><small class="muted">${c.question_count} سؤال · ${c.duration_minutes} د</small>`, esc(LABELS.compType[c.type]),
         `${fmtDate(c.starts_at)}<br><small class="muted">${fmtDate(c.ends_at)}</small>`,
-        badge(LABELS.compStatus[c.status], LABELS.compTone[c.status]),
-        `<div class="row"><a class="btn ghost tiny" href="#/competition/${c.id}">الترتيب</a>
+        `${badge(LABELS.compStatus[c.status], LABELS.compTone[c.status])}<br>${c.results_published ? badge('📢 النتيجة معلنة', 'good') : badge('🔒 النتيجة مخفية', 'mid')}`,
+        `<div class="row">${c.results_published
+          ? `<button class="btn ghost tiny" data-action="unpublish" data-id="${c.id}">🔒 إخفاء النتيجة</button>`
+          : `<button class="btn primary tiny" data-action="publish" data-id="${c.id}">📢 إعلان النتيجة</button>`}
+          <a class="btn ghost tiny" href="#/competition/${c.id}">الترتيب</a>
           <button class="btn ghost tiny" data-action="questions" data-id="${c.id}">الأسئلة</button>
           <button class="btn ghost tiny" data-action="edit" data-id="${c.id}">تعديل</button>
           <button class="btn danger tiny" data-action="del" data-id="${c.id}">حذف</button></div>`])) : empty('مفيش مسابقات')}</section>`;
@@ -576,6 +579,19 @@ Admin.competitions = async (el) => {
   });
   onAction(el, {
     pick: () => pickQuestions({ subjects, selected: picked, onDone: showPicked }),
+    publish: (b) => run(b, async () => {
+      const c = competitions.find((x) => String(x.id) === b.dataset.id);
+      if (!confirm(`إعلان نتيجة «${c.title}»؟\nالطلاب هيشوفوا درجاتهم والترتيب والإجابات الصحيحة${c.status === 'finished' ? '' : ' (الإجابات الصحيحة بتظهر بعد ما المسابقة تخلص)'}، وإجاباتهم هتتضاف لبنك الأخطاء.`)) return;
+      await API.post(`/admin/competitions/${c.id}/publish`);
+      toast('📢 النتيجة اتعلنت للطلاب');
+      reload();
+    }),
+    unpublish: (b) => run(b, async () => {
+      if (!confirm('إخفاء النتيجة عن الطلاب تاني؟')) return;
+      await API.post(`/admin/competitions/${b.dataset.id}/unpublish`);
+      toast('🔒 النتيجة اتخفت');
+      reload();
+    }),
     questions: (b) => run(b, async () => {
       const c = competitions.find((x) => String(x.id) === b.dataset.id);
       const { questions } = await API.get(`/admin/competitions/${c.id}/questions`);

@@ -724,7 +724,9 @@ Views.competitions = async (el) => {
         <h2>${esc(c.title)}</h2>
         <p class="muted">${fmtDate(c.starts_at)} ← ${fmtDate(c.ends_at)}</p>
         <p>${c.question_count} سؤال · ${c.duration_minutes} دقيقة</p>
-        ${c.my_submitted_at ? `<p class="good">درجتك: <b>${c.my_score}/${c.question_count}</b></p>` : c.status === 'active' ? '<span class="btn primary tiny">ادخل المسابقة</span>' : ''}
+        ${c.my_submitted_at
+          ? (c.results_published ? `<p class="good">درجتك: <b>${c.my_score}/${c.question_count}</b></p>` : '<p class="muted">✅ سلّمت — 🔒 النتيجة هتتعلن قريباً</p>')
+          : c.status === 'active' ? '<span class="btn primary tiny">ادخل المسابقة</span>' : ''}
       </a>`).join('')}</div>` : empty('مفيش مسابقات لسه.')}`;
 };
 
@@ -739,6 +741,14 @@ Views.competition = async (el, { id }) => {
 
   const showBoard = async () => {
     const lb = await API.get(`/competitions/${id}/leaderboard`);
+    if (lb.results_hidden) {
+      // Results not announced yet: nothing about scores, ranking or correct answers.
+      el.innerHTML = `<div class="page-head"><h1>${esc(c.title)}</h1>${badge(LABELS.compStatus[c.status], LABELS.compTone[c.status])}</div>
+        <section class="card center results-hidden"><div class="big">🔒</div>
+          <h2>${c.my_submitted_at ? 'تم تسليم إجاباتك ✅' : 'النتيجة لسه ماتعلنتش'}</h2>
+          <p class="muted">النتيجة والترتيب والإجابات الصحيحة هيظهروا هنا لما الإدارة تعلن النتيجة.</p></section>`;
+      return;
+    }
     let review = '';
     if (c.status === 'finished' && c.my_submitted_at) {
       const { answers } = await API.get(`/competitions/${id}/review`);
@@ -749,6 +759,7 @@ Views.competition = async (el, { id }) => {
     }
     const me = State.user.student_code;
     el.innerHTML = `<div class="page-head"><h1>${esc(c.title)}</h1>${badge(LABELS.compStatus[c.status], LABELS.compTone[c.status])}</div>
+      ${lb.published === false ? '<p class="notice mid">🔒 النتيجة لسه مخفية عن الطلاب — إنت شايفها لأنك أدمن. أعلنها من صفحة المسابقات.</p>' : ''}
       ${lb.teams ? `<section class="card"><h2>ترتيب التيمات</h2>${table(['#', 'التيم', 'المشاركين', 'النقاط'],
         lb.teams.map((t) => [medal(t.rank), esc(t.team), t.participants, `<b>${t.total_score}</b>`]))}</section>` : ''}
       <section class="card"><h2>ترتيب الطلاب</h2>${lb.individuals.length ? table(['#', 'الطالب', 'الدرجة', 'الوقت'],
@@ -860,6 +871,11 @@ Views.competition = async (el, { id }) => {
           const r = await API.post(`/competitions/${id}/submit`, { answers: answers() });
           sessionStorage.removeItem(key);
           c.my_submitted_at = r.submitted_at;
+          if (r.results_hidden) {
+            toast('تم تسليم إجاباتك ✅ — النتيجة هتتعلن قريباً');
+            await showBoard();
+            return;
+          }
           toast(`تم التسليم — درجتك ${r.score}/${r.total_questions}`);
           await showBoard();
           el.insertAdjacentHTML('afterbegin', `<div class="card center"><h2>درجتك</h2><div class="big ${percentTone(r.percent)}">${r.score}/${r.total_questions}</div>

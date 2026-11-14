@@ -567,3 +567,12 @@ ALTER TABLE payments ADD COLUMN IF NOT EXISTS student_label VARCHAR(200);
 ALTER TABLE payments ALTER COLUMN user_id DROP NOT NULL;
 ALTER TABLE payments DROP CONSTRAINT IF EXISTS payments_user_id_fkey;
 ALTER TABLE payments ADD CONSTRAINT payments_user_id_fkey FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL;
+
+-- Competition results are hidden until the admin publishes them (score, ranking, correct answers, and the
+-- answers' effect on the mistakes bank / percentages). Competitions that existed before this get "already published"
+-- (the column is added with DEFAULT now(), then new competitions default to NULL = hidden).
+ALTER TABLE competitions ADD COLUMN IF NOT EXISTS results_published_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE competitions ALTER COLUMN results_published_at SET DEFAULT NULL;
+-- Whether this entry's answers were already added to the student's attempts / mistakes bank (done on publish).
+ALTER TABLE competition_entries ADD COLUMN IF NOT EXISTS answers_recorded BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE competition_entries ALTER COLUMN answers_recorded SET DEFAULT FALSE;

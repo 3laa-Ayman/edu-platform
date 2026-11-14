@@ -117,6 +117,10 @@ async function finalizeEntry(c, entry, given) {
   const ids = entry.question_order.map((o) => o.qid);
   const { rows } = await c.query(`SELECT * FROM questions WHERE id = ANY($1::bigint[])`, [ids]);
   const byId = new Map(rows.map((q) => [q.id, q]));
+  // Results not published yet: grade now, but the answers reach the student's attempts / mistakes bank only on publish
+  // (otherwise the mistakes bank and percentages would reveal the results).
+  const { rows: [comp] } = await c.query(`SELECT results_published_at FROM competitions WHERE id = $1`, [entry.competition_id]);
+  const recordNow = Boolean(comp?.results_published_at);
 
   let score = 0;
   let wrong = 0;
@@ -134,7 +138,8 @@ async function finalizeEntry(c, entry, given) {
         [entry.id, qid]);
       continue;
     }
-    const { isCorrect } = await recordAnswer(c, { userId: entry.user_id, question: q, selected: original, source: 'competition', entryId: entry.id });
+    const isCorrect = original === q.correct_option;
+    if (recordNow) await recordAnswer(c, { userId: entry.user_id, question: q, selected: original, source: 'competition', entryId: entry.id });
     if (isCorrect) score++;
     else wrong++;
     await c.query(
@@ -145,10 +150,10 @@ async function finalizeEntry(c, entry, given) {
   const { rows: [done] } = await c.query(
     `UPDATE competition_entries
         SET submitted_at = LEAST(now(), deadline_at + interval '30 seconds'), score = $2,
-            draft_answers = $3,
+            draft_answers = $3, answers_recorded = $4,
             duration_seconds = GREATEST(1, EXTRACT(EPOCH FROM (LEAST(now(), deadline_at) - started_at))::int)
       WHERE id = $1 RETURNING score, total_questions, duration_seconds, submitted_at`,
-    [entry.id, score, JSON.stringify(Object.fromEntries(given))],
+    [entry.id, score, JSON.stringify(Object.fromEntries(given)), recordNow],
   );
   return { ...done, correct: score, wrong, skipped, percent: Math.round((done.score / done.total_questions) * 100) };
 }
@@ -224,7 +229,11 @@ async function leaderboard(competitionId, limit = 100) {
       ORDER BY rank LIMIT $2`,
     [competitionId, limit],
   );
-  const result = { competition: { id: comp.id, title: comp.title, type: comp.type, ends_at: comp.ends_at }, individuals };
+  const result = {
+    competition: { id: comp.id, title: comp.title, type: comp.type, ends_at: comp.ends_at },
+    published: Boolean(comp.results_published_at),
+    individuals,
+  };
 
   if (comp.type === 'team_weekly') {
     // Team ranking: total points of members who submitted, ties broken by average time.
@@ -243,10 +252,11 @@ async function leaderboard(competitionId, limit = 100) {
   return result;
 }
 
-/** After the competition ends: the student's answers with the correct ones. */
+/** After the competition ends and its results are published: the student's answers with the correct ones. */
 async function review(competitionId, userId) {
   const comp = await getCompetition(competitionId);
   await finalizeExpired({ competitionId, userId });
+  if (!comp.results_published_at) throw forbidden('النتيجة لسه ماتعلنتش — هتظهر لما الإدارة تعلنها', 'RESULTS_HIDDEN');
   if (new Date() < comp.ends_at) throw forbidden('تظهر الإجابات الصحيحة بعد انتهاء المسابقة');
   const { rows } = await db.query(
     `SELECT q.id AS question_id, q.question_text, q.option_a, q.option_b, q.option_c, q.option_d,
@@ -261,4 +271,41 @@ async function review(competitionId, userId) {
   return groupByPassage(rows).map((r) => ({ ...r, media: media[r.question_id] || {}, passage: passages[r.passage_id] || null }));
 }
 
-module.exports = { getCompetition, startEntry, saveDraft, submitEntry, finalizeExpired, leaderboard, review };
+/**
+ * Admin publishes the results: scores, ranking and correct answers become visible to students, and every submitted
+ * answer now goes to the students' attempts / mistakes bank / percentages (once per entry; entries finished later
+ * are recorded as they finish). Safe to call again.
+ */
+async function publishResults(competitionId) {
+  await getCompetition(competitionId);
+  await db.query(`UPDATE competitions SET results_published_at = COALESCE(results_published_at, now()) WHERE id = $1`, [competitionId]);
+  await finalizeExpired({ competitionId });
+  const { rows } = await db.query(
+    `SELECT id FROM competition_entries WHERE competition_id = $1 AND submitted_at IS NOT NULL AND NOT answers_recorded`, [competitionId]);
+  let recorded = 0;
+  for (const { id } of rows) {
+    await db.withTransaction(async (c) => {
+      const { rows: [entry] } = await c.query(
+        `SELECT * FROM competition_entries WHERE id = $1 AND NOT answers_recorded FOR UPDATE SKIP LOCKED`, [id]);
+      if (!entry) return;
+      const { rows: answers } = await c.query(
+        `SELECT q.*, a.selected_option FROM competition_answers a JOIN questions q ON q.id = a.question_id
+          WHERE a.entry_id = $1 AND a.selected_option IS NOT NULL ORDER BY a.question_id`, [entry.id]);
+      for (const q of answers) {
+        await recordAnswer(c, { userId: entry.user_id, question: q, selected: q.selected_option, source: 'competition', entryId: entry.id });
+      }
+      await c.query(`UPDATE competition_entries SET answers_recorded = TRUE WHERE id = $1`, [entry.id]);
+      recorded++;
+    });
+  }
+  return { published: true, entries_recorded: recorded };
+}
+
+/** Hide the results again (answers already added to the mistakes bank stay there). */
+async function unpublishResults(competitionId) {
+  await getCompetition(competitionId);
+  await db.query(`UPDATE competitions SET results_published_at = NULL WHERE id = $1`, [competitionId]);
+  return { published: false };
+}
+
+module.exports = { getCompetition, startEntry, saveDraft, submitEntry, finalizeExpired, leaderboard, review, publishResults, unpublishResults };

@@ -400,7 +400,7 @@ select option { color: var(--text); }
 .btn.parent { background: #dc2626; color: #fff; border-color: #dc2626; }
 .btn.parent:hover { filter: brightness(1.08); }
 /* Table actions and codes stay on one line (the row wraps the buttons instead) */
-td .btn, td .mono { white-space: nowrap; }
+td .btn, td .mono, td .badge { white-space: nowrap; }
 td .row { flex-wrap: wrap; }
 /* Competition question picker */
 .q-mode { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; }

@@ -314,6 +314,9 @@ async function studentLogin(identifier, password, device) {
     duration_minutes: 20, question_ids: allQ.data.items.filter((q) => q.question_text.includes(rnd)).map((q) => q.id) } });
   ok(comp.status === 201 && comp.data.competition.question_count === N, 'admin created team competition');
   const cid = comp.data.competition.id;
+  ok(comp.data.competition.results_published_at === null, 'new competition: results hidden by default');
+  // (the hidden-results flow is tested separately below; here the admin announces right away to check the scoring)
+  ok((await call('POST', `/api/admin/competitions/${cid}/publish`, { token: AT })).data.published, 'admin announces the results');
   const eA = await call('POST', `/api/competitions/${cid}/start`, { token: A.token });
   const eB = await call('POST', `/api/competitions/${cid}/start`, { token: B.token });
   ok(eA.data.questions.length === N, 'A started competition');
@@ -702,6 +705,41 @@ async function studentLogin(identifier, password, device) {
   const lessonCompQs = (await call('GET', `/api/admin/competitions/${lessonComp.data.competition.id}/questions`, { token: AT })).data.questions;
   const lessonName = lessonQ.lesson;
   ok(lessonComp.status === 201 && lessonCompQs.length >= 1 && lessonCompQs.every((q) => q.lesson === lessonName), `random questions from one lesson only (${lessonName})`);
+
+  // ---------------- Hidden results until the admin announces them
+  const hc = await call('POST', '/api/admin/competitions', { token: AT, body: {
+    title: `مسابقة نتيجة مخفية ${rnd}`, type: 'individual_monthly', starts_at: new Date(Date.now() - 60000).toISOString(),
+    ends_at: new Date(Date.now() + 3600000).toISOString(), duration_minutes: 10, question_ids: [qWithExp.id, qNoExp.id] } });
+  const hcId = hc.data.competition.id;
+  const H = await registerStudent(44);
+  const giveH = await call('POST', `/api/admin/students/${H.id}/subscriptions`, { token: AT, body: { plan_code: 'premium', days: 7 } });
+  ok(giveH.status === 201, 'student H subscribed');
+  const hEntry = (await call('POST', `/api/competitions/${hcId}/start`, { token: H.token })).data;
+  const hWrong = hEntry.questions.map((q) => ({ question_id: q.question_id, choice: 'A' }));
+  const hMistakesBefore = (await call('GET', '/api/mistakes/summary', { token: H.token })).data.total;
+  const hSub = await call('POST', `/api/competitions/${hcId}/submit`, { token: H.token, body: { answers: hWrong } });
+  ok(hSub.status === 200 && hSub.data.results_hidden && hSub.data.score === undefined && hSub.data.correct === undefined, 'submit: no score / right-wrong shown', hSub.data);
+  const hList = (await call('GET', '/api/competitions', { token: H.token })).data.competitions.find((x) => x.id === hcId);
+  ok(hList.my_submitted_at && hList.my_score === null && hList.results_published === false, 'competitions list: submitted, score hidden');
+  const hLb = await call('GET', `/api/competitions/${hcId}/leaderboard`, { token: H.token });
+  ok(hLb.data.results_hidden && hLb.data.individuals.length === 0, 'ranking hidden from students');
+  ok((await call('GET', `/api/competitions/${hcId}/leaderboard`, { token: AT })).data.individuals.length === 1, 'admin still sees the ranking');
+  const hRev = await call('GET', `/api/competitions/${hcId}/review`, { token: H.token });
+  ok(hRev.status === 403 && hRev.data.error.code === 'RESULTS_HIDDEN', 'correct answers hidden');
+  ok((await call('GET', '/api/mistakes/summary', { token: H.token })).data.total === hMistakesBefore, 'mistakes bank untouched until the results are announced');
+  const hPerf0 = (await call('GET', '/api/reports/performance', { token: H.token })).data.overall.attempts;
+  ok(hPerf0 === 0, 'percentages untouched until the results are announced');
+  const hPub = await call('POST', `/api/admin/competitions/${hcId}/publish`, { token: AT });
+  ok(hPub.data.published && hPub.data.entries_recorded === 1, 'admin announces → answers recorded');
+  const hList2 = (await call('GET', '/api/competitions', { token: H.token })).data.competitions.find((x) => x.id === hcId);
+  ok(hList2.results_published && typeof hList2.my_score === 'number', `student now sees the score (${hList2.my_score}/2)`);
+  ok((await call('GET', `/api/competitions/${hcId}/leaderboard`, { token: H.token })).data.individuals.length === 1, 'ranking visible after announcing');
+  ok((await call('GET', '/api/reports/performance', { token: H.token })).data.overall.attempts === 2, 'percentages updated after announcing');
+  ok((await call('POST', `/api/admin/competitions/${hcId}/publish`, { token: AT })).data.entries_recorded === 0, 'announcing twice does not record twice');
+  ok((await call('GET', '/api/reports/performance', { token: H.token })).data.overall.attempts === 2, 'still 2 answers counted');
+  ok((await call('POST', `/api/admin/competitions/${hcId}/unpublish`, { token: AT })).data.published === false
+    && (await call('GET', `/api/competitions/${hcId}/leaderboard`, { token: H.token })).data.results_hidden, 'admin can hide the results again');
+  ok((await call('POST', `/api/admin/competitions/${hcId}/publish`, { token: H.token })).status === 403, 'students cannot announce results');
 
   console.log(`\n🎉 All ${passed} checks passed`);
 })().catch((e) => { console.error(e); process.exit(1); });

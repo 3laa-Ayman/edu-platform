@@ -30,6 +30,7 @@ async function student(tag) {
     title: 'اختبار الحفظ التلقائي', type: 'individual_monthly', starts_at: new Date(now - 60000).toISOString(),
     ends_at: new Date(now + 3600000).toISOString(), duration_minutes: 15, random: { count: 4 } }, admin)).data.competition;
   const cid = comp.id;
+  await call('POST', `/api/admin/competitions/${cid}/publish`, null, admin); // results visible (this test checks the scoring)
 
   // 1) Autosave + resume on "another device"
   const s1 = await student('a');

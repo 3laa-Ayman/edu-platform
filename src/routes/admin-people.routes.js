@@ -359,6 +359,14 @@ router.put('/competitions/:id/questions', validate({
   res.json({ question_count: count });
 });
 
+/** Publish / hide a competition's results (scores, ranking, correct answers — see competition.service). */
+router.post('/competitions/:id/publish', validate({ params: idParam }), async (req, res) => {
+  res.json(await require('../services/competition.service').publishResults(req.p.id));
+});
+router.post('/competitions/:id/unpublish', validate({ params: idParam }), async (req, res) => {
+  res.json(await require('../services/competition.service').unpublishResults(req.p.id));
+});
+
 /** Deletes the competition with all entries/results (student attempts stay in their history). */
 router.delete('/competitions/:id', validate({ params: idParam }), async (req, res) => {
   const r = await db.query(`DELETE FROM competitions WHERE id = $1`, [req.p.id]);
