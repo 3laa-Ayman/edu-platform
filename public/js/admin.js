@@ -18,6 +18,7 @@ Admin.dashboard = async (el) => {
     ['الأسئلة', d.questions, '', '#/admin/questions'],
     ['تكلفة الذكاء الاصطناعي', fmtMoney(d.ai_cost_egp, 3), `${d.students_at_ai_limit} طالب عند الحد`, '#/admin/settings'],
     ['التيمات', d.teams, '', '#/admin/teams'],
+    ['اشتراكات هتخلص خلال 7 أيام', d.expiring_soon, d.expiring_soon ? 'كلّمهم يجددوا' : '', '#/admin/students?expiring=7'],
   ];
   el.innerHTML = `<h1 class="page-head">لوحة التحكم</h1>
     <section class="tiles">${tiles.map(([l, v, s, href]) => `<a href="${href}" class="tile"><span class="tile-label">${l}</span><b>${esc(v)}</b><small>${esc(s)}</small></a>`).join('')}</section>
@@ -704,14 +705,16 @@ const studentFields = (s = {}) => `
 
 Admin.students = async (el, params, query) => {
   const search = query.search || '';
-  const { items } = await API.get(`/admin/students?limit=100${search ? `&search=${encodeURIComponent(search)}` : ''}`);
+  const expiring = Number(query.expiring) || 0;
+  const { items } = await API.get(`/admin/students?limit=100${search ? `&search=${encodeURIComponent(search)}` : ''}${expiring ? `&expiring=${expiring}` : ''}`);
   el.innerHTML = `<div class="page-head"><h1>الطلاب</h1><button class="btn primary" data-action="new">+ طالب جديد</button>
       <button class="btn parent" data-action="reportsAll">📨 إرسال تقارير أولياء الأمور على واتساب</button></div>
+    ${expiring ? `<p class="notice mid">⏰ الطلاب اللي اشتراكهم هيخلص خلال ${expiring} أيام ولسه ماجددوش — كلّمهم على واتساب يجددوا. <a href="#/admin/students">عرض كل الطلاب</a></p>` : ''}
     <section class="card"><form id="sf" class="form inline"><input name="search" value="${esc(search)}" placeholder="كود الطالب، الإيميل، الاسم أو رقم الموبايل (الطالب أو ولي الأمر)"><button class="btn ghost" type="submit">بحث</button></form>
     ${items.length ? table(['الكود', 'الاسم', 'التواصل', 'الاشتراك', 'الحالة', ''],
       items.map((s) => [s.student_code ? `<span class="mono">${esc(s.student_code)}</span>` : badge('لم يكمل التسجيل', 'mid'), esc(s.full_name),
         `${esc(s.email)}<br><small class="muted">طالب ${esc(s.phone)} · ولي أمر ${esc(s.parent_phone)}</small>`,
-        s.current_plan ? badge(s.current_plan, 'good') : badge('بدون', ''),
+        s.current_plan ? `${badge(s.current_plan, 'good')}<br><small class="muted">لحد ${fmtDay(s.plan_ends_at)}</small>` : badge('بدون', ''),
         `${s.is_verified ? '' : badge('غير مفعّل', 'mid')} ${s.is_active ? badge('نشط', 'good') : badge('موقوف', 'bad')}
           ${s.blocked_device_attempts ? `<span title="محاولات دخول من أجهزة زيادة في آخر 30 يوم">${badge(`⚠️ أجهزة زيادة ×${s.blocked_device_attempts}`, 'bad')}</span>` : ''}
           <br><small class="muted">📱 ${s.devices}/2</small>`,

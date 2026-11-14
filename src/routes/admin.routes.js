@@ -2,6 +2,7 @@ const router = require('express').Router();
 const path = require('path');
 const env = require('../config/env');
 const db = require('../config/db');
+const { notify } = require('../services/notification.service');
 const { validate, idParam, pagination, z } = require('../middleware/validate');
 const { excelUpload } = require('../middleware/upload');
 const { uploadLimiter } = require('../middleware/rateLimit');
@@ -26,7 +27,11 @@ router.get('/dashboard', async (req, res) => {
       (SELECT COUNT(*) FROM questions WHERE is_active)::int AS questions,
       (SELECT COALESCE(SUM(cost_egp), 0) FROM ai_usage_logs WHERE status = 'success')::float AS ai_cost_egp,
       (SELECT COUNT(*) FROM users WHERE ai_spent_egp >= ai_limit_egp * 0.95)::int AS students_at_ai_limit,
-      (SELECT COUNT(*) FROM teams)::int AS teams`);
+      (SELECT COUNT(*) FROM teams)::int AS teams,
+      -- subscriptions ending within 7 days and not renewed: students to remind (WhatsApp) before they drop
+      (SELECT COUNT(*) FROM users u WHERE u.role = 'student' AND EXISTS (SELECT 1 FROM subscriptions s WHERE s.user_id = u.id AND s.status = 'active'
+                AND s.ends_at > now() AND s.ends_at <= now() + make_interval(days => 7)
+                AND NOT EXISTS (SELECT 1 FROM subscriptions s2 WHERE s2.user_id = u.id AND s2.status = 'active' AND s2.ends_at > s.ends_at)))::int AS expiring_soon`);
   res.json(d);
 });
 
@@ -129,9 +134,15 @@ router.post('/payments/:id/approve', validate({ params: idParam, body: z.object(
 router.post('/payments/:id/reject', validate({ params: idParam, body: z.object({ note: z.string().trim().min(3).max(500) }) }), async (req, res) => {
   const r = await db.query(
     `UPDATE payments SET status = 'rejected', admin_note = $2, reviewed_by = $3, reviewed_at = now(), updated_at = now()
-      WHERE id = $1 AND status = 'under_review' AND method_type = 'manual'`,
+      WHERE id = $1 AND status = 'under_review' AND method_type = 'manual' RETURNING user_id`,
     [req.p.id, req.body.note, req.user.id]);
   if (!r.rowCount) throw conflict('لا يمكن رفض هذه العملية');
+  if (r.rows[0].user_id) {
+    await notify(db, r.rows[0].user_id, {
+      kind: 'payment_rejected', tone: 'warning', link: '#/subscribe',
+      title: '❌ الإيصال اترفض', body: `السبب: ${req.body.note} — تقدر ترفع إيصال جديد من صفحة الاشتراك.`,
+    });
+  }
   res.json({ message: 'تم رفض الإيصال' });
 });
 
@@ -166,14 +177,17 @@ function phoneDigits(text) {
 }
 
 // ------------------------------------------------------------------ Students
-router.get('/students', validate({ query: z.object({ search: z.string().max(100).optional(), ...pagination }) }), async (req, res) => {
-  const { search, page, limit } = req.q;
+router.get('/students', validate({
+  query: z.object({ search: z.string().max(100).optional(), expiring: z.coerce.number().int().min(1).max(60).optional(), ...pagination }),
+}), async (req, res) => {
+  const { search, page, limit, expiring } = req.q;
   const { rows } = await db.query(
     `SELECT u.id, u.student_code, u.full_name, u.email, u.phone, u.parent_phone, u.is_verified, u.is_active,
             u.ai_spent_egp, u.ai_limit_egp, u.created_at,
             (SELECT p.name_ar FROM subscriptions s JOIN plans p ON p.code = s.plan_code
               WHERE s.user_id = u.id AND s.status = 'active' AND now() BETWEEN s.starts_at AND s.ends_at
               ORDER BY p.rank DESC LIMIT 1) AS current_plan,
+            (SELECT MAX(s.ends_at) FROM subscriptions s WHERE s.user_id = u.id AND s.status = 'active' AND s.ends_at > now()) AS plan_ends_at,
             (SELECT COUNT(*)::int FROM user_devices d WHERE d.user_id = u.id) AS devices,
             -- tries from a 3rd device in the last 30 days: a hint that the account is being shared
             (SELECT COUNT(*)::int FROM device_events e WHERE e.user_id = u.id AND e.type = 'blocked_limit'
@@ -182,8 +196,13 @@ router.get('/students', validate({ query: z.object({ search: z.string().max(100)
       WHERE u.role = 'student' AND ($1::text IS NULL OR u.student_code ILIKE $1 || '%' OR u.email ILIKE $1 || '%' OR u.full_name ILIKE '%' || $1 || '%'
             -- phone search: student's or parent's number, any part of it (01012345678, 1234567…)
             OR ($4::text IS NOT NULL AND (u.phone LIKE '%' || $4 || '%' OR u.parent_phone LIKE '%' || $4 || '%')))
-      ORDER BY u.id DESC LIMIT $2 OFFSET $3`,
-    [search ? search.replace(/[%_\\]/g, (m) => `\\${m}`) : null, limit, (page - 1) * limit, phoneDigits(search)],
+        AND ($5::int IS NULL OR EXISTS (SELECT 1 FROM subscriptions s WHERE s.user_id = u.id AND s.status = 'active'
+                AND s.ends_at > now() AND s.ends_at <= now() + make_interval(days => $5::int)
+                AND NOT EXISTS (SELECT 1 FROM subscriptions s2 WHERE s2.user_id = u.id AND s2.status = 'active' AND s2.ends_at > s.ends_at)))
+      ORDER BY CASE WHEN $5::int IS NOT NULL THEN (SELECT MAX(s.ends_at) FROM subscriptions s WHERE s.user_id = u.id AND s.status = 'active') END ASC,
+               u.id DESC
+      LIMIT $2 OFFSET $3`,
+    [search ? search.replace(/[%_\\]/g, (m) => `\\${m}`) : null, limit, (page - 1) * limit, phoneDigits(search), expiring ?? null],
   );
   res.json({ items: rows });
 });

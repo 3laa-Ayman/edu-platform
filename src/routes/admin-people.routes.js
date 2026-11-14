@@ -3,6 +3,7 @@ const router = require('express').Router();
 const bcrypt = require('bcrypt');
 const env = require('../config/env');
 const db = require('../config/db');
+const { notifySubscription } = require('../services/notification.service');
 const devices = require('../services/device.service');
 const { buildReport, formatReportText, sendParentReport } = require('../services/report.service');
 const { validate, idParam, z } = require('../middleware/validate');
@@ -219,7 +220,9 @@ router.post('/students/:id/subscriptions', validate({
   const sub = await db.withTransaction(async (c) => {
     const { rowCount } = await c.query(`SELECT 1 FROM users WHERE id = $1 AND role = 'student'`, [req.p.id]);
     if (!rowCount) throw notFound('الطالب غير موجود');
-    return grantSubscription(c, { userId: req.p.id, planCode: req.body.plan_code, days: req.body.days });
+    const s = await grantSubscription(c, { userId: req.p.id, planCode: req.body.plan_code, days: req.body.days });
+    await notifySubscription(c, req.p.id, s, 'subscription_granted');
+    return s;
   });
   res.status(201).json({ subscription: sub });
 });

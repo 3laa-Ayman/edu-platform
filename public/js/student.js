@@ -258,9 +258,10 @@ Views.forgot = async (el) => {
 
 // ---------------------------------------------------------------- Home
 Views.home = async (el) => {
-  const [me, perf, mist, tasks, ai, ann] = await Promise.all([
+  const [me, perf, mist, tasks, ai, ann, notif] = await Promise.all([
     State.refresh(), API.get('/reports/performance'), API.get('/mistakes/summary'), API.get('/planner/tasks'), API.get('/ai/usage'),
     API.get('/announcements').catch(() => ({ announcements: [], unread: 0 })),
+    API.get('/notifications').catch(() => ({ notifications: [], unread: 0 })),
   ]);
   // No subscription, or a plan without AI: the points can't be used, so the tile shows which plan unlocks them.
   const aiLocked = !me.subscription?.features?.ai_explanations;
@@ -269,6 +270,13 @@ Views.home = async (el) => {
     : '';
   // Unread announcements (and pinned ones, always) on top of the home page.
   const shown = ann.announcements.filter((a) => !a.is_read || a.pinned);
+  // Personal notifications not read yet (payment accepted, results announced, renewal…) go first.
+  const newNotes = notif.notifications.filter((n) => !n.is_read);
+  // Subscription ending within 3 days: a renewal reminder (computed here, so it shows even before the daily job).
+  const daysLeft = me.subscription ? Math.ceil((new Date(me.subscription.ends_at) - Date.now()) / 86400000) : null;
+  const renew = daysLeft !== null && daysLeft <= 3
+    ? `<div class="notice mid renew-banner">⏰ اشتراكك هيخلص ${daysLeft <= 1 ? 'خلال يوم' : `بعد ${daysLeft} أيام`} (${fmtDay(me.subscription.ends_at)}) — جدّد عشان ماتوقفش، والتجديد بيتضاف على المدة اللي فاضلة.
+        <a class="btn primary tiny" href="#/subscribe">جدّد دلوقتي</a></div>` : '';
   const u = me.user;
   const sub = me.subscription;
   el.innerHTML = `
@@ -284,6 +292,8 @@ Views.home = async (el) => {
         : '<a class="btn primary" href="#/subscribe">اشترك دلوقتي</a>'}
     </section>
 
+    ${renew}
+    <section class="announcements" id="home-notes">${newNotes.map((n) => noteCard(n, true)).join('')}</section>
     <section class="announcements" id="home-ann">${shown.map((a) => announceCard(a, !a.is_read)).join('')}</section>
 
     <section class="tiles">
@@ -307,11 +317,27 @@ Views.home = async (el) => {
   onAction(el, {
     copy: () => navigator.clipboard?.writeText(u.student_code).then(() => toast('تم نسخ الكود')),
     readAnn: (b) => markAnnouncementRead(b),
+    readNote: (b) => run(b, async () => {
+      await API.post(`/notifications/${b.dataset.id}/read`);
+      b.closest('.announce')?.remove();
+      refreshBell();
+    }),
   });
 };
 
 // ---------------------------------------------------------------- Announcements (from the admins)
 const TONE_ICON = { info: '📢', success: '🎉', warning: '⚠️' };
+/** A personal notification (same look as an announcement), with its link and an "تمام" to mark it read. */
+const noteCard = (n, dismissable = false) => `<article class="announce ${esc(n.tone)}${n.is_read ? ' read' : ''}">
+    <div class="announce-main">
+      <div class="announce-title"><b>${esc(n.title)}</b>${n.is_read ? '' : ' <span class="badge bad">جديد</span>'}</div>
+      ${n.body ? `<p>${esc(n.body)}</p>` : ''}
+      <div class="row wrap"><small class="muted">${fmtDate(n.created_at)}</small>
+        ${n.link && n.link !== '#/' ? `<a class="btn tiny primary" href="${esc(n.link)}">افتح</a>` : ''}</div>
+    </div>
+    ${dismissable ? `<button class="btn tiny ghost" data-action="readNote" data-id="${n.id}">تمام</button>` : ''}
+  </article>`;
+
 const announceCard = (a, dismissable = false) => `<article class="announce ${esc(a.tone)}${a.is_read ? ' read' : ''}" data-ann="${a.id}">
     <span class="announce-icon" aria-hidden="true">${TONE_ICON[a.tone] || '📢'}</span>
     <div class="announce-main">
@@ -343,22 +369,31 @@ async function refreshBell(force = true) {
   if (!b) return null;
   try {
     const fresh = !force && bellCache.data && Date.now() - bellCache.at < BELL_TTL_MS;
-    const data = fresh ? bellCache.data : await API.get('/announcements');
+    const data = fresh ? bellCache.data : await Promise.all([
+      API.get('/announcements'), API.get('/notifications').catch(() => ({ notifications: [], unread: 0 })),
+    ]).then(([a, n]) => ({ announcements: a.announcements, notifications: n.notifications, unread: a.unread + n.unread, notesUnread: n.unread, annUnread: a.unread }));
     bellCache = fresh ? bellCache : { at: Date.now(), data };
     const n = $('.bell-count', b);
     n.textContent = data.unread > 9 ? '9+' : data.unread;
     n.hidden = !data.unread;
-    b.setAttribute('aria-label', data.unread ? `الإعلانات (${data.unread} جديد)` : 'الإعلانات');
+    b.setAttribute('aria-label', data.unread ? `الإشعارات (${data.unread} جديد)` : 'الإشعارات');
     return data;
   } catch { return null; }
 }
 async function openAnnouncements() {
   const data = await refreshBell();
   if (!data) return;
-  modal(`<h2>الإعلانات</h2>${data.announcements.length
+  modal(`<h2>الإشعارات</h2>
+    ${data.notifications.length ? `<h3>إشعاراتك</h3><div class="announcements">${data.notifications.slice(0, 10).map((n) => noteCard(n)).join('')}</div>` : ''}
+    <h3>إعلانات المنصة</h3>${data.announcements.length
     ? `<div class="announcements">${data.announcements.map((a) => announceCard(a)).join('')}</div>`
     : empty('مفيش إعلانات دلوقتي')}`);
-  if (data.unread) {
+  if (data.notesUnread) {
+    await API.post('/notifications/read-all').catch(() => {});
+    $$('#home-notes .announce').forEach((c) => c.remove());
+    refreshBell();
+  }
+  if (data.annUnread) {
     await API.post('/announcements/read-all').catch(() => {});
     refreshBell();
     // The home page no longer needs to show them as new.

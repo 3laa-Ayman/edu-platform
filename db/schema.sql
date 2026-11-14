@@ -576,3 +576,21 @@ ALTER TABLE competitions ALTER COLUMN results_published_at SET DEFAULT NULL;
 -- Whether this entry's answers were already added to the student's attempts / mistakes bank (done on publish).
 ALTER TABLE competition_entries ADD COLUMN IF NOT EXISTS answers_recorded BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE competition_entries ALTER COLUMN answers_recorded SET DEFAULT FALSE;
+
+-- ---------------------------------------------------------------------
+-- 14) Personal notifications (🔔): payment accepted/rejected, competition results announced, subscription ending soon
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS notifications (
+  id          BIGSERIAL PRIMARY KEY,
+  user_id     BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind        VARCHAR(30) NOT NULL,
+  title       VARCHAR(200) NOT NULL,
+  body        TEXT,
+  link        VARCHAR(300),
+  tone        VARCHAR(10) NOT NULL DEFAULT 'info' CHECK (tone IN ('info', 'success', 'warning')),
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  read_at     TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications (user_id, created_at DESC);
+-- Renewal reminder sent for this subscription (once, ~3 days before it ends).
+ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS reminder_sent_at TIMESTAMPTZ;

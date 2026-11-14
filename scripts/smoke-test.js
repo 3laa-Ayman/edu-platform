@@ -741,5 +741,47 @@ async function studentLogin(identifier, password, device) {
     && (await call('GET', `/api/competitions/${hcId}/leaderboard`, { token: H.token })).data.results_hidden, 'admin can hide the results again');
   ok((await call('POST', `/api/admin/competitions/${hcId}/publish`, { token: H.token })).status === 403, 'students cannot announce results');
 
+  // ---------------- 🔔 Personal notifications + renewal reminders
+  const notesOf = async (st) => (await call('GET', '/api/notifications', { token: st.token })).data;
+  // results announced (student H from the hidden-results scenario took part)
+  const hNotes = await notesOf(H);
+  ok(hNotes.notifications.filter((n) => n.kind === 'results_published').length === 1, 'results announced → one notification (not two after announcing twice)');
+  // payment accepted (online payment activation)
+  const N1 = await registerStudent(33);
+  const coN = await call('POST', '/api/payments/checkout', { token: N1.token, body: { plan_code: 'standard', provider: 'paymob' } });
+  await call('POST', `/api/payments/${coN.data.payment.reference}/dev-simulate-paid`, { token: N1.token });
+  const n1 = await notesOf(N1);
+  ok(n1.unread === 1 && n1.notifications[0].kind === 'payment_approved' && n1.notifications[0].title.includes('Plus'), 'payment accepted → notification with the plan', n1);
+  // receipt rejected
+  const N2 = await registerStudent(34);
+  const upN2 = await call('POST', '/api/payments/manual', { token: N2.token, form: receipt('premium') });
+  const n2pay = (await call('GET', `/api/admin/students/${N2.id}`, { token: AT })).data.payments[0];
+  ok(upN2.status === 201 && n2pay.status === 'under_review', 'N2 uploaded a receipt');
+  await call('POST', `/api/admin/payments/${n2pay.id}/reject`, { token: AT, body: { note: 'المبلغ ناقص' } });
+  const n2 = await notesOf(N2);
+  ok(n2.notifications[0].kind === 'payment_rejected' && n2.notifications[0].body.includes('المبلغ ناقص') && n2.notifications[0].link === '#/subscribe', 'receipt rejected → notification with the reason');
+  // admin gift
+  await call('POST', `/api/admin/students/${N2.id}/subscriptions`, { token: AT, body: { plan_code: 'premium', days: 2 } });
+  ok((await notesOf(N2)).notifications[0].kind === 'subscription_granted', 'admin gift → notification');
+  // read
+  ok((await call('POST', `/api/notifications/${n2.notifications[0].id}/read`, { token: N1.token })).status === 204
+    && (await notesOf(N2)).notifications.find((x) => x.id === n2.notifications[0].id).is_read === false, "can't mark someone else's notification");
+  await call('POST', '/api/notifications/read-all', { token: N2.token });
+  ok((await notesOf(N2)).unread === 0, 'read all');
+  // renewal reminder: N2's subscription ends in 2 days (not renewed); N1 renews → no reminder for N1
+  await call('POST', `/api/admin/students/${N1.id}/subscriptions`, { token: AT, body: { plan_code: 'standard', days: 30 } });
+  const { remindExpiringSubscriptions } = require('../src/services/notification.service');
+  await remindExpiringSubscriptions();
+  const rem = (await notesOf(N2)).notifications.filter((x) => x.kind === 'subscription_expiring');
+  ok(rem.length === 1 && rem[0].link === '#/subscribe', 'subscription ending in 2 days → renewal reminder');
+  await remindExpiringSubscriptions();
+  ok((await notesOf(N2)).notifications.filter((x) => x.kind === 'subscription_expiring').length === 1, 'reminder sent once only');
+  ok(!(await notesOf(N1)).notifications.some((x) => x.kind === 'subscription_expiring'), 'renewed / long subscription → no reminder');
+  // admin: who is about to drop
+  ok((await call('GET', '/api/admin/dashboard', { token: AT })).data.expiring_soon >= 1, 'dashboard counts subscriptions ending soon');
+  const exp = (await call('GET', '/api/admin/students?expiring=7', { token: AT })).data.items;
+  ok(exp.some((x) => x.id === N2.id) && !exp.some((x) => x.id === N1.id) && exp.every((x) => x.plan_ends_at), 'students list filtered to subscriptions ending within 7 days');
+  ok((await call('GET', '/api/notifications', { token: AT })).status === 200, 'notifications endpoint works for any signed-in user');
+
   console.log(`\n🎉 All ${passed} checks passed`);
 })().catch((e) => { console.error(e); process.exit(1); });

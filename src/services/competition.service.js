@@ -1,4 +1,5 @@
 const db = require('../config/db');
+const { notifyResults } = require('./notification.service');
 const { shuffle } = require('../utils/random');
 const { LETTERS, normalizeChoice, optionText } = require('../utils/choices');
 const { badRequest, conflict, forbidden, notFound } = require('../utils/errors');
@@ -278,7 +279,8 @@ async function review(competitionId, userId) {
  */
 async function publishResults(competitionId) {
   await getCompetition(competitionId);
-  await db.query(`UPDATE competitions SET results_published_at = COALESCE(results_published_at, now()) WHERE id = $1`, [competitionId]);
+  const { rows: [comp] } = await db.query(
+    `UPDATE competitions SET results_published_at = COALESCE(results_published_at, now()) WHERE id = $1 RETURNING id, title`, [competitionId]);
   await finalizeExpired({ competitionId });
   const { rows } = await db.query(
     `SELECT id FROM competition_entries WHERE competition_id = $1 AND submitted_at IS NOT NULL AND NOT answers_recorded`, [competitionId]);
@@ -298,7 +300,8 @@ async function publishResults(competitionId) {
       recorded++;
     });
   }
-  return { published: true, entries_recorded: recorded };
+  const notified = await notifyResults(db, comp); // 🔔 to everyone who took part (once)
+  return { published: true, entries_recorded: recorded, notified };
 }
 
 /** Hide the results again (answers already added to the mistakes bank stay there). */

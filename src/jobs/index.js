@@ -3,6 +3,7 @@ const env = require('../config/env');
 const db = require('../config/db');
 const { autoAssignTeams } = require('../services/team.service');
 const { startWeeklyReports, sendDueReports } = require('../services/report.service');
+const { remindExpiringSubscriptions } = require('../services/notification.service');
 const { finalizeExpired } = require('../services/competition.service');
 
 /** Job registry — run by node-cron on a normal server, or by Vercel Cron via /api/cron/:job. */
@@ -17,6 +18,7 @@ const JOBS = {
     const competitions = await finalizeExpired();
     // Safety net: finishes a report run whose batch chain stopped (e.g. a failed call).
     const reports = await sendDueReports({ budgetMs: 20_000 });
+    const renewalReminders = await remindExpiringSubscriptions();
     await db.query(`DELETE FROM rate_limits WHERE reset_at < now() - interval '1 day'`);
     await db.query(`DELETE FROM device_events WHERE created_at < now() - interval '1 year'`);
     const invites = await db.query(
@@ -28,7 +30,7 @@ const JOBS = {
     const payments = await db.query(
       `UPDATE payments SET status = 'failed', admin_note = 'expired', updated_at = now()
         WHERE status = 'pending' AND method_type = 'gateway' AND created_at < now() - interval '3 days'`);
-    return { parent_reports: reports, competition_entries_finalized: competitions.finalized, invites_expired: invites.rowCount, otps_deleted: otps.rowCount, abandoned_registrations: abandoned.rowCount, payments_expired: payments.rowCount };
+    return { parent_reports: reports, renewal_reminders: renewalReminders, competition_entries_finalized: competitions.finalized, invites_expired: invites.rowCount, otps_deleted: otps.rowCount, abandoned_registrations: abandoned.rowCount, payments_expired: payments.rowCount };
   },
 };
 

@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const env = require('../config/env');
 const { AppError } = require('../utils/errors');
+const { notifySubscription } = require('./notification.service');
 
 const safeEqualHex = (a, b) => {
   const x = Buffer.from(String(a || ''), 'hex');
@@ -29,6 +30,7 @@ async function activatePayment(client, paymentId, { providerTxnId = null, rawPay
 
   const payment = rows[0];
   const subscription = await grantSubscription(client, { userId: payment.user_id, planCode: payment.plan_code, paymentId: payment.id });
+  await notifySubscription(client, payment.user_id, subscription, 'payment_approved');
   return { payment, subscription };
 }
 
