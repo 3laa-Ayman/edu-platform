@@ -23,8 +23,11 @@ module.exports = {
   demoMode,
   allowMocks,
   port: num(process.env.PORT, 4000),
-  appBaseUrl: process.env.APP_BASE_URL || 'http://localhost:4000',
-  frontendUrl: process.env.FRONTEND_URL || 'http://localhost:3000',
+  // Public address of the site (payment webhooks + the page students return to after paying). On Vercel it falls
+  // back to the project's production domain, so a missing APP_BASE_URL can't send gateways to localhost.
+  appBaseUrl: (process.env.APP_BASE_URL
+    || (process.env.VERCEL_PROJECT_PRODUCTION_URL && `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`)
+    || 'http://localhost:4000').replace(/\/+$/, ''),
   corsOrigins: (process.env.CORS_ORIGINS || '').split(',').map((s) => s.trim()).filter(Boolean),
   databaseUrl: process.env.DATABASE_URL,
 

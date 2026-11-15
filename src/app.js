@@ -44,6 +44,11 @@ const indexHtml = (() => {
 })();
 const sendIndex = (req, res) => res.set('Cache-Control', 'no-cache').type('html').send(indexHtml);
 app.get(['/', '/index.html'], sendIndex);
+// Where Paymob sends the student back after paying: the subscription page shows the result of that payment.
+app.get('/payments/result', (req, res) => {
+  const ref = /^[0-9a-f-]{36}$/i.test(String(req.query.ref || '')) ? req.query.ref : '';
+  res.redirect(302, `/#/subscribe${ref ? `?paid=${ref}` : ''}`);
+});
 app.use(express.static(PUBLIC, {
   index: false,
   maxAge: env.isProd ? '1h' : 0,

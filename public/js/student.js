@@ -1086,10 +1086,16 @@ Views.planner = async (el, params, query) => {
 };
 
 // ---------------------------------------------------------------- Subscribe & payments
-Views.subscribe = async (el) => {
+Views.subscribe = async (el, params = {}, query = {}) => {
   const [{ plans, gateways = {}, manual_payment: mp }, mine] = await Promise.all([API.get('/payments/plans'), API.get('/payments/me')]);
   const cur = mine.current;
-  el.innerHTML = `<h1 class="page-head">الاشتراك</h1>
+  // Back from the card payment page (?paid=<reference>): show how that payment ended.
+  const back = query.paid ? mine.payments.find((p) => p.reference === query.paid) : null;
+  const backNotice = !query.paid ? ''
+    : back?.status === 'paid' ? '<div class="notice good">✅ تم الدفع بنجاح وتفعيل اشتراكك.</div>'
+    : back && ['failed', 'rejected'].includes(back.status) ? '<div class="notice bad">❌ لم تكتمل عملية الدفع. يمكنك المحاولة مرة أخرى.</div>'
+    : '<div class="notice mid" id="pay-wait">⏳ جارٍ تأكيد الدفع من البنك… ستتحدث الصفحة تلقائيًا خلال ثوانٍ.</div>';
+  el.innerHTML = `<h1 class="page-head">الاشتراك</h1>${backNotice}
     ${cur ? `<div class="notice good">اشتراكك الحالي: <b>${esc(cur.name_ar)}</b> — ساري حتى ${fmtDay(cur.ends_at)}. يُضاف التجديد إلى المدة.</div>` : ''}
     <div class="grid-cards plans">${plans.map((p) => `<div class="card plan ${p.code === 'premium' ? 'featured' : ''}">
       ${p.code === 'premium' ? '<span class="ribbon">الأكثر قيمة</span>' : ''}
@@ -1171,6 +1177,15 @@ Views.subscribe = async (el) => {
   };
   $('#mf [name=plan_code]', el).addEventListener('change', showAmount);
   showAmount();
+  if (query.paid && (!back || back.status === 'pending')) {
+    const tries = Number(sessionStorage.getItem('payWait') || 0);
+    if (tries < 10) {
+      sessionStorage.setItem('payWait', tries + 1);
+      setTimeout(() => { if (location.hash.startsWith('#/subscribe')) Views.subscribe(el, params, query); }, 4000);
+    } else {
+      $('#pay-wait', el)?.replaceChildren('⏳ لم يصل تأكيد الدفع بعد. إذا خُصم المبلغ فسيُفعَّل اشتراكك تلقائيًا خلال دقائق، ويمكنك تحديث الصفحة لاحقًا.');
+    }
+  } else sessionStorage.removeItem('payWait');
   // "From" field follows the chosen method: a Vodafone Cash number, or an InstaPay account.
   const showSender = () => {
     const insta = $('#mf [name=provider]:checked', el)?.value === 'instapay';

@@ -84,7 +84,8 @@ async function createPaymobCheckout(payment, user) {
     body: JSON.stringify({
       amount: Math.round(payment.amount_egp * 100),
       currency: 'EGP',
-      payment_methods: [Number(env.paymob.integrationId)],
+      // One or more Paymob integration IDs (comma-separated), e.g. cards + mobile wallets.
+      payment_methods: String(env.paymob.integrationId).split(',').map((x) => Number(x.trim())).filter(Boolean),
       items: [{ name: `subscription-${payment.plan_code}`, amount: Math.round(payment.amount_egp * 100), quantity: 1 }],
       billing_data: {
         first_name: user.full_name.split(' ')[0] || 'Student',
@@ -94,7 +95,7 @@ async function createPaymobCheckout(payment, user) {
       },
       special_reference: payment.reference,
       notification_url: `${env.appBaseUrl}/api/webhooks/paymob`,
-      redirection_url: `${env.frontendUrl}/payments/result?ref=${payment.reference}`,
+      redirection_url: `${env.appBaseUrl}/payments/result?ref=${payment.reference}`,
     }),
     signal: AbortSignal.timeout(20_000),
   });

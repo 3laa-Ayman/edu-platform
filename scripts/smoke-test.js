@@ -123,6 +123,9 @@ async function studentLogin(identifier, password, device) {
   const co = await call('POST', '/api/payments/checkout', { token: A.token, body: { plan_code: 'premium', provider: 'paymob' } });
   ok(co.status === 201 && co.data.mock, 'paymob checkout (dev mock)', co.data);
   const sim = await call('POST', `/api/payments/${co.data.payment.reference}/dev-simulate-paid`, { token: A.token });
+  const back = await fetch(`${API}/payments/result?ref=${co.data.payment.reference}&success=true`, { redirect: 'manual' });
+  ok(back.status === 302 && back.headers.get('location') === `/#/subscribe?paid=${co.data.payment.reference}`, 'card payment return → subscription page with the result');
+  ok((await fetch(`${API}/payments/result?ref=<script>`, { redirect: 'manual' })).headers.get('location') === '/#/subscribe', 'bad reference ignored on the return page');
   ok(sim.data.activated && sim.data.subscription.plan_code === 'premium', 'A premium activated');
 
   // Paymob webhook with a real HMAC
