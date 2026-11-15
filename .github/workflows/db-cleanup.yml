@@ -1,0 +1,63 @@
+# Remove test data from the production database before launch (scripts/cleanup-test-data.js).
+# Actions → "Clean test data" → Run workflow:
+#   mode = preview  → prints counts only, nothing changes
+#   mode = apply    → takes an encrypted backup first (artifact), then deletes in one transaction
+# Uses the same secrets as the daily backup (BACKUP_DATABASE_URL, BACKUP_PASSPHRASE).
+name: Clean test data
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'preview = show counts only · apply = backup then delete'
+        type: choice
+        options: [preview, apply]
+        default: preview
+      orphan_payments:
+        description: 'Also delete payments left from accounts that were already deleted'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: db-cleanup
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+      BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install the database driver
+        run: npm install --no-save --no-audit --no-fund pg@8
+      - name: Backup before deleting
+        if: inputs.mode == 'apply'
+        run: |
+          set -euo pipefail
+          STAMP=$(date -u +%Y-%m-%d_%H%M)
+          DIRECT_URL="${DATABASE_URL/-pooler./.}"
+          docker run --rm -v /etc/ssl/certs:/etc/ssl/certs:ro -e PGSSLROOTCERT=/etc/ssl/certs/ca-certificates.crt \
+            postgres:18 pg_dump --format=custom --no-owner --no-privileges "$DIRECT_URL" > db.dump
+          test -s db.dump
+          gpg --batch --yes --pinentry-mode loopback --passphrase "$BACKUP_PASSPHRASE" \
+              --symmetric --cipher-algo AES256 -o "before-cleanup-$STAMP.dump.gpg" db.dump
+          rm -f db.dump
+      - name: Keep the backup (90 days)
+        if: inputs.mode == 'apply'
+        uses: actions/upload-artifact@v4
+        with:
+          name: before-cleanup
+          path: before-cleanup-*.dump.gpg
+          retention-days: 90
+          if-no-files-found: error
+      - name: Clean (${{ inputs.mode }})
+        run: node scripts/cleanup-test-data.js ${{ inputs.mode == 'apply' && '--apply' || '' }} ${{ inputs.orphan_payments && '--orphan-payments' || '' }}
