@@ -391,8 +391,16 @@ async function studentLogin(identifier, password, device) {
   ok((await call('GET', '/api/admin/reports/whatsapp-queue', { token: A.token })).status === 403, 'students cannot see the WhatsApp queue');
 
   // ---------------- Products, security
+  const newProd = await call('POST', '/api/admin/products', { token: AT, body: { title: `منتج تجربة ${rnd}`, original_price: 200, discount_percent: 25, is_active: true } });
+  ok(newProd.status === 201 && Number(newProd.data.product.final_price) === 150, 'admin adds a product (25% off 200 = 150)', newProd.data);
   const prods = await call('GET', '/api/products');
-  ok(prods.data.products.length >= 1 && prods.data.products[0].final_price < prods.data.products[0].original_price, 'products with discounts (public)');
+  ok(prods.data.products.some((p) => p.id === newProd.data.product.id), 'products with discounts (public)');
+  ok((await call('DELETE', `/api/admin/products/${newProd.data.product.id}`, { token: AT })).status === 204
+    && !(await call('GET', '/api/products')).data.products.some((p) => p.id === newProd.data.product.id), 'deleted product disappears for students');
+  const { seed } = require('../src/bootstrap');
+  const prodsBefore = (await call('GET', '/api/admin/products', { token: AT })).data.products.length;
+  await seed({ log: () => {} });
+  ok((await call('GET', '/api/admin/products', { token: AT })).data.products.length === prodsBefore, 'restart (boot seed) does not bring sample products back');
   const inj = await call('GET', `/api/admin/students?search=${encodeURIComponent("' OR 1=1; DROP TABLE users; --")}`, { token: AT });
   ok(inj.status === 200 && inj.data.items.length === 0, 'SQL injection attempt is inert');
   ok((await call('GET', '/api/catalog/questions?limit=999', { token: A.token })).status === 400, 'query validation enforced');

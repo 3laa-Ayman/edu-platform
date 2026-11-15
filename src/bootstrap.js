@@ -53,6 +53,10 @@ async function seed({ overwriteAdminPassword = false, log = console.log } = {}) 
     log('⚠️  ADMIN_PASSWORD not set — admin account not created');
   }
 
+  // Sample data only on a brand-new install (no admin yet). Afterwards the owner's deletions stay deleted —
+  // otherwise every cold start would bring the sample products/questions back once the tables are empty.
+  if (hasAdmin) return;
+
   const { rowCount } = await db.query(`SELECT 1 FROM products LIMIT 1`);
   if (!rowCount) {
     await db.query(`
