@@ -181,7 +181,7 @@ const LABELS = {
   category: { lesson: 'درس', past_exam: 'امتحان سابق' },
   paymentStatus: { pending: 'في انتظار الدفع', under_review: 'قيد المراجعة', paid: 'مدفوع', failed: 'فشل', rejected: 'مرفوض' },
   paymentTone: { pending: 'mid', under_review: 'mid', paid: 'good', failed: 'bad', rejected: 'bad' },
-  provider: { paymob: 'Paymob (كارت/محفظة)', fawry: 'فوري', vodafone_cash: 'فودافون كاش', instapay: 'انستاباي' },
+  provider: { paymob: 'Paymob (كارت/محفظة)', fawry: 'فوري', vodafone_cash: 'محفظة إلكترونية', instapay: 'انستاباي' },
   compType: { team_weekly: 'مسابقة التيمات (الجمعة)', individual_monthly: 'المسابقة الشهرية الفردية' },
   compStatus: { upcoming: 'قادمة', active: 'جارية الآن', finished: 'انتهت' },
   compTone: { upcoming: '', active: 'good', finished: 'muted' },

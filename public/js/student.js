@@ -327,6 +327,17 @@ Views.home = async (el) => {
 
 // ---------------------------------------------------------------- Announcements (from the admins)
 const TONE_ICON = { info: '📢', success: '🎉', warning: '⚠️' };
+/**
+ * Payment method logos (manual payment card). Vodafone/Orange: official marks (simple-icons). Etisalat/InstaPay:
+ * a text badge until their logo files are added as public/img/pay/etisalat.png / instapay.png.
+ */
+const PAY_LOGOS = {
+  vodafone: '<img class="pay-logo" src="/img/pay/vodafone.svg" alt="فودافون كاش" title="فودافون كاش">',
+  etisalat: '<span class="pay-logo text etisalat" title="اتصالات كاش">اتصالات</span>',
+  orange: '<img class="pay-logo" src="/img/pay/orange.svg" alt="أورانج كاش" title="أورانج كاش">',
+  instapay: '<span class="pay-logo text instapay" title="إنستاباي">InstaPay</span>',
+};
+
 /** A personal notification (same look as an announcement), with its link and an "تمام" to mark it read. */
 const noteCard = (n, dismissable = false) => `<article class="announce ${esc(n.tone)}${n.is_read ? ' read' : ''}">
     <div class="announce-main">
@@ -1089,11 +1100,11 @@ Views.subscribe = async (el) => {
       <div class="col">
         ${gateways.paymob ? `<button class="btn primary" data-action="pay" data-plan="${p.code}" data-provider="paymob">ادفع بالكارت / المحفظة</button>` : ''}
         ${gateways.fawry ? `<button class="btn ghost" data-action="pay" data-plan="${p.code}" data-provider="fawry">ادفع بفوري</button>` : ''}
-        ${!gateways.paymob && !gateways.fawry ? `<button class="btn primary" data-action="toManual" data-plan="${p.code}">ادفع بفودافون كاش / انستاباي ↓</button>` : ''}
+        ${!gateways.paymob && !gateways.fawry ? `<button class="btn primary" data-action="toManual" data-plan="${p.code}">ادفع بمحفظة إلكترونية / إنستاباي ↓</button>` : ''}
       </div>
     </div>`).join('')}</div>
 
-    <section class="card manual-pay"><h2>الدفع بفودافون كاش أو إنستاباي</h2>
+    <section class="card manual-pay"><h2>الدفع بمحفظة إلكترونية أو إنستاباي</h2>
       <form id="mf" class="form">
         <div class="pay-step"><span class="step-no">1</span><div class="step-body"><b>اختار الباقة</b>
           <select name="plan_code">${plans.map((p) => `<option value="${p.code}" data-price="${Number(p.price_egp)}">باقة ${esc(p.name_ar)}\u200F — ${Number(p.price_egp)} جنيه</option>`).join('')}</select>
@@ -1102,11 +1113,12 @@ Views.subscribe = async (el) => {
         <div class="pay-step"><span class="step-no">2</span><div class="step-body"><b>حوّل المبلغ على واحد من دول</b> <small class="muted">(دوس على اللي هتحوّل عليه)</small>
           <div class="pay-methods">
             ${mp.vodafone_cash ? `<label class="pay-method vodafone"><input type="radio" name="provider" value="vodafone_cash" checked>
-              <span class="pm-title">📱 فودافون كاش</span>
+              <span class="pm-title">محفظة إلكترونية</span>
+              <span class="pm-logos" aria-label="فودافون كاش، اتصالات كاش، أورانج كاش">${PAY_LOGOS.vodafone}${PAY_LOGOS.etisalat}${PAY_LOGOS.orange}</span>
               <span class="pm-value mono">${esc(mp.vodafone_cash)}</span>
               <button class="btn ghost tiny" type="button" data-action="copy" data-copy="${esc(mp.vodafone_cash)}">نسخ الرقم</button></label>` : ''}
             ${mp.instapay ? `<label class="pay-method instapay"><input type="radio" name="provider" value="instapay" ${mp.vodafone_cash ? '' : 'checked'}>
-              <span class="pm-title">🏦 إنستاباي</span>
+              <span class="pm-title">${PAY_LOGOS.instapay} إنستاباي</span>
               <span class="pm-value mono">${esc(mp.instapay)}</span>
               <button class="btn ghost tiny" type="button" data-action="copy" data-copy="${esc(mp.instapay)}">نسخ العنوان</button></label>` : ''}
           </div>
@@ -1164,7 +1176,7 @@ Views.subscribe = async (el) => {
   const showSender = () => {
     const insta = $('#mf [name=provider]:checked', el)?.value === 'instapay';
     const input = $('#mf [name=sender_account]', el);
-    $('#sender-label', el).textContent = insta ? 'حساب إنستاباي اللي حوّلت منه' : 'رقم فودافون كاش اللي حوّلت منه';
+    $('#sender-label', el).textContent = insta ? 'حساب إنستاباي اللي حوّلت منه' : 'رقم المحفظة اللي حوّلت منها';
     input.placeholder = insta ? 'name@instapay' : '01xxxxxxxxx';
     input.inputMode = insta ? 'email' : 'numeric';
     if (insta) input.removeAttribute('pattern');
@@ -1173,7 +1185,7 @@ Views.subscribe = async (el) => {
   $$('#mf [name=provider]', el).forEach((r) => r.addEventListener('change', showSender));
   showSender();
   onSubmit($('#mf', el), async (v, form) => {
-    if (!v.provider) throw new Error('اختار إنت حوّلت على فودافون كاش ولا إنستاباي');
+    if (!v.provider) throw new Error('اختار إنت حوّلت على المحفظة الإلكترونية ولا إنستاباي');
     const fd = new FormData();
     for (const [k, val] of Object.entries(v)) if (val !== undefined) fd.append(k, val);
     fd.append('receipt', form.receipt.files[0]);

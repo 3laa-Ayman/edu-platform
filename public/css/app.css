@@ -390,11 +390,15 @@ select option { color: var(--text); }
   border-radius: 14px; background: var(--surface-2); cursor: pointer; color: var(--text); text-align: center; }
 .pay-method input { position: absolute; inset-inline-start: 12px; top: 12px; accent-color: var(--primary); }
 .pay-method:has(input:checked) { border-color: var(--primary); background: var(--primary-soft); }
-.pay-method.vodafone .pm-title { color: #e60000; }
-:root[data-theme="dark"] .pay-method.vodafone .pm-title { color: #ff5a5a; }
+.pay-method.vodafone .pm-title { color: inherit; }
 .pay-method.instapay .pm-title { color: #7c3aed; }
 :root[data-theme="dark"] .pay-method.instapay .pm-title { color: #b794f6; }
-.pm-title { font-weight: 700; font-size: 1.05rem; }
+.pm-title { font-weight: 700; font-size: 1.05rem; display: inline-flex; align-items: center; gap: 6px; }
+.pm-logos { display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap; }
+.pay-logo { height: 28px; width: auto; border-radius: 6px; background: #fff; padding: 3px; box-shadow: 0 0 0 1px var(--border); }
+.pay-logo.text { display: inline-flex; align-items: center; height: 28px; padding: 0 8px; font-weight: 800; font-size: .8rem; color: #fff; box-shadow: none; }
+.pay-logo.etisalat { background: #e00800; }
+.pay-logo.instapay { background: linear-gradient(135deg, #4b1d8f, #7c3aed); letter-spacing: .02em; }
 .pm-value { font-size: clamp(1.05rem, 5.2vw, 1.6rem); font-weight: 700; letter-spacing: .02em; overflow-wrap: anywhere; }
 /* Parent report on WhatsApp (red) vs chatting with the student (green .btn.wa) */
 .btn.parent { background: #dc2626; color: #fff; border-color: #dc2626; }

@@ -1075,7 +1075,7 @@ Admin.settings = async (el) => {
     <section class="card"><h2>إعدادات المنصة</h2><form id="sf" class="form grid2">
       <label>اسم المنصة<input name="site_name" required value="${esc(s.site_name)}"></label>
       <label>رقم الدعم الفني<input name="support_phone" value="${esc(s.support_phone)}"></label>
-      <label>رقم فودافون كاش (للتحويل)<input name="vodafone_cash_number" value="${esc(s.vodafone_cash_number)}"></label>
+      <label>رقم المحفظة الإلكترونية (فودافون/اتصالات/أورانج كاش)<input name="vodafone_cash_number" value="${esc(s.vodafone_cash_number)}"></label>
       <label>عنوان انستاباي<input name="instapay_address" value="${esc(s.instapay_address)}"></label>
       <label class="span2">تعليمات الدفع اليدوي<textarea name="manual_payment_instructions" rows="2">${esc(s.manual_payment_instructions)}</textarea></label>
       <label>رصيد نقاط الذكاء الاصطناعي للطالب الجديد<input type="number" name="default_ai_limit_points" min="0" step="1" value="${Math.round(s.default_ai_limit_egp * s.ai_points_per_egp)}"></label>
