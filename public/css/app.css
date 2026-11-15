@@ -397,7 +397,7 @@ select option { color: var(--text); }
 .pm-logos { display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap; }
 .pay-logo { height: 28px; width: auto; border-radius: 6px; background: #fff; padding: 3px; box-shadow: 0 0 0 1px var(--border); }
 .pay-logo.text { display: inline-flex; align-items: center; height: 28px; padding: 0 8px; font-weight: 800; font-size: .8rem; color: #fff; box-shadow: none; }
-.pay-logo.etisalat { background: #e00800; }
+.pay-logo.full { padding: 0; }
 .pay-logo.instapay { background: linear-gradient(135deg, #4b1d8f, #7c3aed); letter-spacing: .02em; }
 .pm-value { font-size: clamp(1.05rem, 5.2vw, 1.6rem); font-weight: 700; letter-spacing: .02em; overflow-wrap: anywhere; }
 /* Parent report on WhatsApp (red) vs chatting with the student (green .btn.wa) */

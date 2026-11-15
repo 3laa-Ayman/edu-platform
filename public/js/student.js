@@ -328,13 +328,12 @@ Views.home = async (el) => {
 // ---------------------------------------------------------------- Announcements (from the admins)
 const TONE_ICON = { info: '📢', success: '🎉', warning: '⚠️' };
 /**
- * Payment method logos (manual payment card). Vodafone/Orange: official marks (simple-icons). Etisalat/InstaPay:
- * a text badge until their logo files are added as public/img/pay/etisalat.png / instapay.png.
+ * Payment method logos (manual payment card). InstaPay: a text badge until its logo is added (public/img/pay/instapay.png).
  */
 const PAY_LOGOS = {
   vodafone: '<img class="pay-logo" src="/img/pay/vodafone.svg" alt="فودافون كاش" title="فودافون كاش">',
-  etisalat: '<span class="pay-logo text etisalat" title="اتصالات كاش">اتصالات</span>',
-  orange: '<img class="pay-logo" src="/img/pay/orange.svg" alt="أورانج كاش" title="أورانج كاش">',
+  etisalat: '<img class="pay-logo" src="/img/pay/etisalat.png" alt="اتصالات كاش" title="اتصالات كاش">',
+  orange: '<img class="pay-logo full" src="/img/pay/orange.png" alt="أورانج كاش" title="أورانج كاش">',
   instapay: '<span class="pay-logo text instapay" title="إنستاباي">InstaPay</span>',
 };
 
