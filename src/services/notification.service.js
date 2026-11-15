@@ -17,8 +17,8 @@ async function notifySubscription(client, userId, subscription, kind) {
   const { rows: [p] } = await client.query(`SELECT name_ar FROM plans WHERE code = $1`, [subscription.plan_code]);
   const plan = p?.name_ar || subscription.plan_code;
   await notify(client, userId, kind === 'subscription_granted'
-    ? { kind, tone: 'success', link: '#/', title: `🎁 تم تفعيل اشتراك ${plan}`, body: `اشتراكك ساري لحد ${fmtDay(subscription.ends_at)}.` }
-    : { kind, tone: 'success', link: '#/', title: `✅ تم قبول الدفع وتفعيل اشتراك ${plan}`, body: `اشتراكك ساري لحد ${fmtDay(subscription.ends_at)}. مذاكرة موفقة!` });
+    ? { kind, tone: 'success', link: '#/', title: `🎁 تم تفعيل اشتراك ${plan}`, body: `اشتراكك ساري حتى ${fmtDay(subscription.ends_at)}.` }
+    : { kind, tone: 'success', link: '#/', title: `✅ تم قبول الدفع وتفعيل اشتراك ${plan}`, body: `اشتراكك ساري حتى ${fmtDay(subscription.ends_at)}. مذاكرة موفقة!` });
 }
 
 /** Results announced: every student who took part gets one notification (not again if announced twice). */
@@ -26,11 +26,11 @@ async function notifyResults(client, competition) {
   const link = `#/competition/${competition.id}`;
   const { rowCount } = await client.query(
     `INSERT INTO notifications (user_id, kind, title, body, link, tone)
-     SELECT e.user_id, 'results_published', $2::varchar, 'ادخل شوف درجتك وترتيبك والإجابات الصحيحة.', $3::varchar, 'success'
+     SELECT e.user_id, 'results_published', $2::varchar, 'ادخل لمعرفة درجتك وترتيبك والإجابات الصحيحة.', $3::varchar, 'success'
        FROM competition_entries e
       WHERE e.competition_id = $1 AND e.submitted_at IS NOT NULL
         AND NOT EXISTS (SELECT 1 FROM notifications n WHERE n.user_id = e.user_id AND n.kind = 'results_published' AND n.link = $3::varchar)`,
-    [competition.id, `📢 نتيجة «${competition.title}» اتعلنت`, link]);
+    [competition.id, `📢 تم إعلان نتيجة «${competition.title}»`, link]);
   return rowCount;
 }
 
@@ -50,8 +50,8 @@ async function remindExpiringSubscriptions(client = db) {
   for (const r of rows) {
     await notify(client, r.user_id, {
       kind: 'subscription_expiring', tone: 'warning', link: '#/subscribe',
-      title: `⏰ اشتراك ${r.name_ar} هيخلص يوم ${fmtDay(r.ends_at)}`,
-      body: 'جدّد دلوقتي عشان ماتوقفش عن المذاكرة — التجديد بيتضاف على المدة اللي فاضلة.',
+      title: `⏰ ينتهي اشتراك ${r.name_ar} يوم ${fmtDay(r.ends_at)}`,
+      body: 'جدّد الآن حتى لا تتوقف عن المذاكرة — تُضاف مدة التجديد إلى المدة المتبقية.',
     });
   }
   return rows.length;

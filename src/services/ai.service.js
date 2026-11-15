@@ -23,7 +23,7 @@ function buildPrompt(q, passage = null, notUnderstood = null) {
     `د) ${q.option_d}`,
     `الإجابة الصحيحة: (${q.correct_option}) ${correctText}`,
     q.law_note ? `ملحوظة/قانون مرتبط: ${q.law_note}` : '',
-    notUnderstood ? `\nالطالب قرأ الشرح ده ومفهمهوش:\n${notUnderstood}\nاشرح بطريقة مختلفة وأبسط، خطوة بخطوة وبمثال قريب من الطالب لو ينفع، من غير ما تكرر نفس الكلام.` : '',
+    notUnderstood ? `\nقرأ الطالب الشرح القديم التالي ولم يفهمه:\n${notUnderstood}\nاشرح بطريقة مختلفة وأبسط بالعربية الفصحى المبسطة المناسبة لطلاب الثانوية، خطوة بخطوة، مع مثال قريب من الطالب إن أمكن، ودون تكرار الكلام نفسه.` : '',
   ].join('\n');
 }
 
@@ -148,7 +148,7 @@ async function explainWithBudget(userId, question, { notUnderstood = null } = {}
     await logUsage({ userId, questionId: question.id, status: 'blocked' });
     const { rows } = await db.query(`SELECT ai_spent_egp, ai_limit_egp FROM users WHERE id = $1`, [userId]);
     const left = toPoints(Math.max(rows[0].ai_limit_egp - rows[0].ai_spent_egp, 0), rate);
-    throw new AppError(402, `رصيد نقاط الذكاء الاصطناعي خلص (متبقي ${left.toLocaleString('en')} من ${toPoints(rows[0].ai_limit_egp, rate).toLocaleString('en')} نقطة). تم إيقاف طلبات الشرح الإضافية.`,
+    throw new AppError(402, `نفد رصيد نقاط الذكاء الاصطناعي (المتبقي ${left.toLocaleString('en')} من ${toPoints(rows[0].ai_limit_egp, rate).toLocaleString('en')} نقطة). تم إيقاف طلبات الشرح الإضافية.`,
       'AI_LIMIT_REACHED', {
         spent_points: toPoints(rows[0].ai_spent_egp, rate), limit_points: toPoints(rows[0].ai_limit_egp, rate),
         spent_egp: rows[0].ai_spent_egp, limit_egp: rows[0].ai_limit_egp,
@@ -213,7 +213,7 @@ async function testModel() {
   const settings = await getSettings();
   const started = Date.now();
   try {
-    const r = await callWithFallback('اكتب جملة واحدة قصيرة بالعربي تشجع طالب ثانوية عامة على المذاكرة.', [], settings);
+    const r = await callWithFallback('اكتب جملة واحدة قصيرة بالعربية الفصحى المبسطة تشجع طالب الثانوية العامة على المذاكرة.', [], settings);
     return {
       ok: !r.mock, mock: Boolean(r.mock), model: settings.ai_model, answered_by: r.model, fallback_reason: r.fallback_reason || null,
       reply: r.text, ms: Date.now() - started, tokens: r.usage, cost_egp: Number(costEgp(r.usage.input, r.usage.output, settings).toFixed(4)),

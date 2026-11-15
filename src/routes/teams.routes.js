@@ -27,7 +27,7 @@ router.get('/me', async (req, res) => {
 
 router.post('/', validate({ body: z.object({ name: z.string().trim().min(2).max(80) }) }), async (req, res) => {
   const team = await db.withTransaction(async (c) => {
-    if (await getTeamOf(req.user.id, c)) throw conflict('أنت بالفعل عضو في تيم');
+    if (await getTeamOf(req.user.id, c)) throw conflict('أنت بالفعل عضو في فريق');
     const { rows: [t] } = await c.query(`INSERT INTO teams (name, captain_id) VALUES ($1, $2) RETURNING id`, [req.body.name, req.user.id]);
     await c.query(`INSERT INTO team_members (team_id, user_id) VALUES ($1, $2)`, [t.id, req.user.id]);
     return t;
@@ -39,8 +39,8 @@ router.patch('/me', validate({
   body: z.object({ name: z.string().trim().min(2).max(80).optional(), allow_auto_fill: z.boolean().optional() }),
 }), async (req, res) => {
   const team = await getTeamOf(req.user.id);
-  if (!team) throw notFound('لست عضواً في أي تيم');
-  if (team.captain_id !== req.user.id) throw forbidden('قائد التيم فقط يمكنه التعديل');
+  if (!team) throw notFound('لست عضواً في أي فريق');
+  if (team.captain_id !== req.user.id) throw forbidden('قائد الفريق فقط يمكنه التعديل');
   await db.query(
     `UPDATE teams SET name = COALESCE($2, name), allow_auto_fill = COALESCE($3, allow_auto_fill) WHERE id = $1`,
     [team.id, req.body.name ?? null, req.body.allow_auto_fill ?? null],
@@ -51,22 +51,22 @@ router.patch('/me', validate({
 /** Invite by student ID (e.g. STU-2026-0007). Captain only. */
 router.post('/invites', validate({ body: z.object({ student_code: z.string().trim().toUpperCase().regex(/^STU-\d{4}-\d{4,}$/, 'كود الطالب غير صحيح') }) }), async (req, res) => {
   const team = await getTeamOf(req.user.id);
-  if (!team) throw badRequest('أنشئ تيم أولاً');
-  if (team.captain_id !== req.user.id) throw forbidden('قائد التيم فقط يمكنه إرسال الدعوات');
+  if (!team) throw badRequest('أنشئ فريقًا أولاً');
+  if (team.captain_id !== req.user.id) throw forbidden('قائد الفريق فقط يمكنه إرسال الدعوات');
 
   const { rows: [invitee] } = await db.query(
     `SELECT id, full_name FROM users WHERE student_code = $1 AND role = 'student' AND is_active AND is_verified`, [req.body.student_code]);
   if (!invitee) throw notFound('لا يوجد طالب بهذا الكود');
   if (invitee.id === req.user.id) throw badRequest('لا يمكنك دعوة نفسك');
-  if (await getTeamOf(invitee.id)) throw conflict('هذا الطالب منضم لتيم آخر بالفعل');
+  if (await getTeamOf(invitee.id)) throw conflict('هذا الطالب منضم لفريق آخر بالفعل');
 
   const { rows: [{ members, pending }] } = await db.query(
     `SELECT (SELECT COUNT(*) FROM team_members WHERE team_id = $1)::int AS members,
             (SELECT COUNT(*) FROM team_invites WHERE team_id = $1 AND status = 'pending')::int AS pending`,
     [team.id],
   );
-  if (members >= TEAM_SIZE) throw conflict(`التيم مكتمل (${TEAM_SIZE} طلاب)`);
-  if (members + pending >= TEAM_SIZE) throw conflict('عدد الدعوات المعلقة يكفي لإكمال التيم، ألغِ دعوة أولاً');
+  if (members >= TEAM_SIZE) throw conflict(`الفريق مكتمل (${TEAM_SIZE} طلاب)`);
+  if (members + pending >= TEAM_SIZE) throw conflict('عدد الدعوات المعلقة يكفي لإكمال الفريق، ألغِ دعوة أولاً');
 
   const { rows: [invite] } = await db.query(
     `INSERT INTO team_invites (team_id, inviter_id, invitee_id) VALUES ($1, $2, $3) RETURNING id, created_at`,
@@ -92,13 +92,13 @@ router.post('/invites/:id/accept', validate({ params: idParam }), async (req, re
     const { rows: [inv] } = await c.query(`SELECT * FROM team_invites WHERE id = $1 FOR UPDATE`, [req.p.id]);
     if (!inv || inv.invitee_id !== req.user.id) throw notFound('الدعوة غير موجودة');
     if (inv.status !== 'pending') throw conflict('هذه الدعوة لم تعد صالحة');
-    if (await getTeamOf(req.user.id, c)) throw conflict('أنت بالفعل عضو في تيم، اخرج منه أولاً');
+    if (await getTeamOf(req.user.id, c)) throw conflict('أنت بالفعل عضو في فريق، اخرج منه أولاً');
 
     await c.query(`SELECT id FROM teams WHERE id = $1 FOR UPDATE`, [inv.team_id]); // serialize joins for this team
     const { rows: [{ n }] } = await c.query(`SELECT COUNT(*)::int AS n FROM team_members WHERE team_id = $1`, [inv.team_id]);
     if (n >= TEAM_SIZE) {
       await c.query(`UPDATE team_invites SET status = 'expired', responded_at = now() WHERE id = $1`, [inv.id]);
-      throw conflict('التيم اكتمل بالفعل');
+      throw conflict('الفريق اكتمل بالفعل');
     }
     await c.query(`INSERT INTO team_members (team_id, user_id) VALUES ($1, $2)`, [inv.team_id, req.user.id]);
     await c.query(`UPDATE team_invites SET status = 'accepted', responded_at = now() WHERE id = $1`, [inv.id]);
@@ -107,7 +107,7 @@ router.post('/invites/:id/accept', validate({ params: idParam }), async (req, re
       [req.user.id]);
     return inv.team_id;
   });
-  res.json({ message: 'تم الانضمام للتيم', team: await teamDetails(teamId) });
+  res.json({ message: 'تم الانضمام للفريق', team: await teamDetails(teamId) });
 });
 
 router.post('/invites/:id/decline', validate({ params: idParam }), async (req, res) => {
@@ -131,22 +131,22 @@ router.delete('/invites/:id', validate({ params: idParam }), async (req, res) =>
 router.post('/leave', async (req, res) => {
   await db.withTransaction(async (c) => {
     const team = await getTeamOf(req.user.id, c);
-    if (!team) throw notFound('لست عضواً في أي تيم');
+    if (!team) throw notFound('لست عضواً في أي فريق');
     await c.query(`SELECT id FROM teams WHERE id = $1 FOR UPDATE`, [team.id]);
     await c.query(`DELETE FROM team_members WHERE team_id = $1 AND user_id = $2`, [team.id, req.user.id]);
     const { rows: [next] } = await c.query(`SELECT user_id FROM team_members WHERE team_id = $1 ORDER BY joined_at LIMIT 1`, [team.id]);
     if (!next) await c.query(`DELETE FROM teams WHERE id = $1`, [team.id]);
     else if (team.captain_id === req.user.id) await c.query(`UPDATE teams SET captain_id = $2 WHERE id = $1`, [team.id, next.user_id]);
   });
-  res.json({ message: 'تم الخروج من التيم' });
+  res.json({ message: 'تم الخروج من الفريق' });
 });
 
 router.delete('/members/:id', validate({ params: idParam }), async (req, res) => {
   const team = await getTeamOf(req.user.id);
-  if (!team || team.captain_id !== req.user.id) throw forbidden('قائد التيم فقط يمكنه إزالة الأعضاء');
-  if (req.p.id === req.user.id) throw badRequest('استخدم الخروج من التيم بدلاً من ذلك');
+  if (!team || team.captain_id !== req.user.id) throw forbidden('قائد الفريق فقط يمكنه إزالة الأعضاء');
+  if (req.p.id === req.user.id) throw badRequest('استخدم الخروج من الفريق بدلاً من ذلك');
   const r = await db.query(`DELETE FROM team_members WHERE team_id = $1 AND user_id = $2`, [team.id, req.p.id]);
-  if (!r.rowCount) throw notFound('العضو غير موجود في التيم');
+  if (!r.rowCount) throw notFound('العضو غير موجود في الفريق');
   res.json({ team: await teamDetails(team.id) });
 });
 

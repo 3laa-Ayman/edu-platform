@@ -39,7 +39,7 @@ function deviceKey(req, res) {
 /** "iPhone · Safari", "Windows · Chrome"… from the user agent. */
 function deviceName(req) {
   const ua = String(req.headers['user-agent'] || '');
-  const os = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Android/.test(ua) ? (/Mobile/.test(ua) ? 'موبايل Android' : 'تابلت Android')
+  const os = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Android/.test(ua) ? (/Mobile/.test(ua) ? 'هاتف Android' : 'تابلت Android')
     : /Windows/.test(ua) ? 'كمبيوتر Windows' : /Mac OS X|Macintosh/.test(ua) ? 'Mac' : /CrOS/.test(ua) ? 'Chromebook' : /Linux/.test(ua) ? 'Linux' : 'جهاز';
   const browser = /SamsungBrowser/.test(ua) ? 'Samsung Internet' : /Edg\//.test(ua) ? 'Edge' : /OPR\//.test(ua) ? 'Opera'
     : /Firefox|FxiOS/.test(ua) ? 'Firefox' : /Chrome|CriOS/.test(ua) ? 'Chrome' : /Safari/.test(ua) ? 'Safari' : '';
@@ -71,7 +71,7 @@ async function assertRoom(client, user, req) {
   if (devices.length < MAX_DEVICES) return;
   await logEvent(db, user.id, 'blocked_limit', deviceName(req), clientIp(req)); // outside the transaction: kept even though we throw
   throw new AppError(403,
-    `حسابك مسجّل بالفعل على ${MAX_DEVICES} أجهزة (${devices.map((d) => d.name).join(' و ')}). ادخل من جهاز منهم واشيل جهاز من صفحة «أجهزتي»، أو كلّم الإدارة.`,
+    `حسابك مسجّل بالفعل على ${MAX_DEVICES} أجهزة (${devices.map((d) => d.name).join(' و ')}). سجّل الدخول من أحدها واحذف جهازاً من صفحة «أجهزتي»، أو تواصل مع الإدارة.`,
     'DEVICE_LIMIT', { devices: devices.map((d) => d.name), max: MAX_DEVICES });
 }
 
@@ -101,10 +101,10 @@ async function removeByStudent(userId, deviceId, currentDeviceId) {
     await c.query(`SELECT id FROM users WHERE id = $1 FOR NO KEY UPDATE`, [userId]);
     const { rows: [d] } = await c.query(`SELECT * FROM user_devices WHERE id = $1 AND user_id = $2`, [deviceId, userId]);
     if (!d) throw new AppError(404, 'الجهاز غير موجود', 'NOT_FOUND');
-    if (d.id === currentDeviceId) throw new AppError(400, 'ده الجهاز اللي انت فاتح منه دلوقتي — تقدر تشيل الجهاز التاني بس', 'BAD_REQUEST');
+    if (d.id === currentDeviceId) throw new AppError(400, 'هذا هو الجهاز الذي تستخدمه الآن — يمكنك حذف الجهاز الآخر فقط', 'BAD_REQUEST');
     const left = await removalsLeft(c, userId);
     if (left <= 0) {
-      throw new AppError(403, `شلت ${REMOVALS_PER_MONTH} أجهزة في آخر 30 يوم — للتغيير كلّم الإدارة`, 'DEVICE_REMOVAL_LIMIT');
+      throw new AppError(403, `حذفت ${REMOVALS_PER_MONTH} أجهزة خلال آخر 30 يوماً — للتغيير تواصل مع الإدارة`, 'DEVICE_REMOVAL_LIMIT');
     }
     await c.query(`DELETE FROM user_devices WHERE id = $1`, [d.id]);
     await logEvent(c, userId, 'removed_by_student', d.name, null);

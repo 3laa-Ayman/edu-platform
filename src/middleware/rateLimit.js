@@ -41,7 +41,7 @@ module.exports = {
     limit: (req) => (userOrIpKey(req).startsWith('u:') ? 600 : 5000),
     message: message('طلبات كثيرة جداً، حاول بعد قليل'),
   }),
-  authLimiter: rateLimit({ ...base, ...shared('auth'), windowMs: 15 * 60 * 1000, limit: AUTH_LIMIT, message: message('محاولات كثيرة من نفس الشبكة، حاول بعد شوية') }),
+  authLimiter: rateLimit({ ...base, ...shared('auth'), windowMs: 15 * 60 * 1000, limit: AUTH_LIMIT, message: message('محاولات كثيرة من نفس الشبكة، حاول بعد قليل') }),
   otpLimiter: rateLimit({ ...base, ...shared('otp'), windowMs: 60 * 60 * 1000, limit: 100, message: message('طلبات رمز تحقق كثيرة من نفس الشبكة، حاول لاحقاً') }),
   aiLimiter: rateLimit({ ...base, ...shared('ai'), windowMs: 60 * 1000, limit: 10, keyGenerator: userOrIp, message: message('طلبات شرح كثيرة، انتظر دقيقة') }),
   uploadLimiter: rateLimit({ ...base, ...shared('upload'), windowMs: 60 * 60 * 1000, limit: 20, keyGenerator: userOrIp, message: message('عمليات رفع كثيرة') }),

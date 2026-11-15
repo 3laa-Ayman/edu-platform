@@ -172,7 +172,7 @@ const percentTone = (p) => (p == null ? '' : p >= 75 ? 'good' : p >= 50 ? 'mid' 
 function subscriptionWall(el, err) {
   el.innerHTML = `<div class="card center">
     <h2>${esc(err.message)}</h2>
-    <p class="muted">اشترك عشان تقدر تستخدم الميزة دي.</p>
+    <p class="muted">اشترك لتتمكن من استخدام هذه الميزة.</p>
     <a class="btn primary" href="#/subscribe">عرض الباقات</a></div>`;
 }
 const isSubError = (err) => err.status === 403 && ['SUBSCRIPTION_REQUIRED', 'PLAN_UPGRADE_REQUIRED'].includes(err.code);
@@ -182,7 +182,7 @@ const LABELS = {
   paymentStatus: { pending: 'في انتظار الدفع', under_review: 'قيد المراجعة', paid: 'مدفوع', failed: 'فشل', rejected: 'مرفوض' },
   paymentTone: { pending: 'mid', under_review: 'mid', paid: 'good', failed: 'bad', rejected: 'bad' },
   provider: { paymob: 'Paymob (كارت/محفظة)', fawry: 'فوري', vodafone_cash: 'محفظة إلكترونية', instapay: 'انستاباي' },
-  compType: { team_weekly: 'مسابقة التيمات (الجمعة)', individual_monthly: 'المسابقة الشهرية الفردية' },
+  compType: { team_weekly: 'مسابقة الفرق (الجمعة)', individual_monthly: 'المسابقة الشهرية الفردية' },
   compStatus: { upcoming: 'قادمة', active: 'جارية الآن', finished: 'انتهت' },
   compTone: { upcoming: '', active: 'good', finished: 'muted' },
   priority: { high: 'عالية', medium: 'متوسطة', low: 'منخفضة' },

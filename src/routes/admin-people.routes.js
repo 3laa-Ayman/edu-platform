@@ -113,12 +113,12 @@ router.delete('/students/:id', validate({ params: idParam, body: z.object({ conf
     const { rows: [u] } = await c.query(`SELECT id, full_name, email, student_code FROM users WHERE id = $1 AND role = 'student' FOR UPDATE`, [req.p.id]);
     if (!u) throw notFound('الطالب غير موجود');
     const expected = (u.student_code || u.email).toLowerCase();
-    if (req.body.confirm.toLowerCase() !== expected) throw badRequest(`للتأكيد اكتب ${u.student_code ? 'كود الطالب' : 'إيميل الطالب'} بالظبط: ${u.student_code || u.email}`);
+    if (req.body.confirm.toLowerCase() !== expected) throw badRequest(`للتأكيد اكتب ${u.student_code ? 'كود الطالب' : 'البريد الإلكتروني للطالب'} كما هو تماماً: ${u.student_code || u.email}`);
     const label = `${u.full_name} (${u.student_code || u.email}) — حساب محذوف`;
     await c.query(
       `UPDATE payments SET student_label = $2, updated_at = now(),
               status = CASE WHEN status IN ('pending', 'under_review') THEN 'failed' ELSE status END,
-              admin_note = CASE WHEN status IN ('pending', 'under_review') THEN 'الحساب اتمسح' ELSE admin_note END
+              admin_note = CASE WHEN status IN ('pending', 'under_review') THEN 'تم حذف الحساب' ELSE admin_note END
         WHERE user_id = $1`, [u.id, label]);
     // Teams this student captained: the longest-standing other member becomes captain; empty teams are removed.
     const { rows: teams } = await c.query(`SELECT id FROM teams WHERE captain_id = $1`, [u.id]);
@@ -259,19 +259,19 @@ router.patch('/teams/:id', validate({
   const b = req.body;
   if (b.captain_id) {
     const { rowCount } = await db.query(`SELECT 1 FROM team_members WHERE team_id = $1 AND user_id = $2`, [req.p.id, b.captain_id]);
-    if (!rowCount) throw badRequest('القائد لازم يكون عضو في التيم');
+    if (!rowCount) throw badRequest('يجب أن يكون القائد عضواً في الفريق');
   }
   const { rows: [t] } = await db.query(
     `UPDATE teams SET name = COALESCE($2, name), allow_auto_fill = COALESCE($3, allow_auto_fill), captain_id = COALESCE($4, captain_id)
       WHERE id = $1 RETURNING *`,
     [req.p.id, b.name ?? null, b.allow_auto_fill ?? null, b.captain_id ?? null]);
-  if (!t) throw notFound('التيم غير موجود');
+  if (!t) throw notFound('الفريق غير موجود');
   res.json({ team: t });
 });
 
 router.delete('/teams/:id', validate({ params: idParam }), async (req, res) => {
   const r = await db.query(`DELETE FROM teams WHERE id = $1`, [req.p.id]);
-  if (!r.rowCount) throw notFound('التيم غير موجود');
+  if (!r.rowCount) throw notFound('الفريق غير موجود');
   res.status(204).end();
 });
 
@@ -281,18 +281,18 @@ router.post('/teams/:id/members', validate({
 }), async (req, res) => {
   await db.withTransaction(async (c) => {
     const { rows: [t] } = await c.query(`SELECT id, captain_id FROM teams WHERE id = $1 FOR UPDATE`, [req.p.id]);
-    if (!t) throw notFound('التيم غير موجود');
+    if (!t) throw notFound('الفريق غير موجود');
     const { rows: [u] } = await c.query(`SELECT id FROM users WHERE student_code = $1 AND role = 'student'`, [req.body.student_code]);
     if (!u) throw notFound('لا يوجد طالب بهذا الكود');
     const { rowCount: inTeam } = await c.query(`SELECT 1 FROM team_members WHERE user_id = $1`, [u.id]);
-    if (inTeam) throw conflict('الطالب عضو في تيم آخر — أزله منه أولاً');
+    if (inTeam) throw conflict('الطالب عضو في فريق آخر — أزله منه أولاً');
     const { rows: [{ n }] } = await c.query(`SELECT COUNT(*)::int AS n FROM team_members WHERE team_id = $1`, [t.id]);
-    if (n >= TEAM_SIZE) throw conflict(`التيم مكتمل (${TEAM_SIZE} طلاب)`);
+    if (n >= TEAM_SIZE) throw conflict(`الفريق مكتمل (${TEAM_SIZE} طلاب)`);
     await c.query(`INSERT INTO team_members (team_id, user_id) VALUES ($1, $2)`, [t.id, u.id]);
     if (!t.captain_id) await c.query(`UPDATE teams SET captain_id = $2 WHERE id = $1`, [t.id, u.id]);
     await c.query(`UPDATE team_invites SET status = 'expired', responded_at = now() WHERE invitee_id = $1 AND status = 'pending'`, [u.id]);
   });
-  res.status(201).json({ message: 'تمت إضافة الطالب للتيم' });
+  res.status(201).json({ message: 'تمت إضافة الطالب للفريق' });
 });
 
 /** Remove a member; captaincy passes to the longest-standing member and an empty team is deleted. */
@@ -301,14 +301,14 @@ router.delete('/teams/:id/members/:userId', validate({
 }), async (req, res) => {
   await db.withTransaction(async (c) => {
     const { rows: [t] } = await c.query(`SELECT id, captain_id FROM teams WHERE id = $1 FOR UPDATE`, [req.p.id]);
-    if (!t) throw notFound('التيم غير موجود');
+    if (!t) throw notFound('الفريق غير موجود');
     const r = await c.query(`DELETE FROM team_members WHERE team_id = $1 AND user_id = $2`, [t.id, req.p.userId]);
-    if (!r.rowCount) throw notFound('الطالب ليس عضواً في هذا التيم');
+    if (!r.rowCount) throw notFound('الطالب ليس عضواً في هذا الفريق');
     const { rows: [next] } = await c.query(`SELECT user_id FROM team_members WHERE team_id = $1 ORDER BY joined_at LIMIT 1`, [t.id]);
     if (!next) await c.query(`DELETE FROM teams WHERE id = $1`, [t.id]);
     else if (t.captain_id === req.p.userId) await c.query(`UPDATE teams SET captain_id = $2 WHERE id = $1`, [t.id, next.user_id]);
   });
-  res.json({ message: 'تمت إزالة الطالب من التيم' });
+  res.json({ message: 'تمت إزالة الطالب من الفريق' });
 });
 
 // ------------------------------------------------------------------ Competitions
@@ -351,7 +351,7 @@ router.put('/competitions/:id/questions', validate({
     const { rows: [comp] } = await c.query(`SELECT id FROM competitions WHERE id = $1 FOR UPDATE`, [req.p.id]);
     if (!comp) throw notFound('المسابقة غير موجودة');
     const { rowCount: started } = await c.query(`SELECT 1 FROM competition_entries WHERE competition_id = $1 LIMIT 1`, [comp.id]);
-    if (started) throw conflict('فيه طلاب بدأوا المسابقة بالفعل، فمينفعش تتغير أسئلتها دلوقتي');
+    if (started) throw conflict('بدأ بعض الطلاب المسابقة بالفعل، فلا يمكن تغيير أسئلتها الآن');
     await c.query(`DELETE FROM competition_questions WHERE competition_id = $1`, [comp.id]);
     const ins = await c.query(
       `INSERT INTO competition_questions (competition_id, question_id)

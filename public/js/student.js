@@ -49,9 +49,9 @@ Views.login = async (el) => {
 };
 
 const deviceLimitNotice = (err) => `<div class="notice bad">
-    <b>⛔ الحساب ده مفتوح على ${err.details?.max || 2} أجهزة بالفعل</b>
+    <b>⛔ هذا الحساب مفتوح على ${err.details?.max || 2} أجهزة بالفعل</b>
     ${err.details?.devices?.length ? `<ul class="device-names">${err.details.devices.map((d) => `<li>📱 ${esc(d)}</li>`).join('')}</ul>` : ''}
-    <small>عشان تدخل من الجهاز ده: ادخل من جهاز منهم ← «أجهزتي» ← شيل الجهاز التاني. ولو مش معاك أي واحد منهم كلّم الإدارة.</small></div>`;
+    <small>للدخول من هذا الجهاز: ادخل من أحدها ← «أجهزتي» ← احذف الجهاز الآخر. وإن لم يكن معك أيٌّ منها فتواصل مع الإدارة.</small></div>`;
 
 /** Login from a new device: the code sent to the student's email adds this device (max 2). */
 Views.verifyDevice = async (el) => {
@@ -61,9 +61,9 @@ Views.verifyDevice = async (el) => {
   const devOtp = sessionStorage.getItem('devOtp');
   el.innerHTML = `<div class="auth card">
     <h1>📱 جهاز جديد</h1>
-    <p class="muted">بتدخل من جهاز أول مرة. أرسلنا رمز من 6 أرقام على ${hint ? `<b class="mono">${esc(hint)}</b>` : 'إيميلك'}.</p>
-    <div class="notice mid small spam-tip">📩 <b>مش لاقي الرسالة؟</b> افتح فولدر <b>Spam</b> (الرسائل غير المرغوب فيها) — ولو لقيتها هناك دوس <b>«Not spam / ليست رسالة غير مرغوب فيها»</b> عشان رسايلنا الجاية توصلك في الـ Inbox.</div>
-    <p class="notice">الحساب يشتغل على جهازين بالكتير، وعلى جهاز واحد بس في نفس الوقت.</p>
+    <p class="muted">تدخل من هذا الجهاز لأول مرة. أرسلنا رمزًا من 6 أرقام إلى ${hint ? `<b class="mono">${esc(hint)}</b>` : 'بريدك الإلكتروني'}.</p>
+    <div class="notice mid small spam-tip">📩 <b>لم تجد الرسالة؟</b> افتح مجلد <b>Spam</b> (الرسائل غير المرغوب فيها) — وإن وجدتها هناك فاضغط <b>«Not spam / ليست رسالة غير مرغوب فيها»</b> لتصلك رسائلنا القادمة في الـ Inbox.</div>
+    <p class="notice">يعمل الحساب على جهازين بحدٍّ أقصى، وعلى جهاز واحد فقط في الوقت نفسه.</p>
     ${devOtp ? `<p class="notice">وضع تجريبي — الرمز: <b class="mono">${esc(devOtp)}</b></p>` : ''}
     <div id="device-limit"></div>
     <form id="f" class="form">
@@ -101,32 +101,32 @@ Views.devices = async (el) => {
   const d = await API.get('/auth/devices');
   el.innerHTML = `<h1 class="page-head">📱 أجهزتي</h1>
     <section class="card">
-      <p class="muted">حسابك يشتغل على <b>${d.max}</b> أجهزة بالكتير، وعلى جهاز واحد بس في نفس الوقت — لو دخلت من الجهاز التاني، الجهاز ده هيتقفل.
-        أي جهاز جديد محتاج رمز على إيميلك.</p>
+      <p class="muted">يعمل حسابك على <b>${d.max}</b> أجهزة بحدٍّ أقصى، وعلى جهاز واحد فقط في الوقت نفسه — إذا دخلت من الجهاز الآخر فسيُغلق هذا الجهاز.
+        يحتاج أي جهاز جديد إلى رمز يُرسَل إلى بريدك الإلكتروني.</p>
       <div class="device-list">${d.devices.map((x) => `<div class="device ${x.current ? 'current' : ''}">
           <span class="device-icon" aria-hidden="true">${/iPhone|موبايل|iPad|تابلت/.test(x.name) ? '📱' : '💻'}</span>
-          <div class="device-main"><span><b>${esc(x.name)}</b> ${x.current ? badge('الجهاز ده', 'good') : ''}</span>
-            <small class="muted">اتضاف ${fmtDay(x.created_at)} · آخر دخول ${fmtDate(x.last_seen_at)}</small></div>
-          ${x.current ? '' : `<button class="btn danger tiny" data-action="remove" data-id="${x.id}" ${d.removals_left ? '' : 'disabled'}>شيل الجهاز</button>`}
+          <div class="device-main"><span><b>${esc(x.name)}</b> ${x.current ? badge('هذا الجهاز', 'good') : ''}</span>
+            <small class="muted">أُضيف ${fmtDay(x.created_at)} · آخر دخول ${fmtDate(x.last_seen_at)}</small></div>
+          ${x.current ? '' : `<button class="btn danger tiny" data-action="remove" data-id="${x.id}" ${d.removals_left ? '' : 'disabled'}>احذف الجهاز</button>`}
         </div>`).join('')}
-        ${Array.from({ length: Math.max(d.max - d.devices.length, 0) }, () => '<div class="device empty"><span class="device-icon">＋</span><div class="device-main muted">مكان فاضي لجهاز</div></div>').join('')}
+        ${Array.from({ length: Math.max(d.max - d.devices.length, 0) }, () => '<div class="device empty"><span class="device-icon">＋</span><div class="device-main muted">مكان شاغر لجهاز</div></div>').join('')}
       </div>
       <p class="muted small">${d.removals_left
-        ? `تقدر تشيل جهاز ${d.removals_left === 1 ? 'مرة واحدة كمان' : `${d.removals_left} مرات`} في آخر 30 يوم (الحد ${d.removals_per_month}). بعد كده التغيير من الإدارة.`
-        : 'استخدمت كل مرات تغيير الأجهزة المتاحة في آخر 30 يوم — لو محتاج تغيّر جهاز كلّم الإدارة.'}</p>
+        ? `يمكنك حذف جهاز ${d.removals_left === 1 ? 'مرة واحدة أخرى' : `${d.removals_left} مرات`} خلال آخر 30 يومًا (الحد ${d.removals_per_month}). بعد ذلك يكون التغيير عن طريق الإدارة.`
+        : 'استخدمت كل مرات تغيير الأجهزة المتاحة خلال آخر 30 يومًا — إذا احتجت إلى تغيير جهاز فتواصل مع الإدارة.'}</p>
     </section>`;
   onAction(el, {
     remove: (b) => run(b, async () => {
-      if (!confirm('تشيل الجهاز ده من حسابك؟ لو حد فاتح منه هيتقفل، وهيحتاج رمز على إيميلك عشان يدخل تاني.')) return;
+      if (!confirm('هل تريد حذف هذا الجهاز من حسابك؟ إذا كان أحد يستخدمه فسيُغلق، وسيحتاج إلى رمز على بريدك الإلكتروني ليدخل مرة أخرى.')) return;
       await API.del(`/auth/devices/${b.dataset.id}`);
-      toast('تم شيل الجهاز');
+      toast('تم حذف الجهاز');
       Views.devices(el);
     }),
   });
 };
 
 /** Registration steps indicator: 1 details → 2 email code → 3 password. */
-const regSteps = (active) => `<ol class="steps">${['بياناتك', 'تأكيد الإيميل', 'كلمة المرور'].map((t, i) =>
+const regSteps = (active) => `<ol class="steps">${['بياناتك', 'تأكيد البريد', 'كلمة المرور'].map((t, i) =>
   `<li class="${i + 1 < active ? 'done' : i + 1 === active ? 'active' : ''}"><span>${i + 1 < active ? '✓' : i + 1}</span>${t}</li>`).join('')}</ol>`;
 
 Views.register = async (el) => {
@@ -138,10 +138,10 @@ Views.register = async (el) => {
       <label class="span2">البريد الإلكتروني<input name="email" type="email" required autocomplete="email" value="${esc(sessionStorage.getItem('verifyEmail') || '')}"></label>
       <label>رقم الطالب<input name="phone" required inputmode="numeric" placeholder="01012345678"></label>
       <label>رقم ولي الأمر<input name="parent_phone" required inputmode="numeric" placeholder="01212345678"></label>
-      <label class="span2">إيميل ولي الأمر (اختياري — لاستلام التقارير)<input name="parent_email" type="email"></label>
-      <button class="btn primary span2" type="submit">إرسال رمز التأكيد على الإيميل</button>
+      <label class="span2">البريد الإلكتروني لولي الأمر (اختياري — لاستلام التقارير)<input name="parent_email" type="email"></label>
+      <button class="btn primary span2" type="submit">إرسال رمز التأكيد إلى البريد الإلكتروني</button>
     </form>
-    <p class="links">عندك حساب؟ <a href="#/login">سجّل دخول</a></p>
+    <p class="links">لديك حساب؟ <a href="#/login">سجّل الدخول</a></p>
   </div>`;
   onSubmit($('#f', el), async (v) => {
     const r = await API.post('/auth/register', v);
@@ -159,8 +159,8 @@ Views.verify = async (el) => {
   el.innerHTML = `<div class="auth card">
     <h1>تأكيد البريد الإلكتروني</h1>
     ${regSteps(2)}
-    <p class="muted">أرسلنا رمز من 6 أرقام إلى ${email ? `<b>${esc(email)}</b>` : 'بريدك'}.</p>
-    <div class="notice mid small spam-tip">📩 <b>مش لاقي الرسالة؟</b> افتح فولدر <b>Spam</b> (الرسائل غير المرغوب فيها) — ولو لقيتها هناك دوس <b>«Not spam / ليست رسالة غير مرغوب فيها»</b> عشان رسايلنا الجاية توصلك في الـ Inbox.</div>
+    <p class="muted">أرسلنا رمزًا من 6 أرقام إلى ${email ? `<b>${esc(email)}</b>` : 'بريدك'}.</p>
+    <div class="notice mid small spam-tip">📩 <b>لم تجد الرسالة؟</b> افتح مجلد <b>Spam</b> (الرسائل غير المرغوب فيها) — وإن وجدتها هناك فاضغط <b>«Not spam / ليست رسالة غير مرغوب فيها»</b> لتصلك رسائلنا القادمة في الـ Inbox.</div>
     ${devOtp ? `<p class="notice">وضع تجريبي — الرمز: <b class="mono">${esc(devOtp)}</b></p>` : ''}
     <form id="f" class="form">
       <label ${email ? 'hidden' : ''}>البريد الإلكتروني<input name="email" type="email" required value="${esc(email)}"></label>
@@ -202,7 +202,7 @@ Views.setPassword = async (el) => {
     </form>
   </div>`;
   onSubmit($('#f', el), async (v) => {
-    if (v.password !== v.confirm) throw new Error('كلمتين المرور مش متطابقين');
+    if (v.password !== v.confirm) throw new Error('كلمتا المرور غير متطابقتين');
     let r;
     try {
       r = await API.post('/auth/set-password', { setup_token: setupToken, password: v.password, device_id: deviceId() });
@@ -216,9 +216,9 @@ Views.setPassword = async (el) => {
     renderTopbar('/');
     el.innerHTML = `<div class="auth card center">
       <h1>🎉 تم إنشاء حسابك</h1>
-      <p class="muted">ده كود الطالب الخاص بيك — احفظه، تقدر تدخل بيه وتشاركه مع أصحابك عشان يضيفوك للتيم:</p>
+      <p class="muted">هذا كود الطالب الخاص بك — احفظه؛ يمكنك الدخول به ومشاركته مع أصدقائك ليضيفوك إلى الفريق:</p>
       <div class="big mono">${esc(r.student_code)}</div>
-      <div class="row center"><button class="btn ghost" data-action="copy">نسخ الكود</button><a class="btn primary" href="#/">ادخل على حسابك</a></div>
+      <div class="row center"><button class="btn ghost" data-action="copy">نسخ الكود</button><a class="btn primary" href="#/">ادخل إلى حسابك</a></div>
     </div>`;
     onAction(el, { copy: () => navigator.clipboard?.writeText(r.student_code).then(() => toast('تم نسخ الكود')) });
   });
@@ -233,12 +233,12 @@ Views.forgot = async (el) => {
     </form>
     <form id="f2" class="form" hidden>
       <p id="dev" class="notice" hidden></p>
-      <div class="notice mid small spam-tip">📩 <b>مش لاقي الرسالة؟</b> افتح فولدر <b>Spam</b> — ولو لقيتها هناك دوس <b>«Not spam»</b> عشان رسايلنا الجاية توصلك في الـ Inbox.</div>
+      <div class="notice mid small spam-tip">📩 <b>لم تجد الرسالة؟</b> افتح مجلد <b>Spam</b> — وإن وجدتها هناك فاضغط <b>«Not spam»</b> لتصلك رسائلنا القادمة في الـ Inbox.</div>
       <label>رمز التحقق<input name="code" required inputmode="numeric" maxlength="6" class="otp"></label>
       <label>كلمة المرور الجديدة<input name="new_password" type="password" required minlength="8" autocomplete="new-password"></label>
       <button class="btn primary" type="submit">تغيير كلمة المرور</button>
     </form>
-    <p class="links"><a href="#/login">رجوع لتسجيل الدخول</a></p>
+    <p class="links"><a href="#/login">العودة إلى تسجيل الدخول</a></p>
   </div>`;
   let email;
   onSubmit($('#f1', el), async (v) => {
@@ -275,8 +275,8 @@ Views.home = async (el) => {
   // Subscription ending within 3 days: a renewal reminder (computed here, so it shows even before the daily job).
   const daysLeft = me.subscription ? Math.ceil((new Date(me.subscription.ends_at) - Date.now()) / 86400000) : null;
   const renew = daysLeft !== null && daysLeft <= 3
-    ? `<div class="notice mid renew-banner">⏰ اشتراكك هيخلص ${daysLeft <= 1 ? 'خلال يوم' : `بعد ${daysLeft} أيام`} (${fmtDay(me.subscription.ends_at)}) — جدّد عشان ماتوقفش، والتجديد بيتضاف على المدة اللي فاضلة.
-        <a class="btn primary tiny" href="#/subscribe">جدّد دلوقتي</a></div>` : '';
+    ? `<div class="notice mid renew-banner">⏰ سينتهي اشتراكك ${daysLeft <= 1 ? 'خلال يوم' : `بعد ${daysLeft} أيام`} (${fmtDay(me.subscription.ends_at)}) — جدِّد حتى لا تتوقف، ويُضاف التجديد إلى المدة المتبقية.
+        <a class="btn primary tiny" href="#/subscribe">جدِّد الآن</a></div>` : '';
   const u = me.user;
   const sub = me.subscription;
   el.innerHTML = `
@@ -284,12 +284,12 @@ Views.home = async (el) => {
       <div>
         <h1>أهلاً ${esc(u.full_name.split(' ')[0])} 👋</h1>
         <p class="muted">كود الطالب: <b class="mono">${esc(u.student_code)}</b>
-          <button class="btn tiny ghost" data-action="copy">نسخ</button> — شاركه مع أصحابك عشان يضيفوك للتيم</p>
+          <button class="btn tiny ghost" data-action="copy">نسخ</button> — شاركه مع أصدقائك ليضيفوك إلى الفريق</p>
         <p class="muted small"><a href="#/devices">📱 أجهزتي</a></p>
       </div>
       ${sub
         ? `<div class="sub-chip good">${esc(sub.name_ar)}<small>ساري حتى ${fmtDay(sub.ends_at)}</small></div>`
-        : '<a class="btn primary" href="#/subscribe">اشترك دلوقتي</a>'}
+        : '<a class="btn primary" href="#/subscribe">اشترك الآن</a>'}
     </section>
 
     ${renew}
@@ -298,9 +298,9 @@ Views.home = async (el) => {
 
     <section class="tiles">
       <div class="tile"><span class="tile-label">الأداء العام</span><b class="${percentTone(perf.overall.percent)}">${perf.overall.percent ?? '—'}%</b><small>${esc(perf.overall.rating)}</small></div>
-      <a class="tile" href="#/practice"><span class="tile-label">أسئلة النهارده</span><b>${perf.today.answered}</b><small>${perf.today.answered ? `منهم ${perf.today.correct} صح` : 'لسه محلتش أسئلة النهارده'}</small></a>
-      <a class="tile" href="#/mistakes"><span class="tile-label">بنك الأخطاء</span><b>${mist.total}</b><small>سؤال محتاج مراجعة</small></a>
-      <a class="tile" href="#/planner"><span class="tile-label">مهام النهارده</span><b>${tasks.summary.done}/${tasks.summary.total}</b><small>${tasks.summary.planned_minutes} دقيقة مذاكرة</small></a>
+      <a class="tile" href="#/practice"><span class="tile-label">أسئلة اليوم</span><b>${perf.today.answered}</b><small>${perf.today.answered ? `منها ${perf.today.correct} صحيحة` : 'لم تحل أسئلة اليوم بعد'}</small></a>
+      <a class="tile" href="#/mistakes"><span class="tile-label">بنك الأخطاء</span><b>${mist.total}</b><small>سؤال يحتاج إلى مراجعة</small></a>
+      <a class="tile" href="#/planner"><span class="tile-label">مهام اليوم</span><b>${tasks.summary.done}/${tasks.summary.total}</b><small>${tasks.summary.planned_minutes} دقيقة مذاكرة</small></a>
       ${aiLocked
         ? `<a class="tile" href="#/subscribe"><span class="tile-label">نقاط الذكاء الاصطناعي</span><b>🔒</b><small>الشرح بالذكاء الاصطناعي متاح في باقة ${esc(aiPlanName)}</small></a>`
         : `<div class="tile"><span class="tile-label">نقاط الذكاء الاصطناعي</span><b>${fmtPoints(ai.remaining_points)}</b><small>متبقي من ${fmtPoints(ai.limit_points)}</small>${bar(100 - ai.used_percent, ai.used_percent > 80 ? 'bad' : 'good')}</div>`}
@@ -312,7 +312,7 @@ Views.home = async (el) => {
         ? perf.subjects.map((s) => `<div class="perf-row">
             <span>${esc(s.subject)}</span>${bar(s.percent, percentTone(s.percent))}
             <b class="${percentTone(s.percent)}">${s.percent}%</b><small class="muted">${esc(s.rating)} · ${s.correct}/${s.attempts}</small></div>`).join('')
-        : empty('لسه محلتش أسئلة. ابدأ التدريب عشان يظهر تقييمك.', '<a class="btn primary" href="#/practice">ابدأ التدريب</a>')}
+        : empty('لم تحل أي أسئلة بعد. ابدأ التدريب ليظهر تقييمك.', '<a class="btn primary" href="#/practice">ابدأ التدريب</a>')}
     </section>`;
   onAction(el, {
     copy: () => navigator.clipboard?.writeText(u.student_code).then(() => toast('تم نسخ الكود')),
@@ -345,7 +345,7 @@ const noteCard = (n, dismissable = false) => `<article class="announce ${esc(n.t
       <div class="row wrap"><small class="muted">${fmtDate(n.created_at)}</small>
         ${n.link && n.link !== '#/' ? `<a class="btn tiny primary" href="${esc(n.link)}">افتح</a>` : ''}</div>
     </div>
-    ${dismissable ? `<button class="btn tiny ghost" data-action="readNote" data-id="${n.id}">تمام</button>` : ''}
+    ${dismissable ? `<button class="btn tiny ghost" data-action="readNote" data-id="${n.id}">حسنًا</button>` : ''}
   </article>`;
 
 const announceCard = (a, dismissable = false) => `<article class="announce ${esc(a.tone)}${a.is_read ? ' read' : ''}" data-ann="${a.id}">
@@ -357,7 +357,7 @@ const announceCard = (a, dismissable = false) => `<article class="announce ${esc
       <div class="row wrap"><small class="muted">${fmtDate(a.starts_at)}</small>
         ${a.link_url ? `<a class="btn tiny ghost" href="${esc(a.link_url)}" target="_blank" rel="noopener">افتح الرابط ↗</a>` : ''}</div>
     </div>
-    ${dismissable ? `<button class="btn tiny ghost" data-action="readAnn" data-id="${a.id}">تمام</button>` : ''}
+    ${dismissable ? `<button class="btn tiny ghost" data-action="readAnn" data-id="${a.id}">حسنًا</button>` : ''}
   </article>`;
 
 /** Marks one announcement read: the card leaves the home page (pinned ones stay, without the "new" tag). */
@@ -397,7 +397,7 @@ async function openAnnouncements() {
     ${data.notifications.length ? `<h3>إشعاراتك</h3><div class="announcements">${data.notifications.slice(0, 10).map((n) => noteCard(n)).join('')}</div>` : ''}
     <h3>إعلانات المنصة</h3>${data.announcements.length
     ? `<div class="announcements">${data.announcements.map((a) => announceCard(a)).join('')}</div>`
-    : empty('مفيش إعلانات دلوقتي')}`);
+    : empty('لا توجد إعلانات الآن')}`);
   if (data.notesUnread) {
     await API.post('/notifications/read-all').catch(() => {});
     $$('#home-notes .announce').forEach((c) => c.remove());
@@ -423,7 +423,7 @@ const isLongPassage = (p) => Boolean(p) && ((p.text || '').length > 500 || (Bool
 function passageBox(p, range, { open = true, side = false } = {}) {
   if (!p) return '';
   const what = p.text ? 'القطعة' : 'الرسمة';
-  const nums = range && range[1] > range[0] ? ` — الأسئلة من ${range[0]} لـ ${range[1]}` : '';
+  const nums = range && range[1] > range[0] ? ` — الأسئلة من ${range[0]} إلى ${range[1]}` : '';
   if (side) {
     // Computer: a sticky column beside the questions. Phone: a drawer opened by the button.
     return `<div class="p-backdrop" data-passage-close></div>
@@ -484,9 +484,9 @@ function questionCard(q, idx, total) {
     <div class="q-actions">
       <button class="btn ghost tiny" data-action="skip">تخطي السؤال ←</button>
       <button class="btn ghost" data-action="explain" hidden>عرض الشرح</button>
-      <button class="btn primary" data-action="next" disabled title="اختار إجابة الأول">${idx + 1 < total ? 'السؤال التالي' : 'إنهاء'}</button>
+      <button class="btn primary" data-action="next" disabled title="اختر إجابة أولًا">${idx + 1 < total ? 'السؤال التالي' : 'إنهاء'}</button>
     </div>
-    <p class="next-hint">اختار إجابة عشان تقدر تكمل، أو اضغط "تخطي السؤال"</p>
+    <p class="next-hint">اختر إجابة لتتمكن من المتابعة، أو اضغط "تخطي السؤال"</p>
   </div>`;
 }
 
@@ -506,7 +506,7 @@ async function showExplanation(card, qid, btn) {
   const law = r.law_note ? `<p class="law">📐 ${rich(r.law_note)}</p>` : '';
   if (r.explanation || r.explanation_image) {
     box.innerHTML = `<div class="src">${r.source === 'question_bank' ? 'شرح من بنك الأسئلة — مجاني' : 'شرح محفوظ — مجاني'}</div>${r.explanation ? `<p>${rich(r.explanation)}</p>` : ''}${qImage(r.explanation_image, 'صورة الشرح')}${law}
-      ${r.source === 'question_bank' ? '<div class="ai-more"><button class="btn ai" data-action="ai" data-simpler="1">🤔 مش فاهم، اشرحلي أكثر</button></div>' : ''}`;
+      ${r.source === 'question_bank' ? '<div class="ai-more"><button class="btn ai" data-action="ai" data-simpler="1">🤔 لم أفهم، اشرح لي أكثر</button></div>' : ''}`;
     btn.remove();
     return;
   }
@@ -520,7 +520,7 @@ async function askAI(card, qid, simpler = false) {
   try {
     const r = await API.post(`/ai/explain/${qid}${simpler ? '?simpler=1' : ''}`);
     const cost = r.usage?.cost_egp
-      ? `<div class="src">✨ شرح بالذكاء الاصطناعي · استهلك ${fmtPoints(r.usage.cost_points)} · متبقي ${fmtPoints(r.usage.remaining_points)}</div>`
+      ? `<div class="src">✨ شرح بالذكاء الاصطناعي · استُهلك ${fmtPoints(r.usage.cost_points)} · متبقي ${fmtPoints(r.usage.remaining_points)}</div>`
       : `<div class="src">${simpler ? '✨ شرح أبسط بالذكاء الاصطناعي — مجاني' : 'شرح محفوظ — مجاني'}</div>`;
     box.innerHTML = `${cost}<p class="pre">${rich(r.explanation)}</p>${r.law_note && !simpler ? `<p class="law">📐 ${rich(r.law_note)}</p>` : ''}
       ${r.warning ? `<p class="notice bad">${esc(r.warning)}</p>` : ''}`;
@@ -600,12 +600,12 @@ function runQuiz(el, questions, { answerFn, onDone, allowExplain = true }) {
     }),
     skip: () => {
       skipped.push(questions[i]);
-      toast(`⚠️ تخطيت السؤال ${i + 1} — مش هيتحسب غلط، وهتقدر ترجعله في الآخر`, 'warn');
+      toast(`⚠️ تخطيت السؤال ${i + 1} — لن يُحتسب خطأً، ويمكنك العودة إليه في النهاية`, 'warn');
       advance();
     },
     explain: (b) => run(b, () => showExplanation(card(), questions[i].id, b)),
     ai: (b) => run(b, async () => {
-      b.textContent = 'جاري التوليد…';
+      b.textContent = 'جارٍ التوليد…';
       await askAI(card(), questions[i].id, b.dataset.simpler === '1');
     }),
     next: advance,
@@ -619,18 +619,18 @@ function quizSummary({ correct, wrong, skipped }, { title, note, actions = '' })
   const p = answered ? Math.round((correct / answered) * 100) : 0;
   return `<div class="card center">
     <h2>${title}</h2>
-    ${answered ? `<div class="big ${percentTone(p)}">${correct}/${answered}</div><p class="muted">${p}% من الأسئلة اللي جاوبتها${note ? ` — ${note}` : ''}</p>` : ''}
-    <div class="score-split"><span class="good">✅ صح: ${correct}</span><span class="bad">❌ غلط: ${wrong}</span><span class="mid">⏭ متروك: ${skipped.length}</span></div>
-    ${skipped.length ? `<div class="notice mid">⚠️ فوّت <b>${skipped.length}</b> سؤال — مش متحسبين غلط ومش في بنك الأخطاء، بس لسه محتاج تحلهم.</div>
-      <button class="btn primary" data-action="solveSkipped">حل الأسئلة اللي فوّتها (${skipped.length})</button>` : ''}
+    ${answered ? `<div class="big ${percentTone(p)}">${correct}/${answered}</div><p class="muted">${p}% من الأسئلة التي أجبت عنها${note ? ` — ${note}` : ''}</p>` : ''}
+    <div class="score-split"><span class="good">✅ صحيحة: ${correct}</span><span class="bad">❌ خاطئة: ${wrong}</span><span class="mid">⏭ متروك: ${skipped.length}</span></div>
+    ${skipped.length ? `<div class="notice mid">⚠️ تخطيت <b>${skipped.length}</b> سؤال — لم تُحتسب خطأً وليست في بنك الأخطاء، لكن ما زلت بحاجة إلى حلها.</div>
+      <button class="btn primary" data-action="solveSkipped">حل الأسئلة التي تخطيتها (${skipped.length})</button>` : ''}
     <div class="row center wrap">${actions}</div>
   </div>`;
 }
 
 function quizResult(el, result, { again, solveSkipped }) {
   el.innerHTML = quizSummary(result, {
-    title: result.skipped.length ? 'خلصت الجولة — بس فيه أسئلة فاتتك' : 'خلصت! 🎯',
-    note: 'الغلط اتضاف لبنك الأخطاء',
+    title: result.skipped.length ? 'انتهت الجولة — لكن توجد أسئلة فاتتك' : 'انتهيت! 🎯',
+    note: 'أُضيفت الأخطاء إلى بنك الأخطاء',
     actions: `<button class="btn ${result.skipped.length ? 'ghost' : 'primary'}" data-action="again">جولة جديدة</button><a class="btn ghost" href="#/mistakes">بنك الأخطاء</a>`,
   });
   $('[data-action=again]', el).addEventListener('click', again);
@@ -647,7 +647,7 @@ Views.practice = async (el) => {
   const subjects = (await API.get('/catalog/subjects')).subjects
     .filter((s) => s.questions > 0)
     .map((s) => ({ ...s, lessons: s.lessons.filter((l) => l.questions > 0) }));
-  if (!subjects.length) { el.innerHTML = empty('لسه مفيش أسئلة متاحة للتدريب.'); return; }
+  if (!subjects.length) { el.innerHTML = empty('لا توجد أسئلة متاحة للتدريب بعد.'); return; }
   const setup = () => {
     el.innerHTML = `<div class="card">
       <h1>التدريب</h1>
@@ -657,7 +657,7 @@ Views.practice = async (el) => {
         <label>الدرس<span class="select-ph" data-ph="الدرس"><select name="lesson_id" required>${lessonOptions(null)}</select></span></label>
         <label>النوع<select name="category"><option value="">الكل</option><option value="lesson">دروس</option><option value="past_exam">امتحانات سابقة</option></select></label>
         <label>عدد الأسئلة<select name="limit">${[10, 20, 30, 40, 50].map((n) => `<option ${n === 10 ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
-        <label class="check"><input type="checkbox" name="unsolved_only"> أسئلة جديدة بس (محلتهاش قبل كده)</label>
+        <label class="check"><input type="checkbox" name="unsolved_only"> أسئلة جديدة فقط (لم تحلها من قبل)</label>
         <button class="btn primary" type="submit">ابدأ</button>
       </form>
       <div id="practice-msg"></div>
@@ -696,19 +696,19 @@ Views.practice = async (el) => {
           const lesson = subject?.lessons.find((l) => String(l.id) === v.lesson_id);
           const scope = lesson ? `درس "${esc(lesson.name)}"` : `مادة ${esc(subject?.name || '')}`;
           msg.innerHTML = `<div class="notice good all-solved">
-            <b>🎉 انت حليت كل الأسئلة</b> في ${scope}${v.category ? ` (${esc(LABELS.category[v.category])})` : ''}!
-            <p>شيل علامة "أسئلة جديدة بس" عشان تراجعها تاني، أو راجع بنك الأخطاء.</p>
-            <div class="row wrap"><button class="btn primary tiny" type="button" data-review>راجع الأسئلة تاني</button>
+            <b>🎉 لقد حللت كل الأسئلة</b> في ${scope}${v.category ? ` (${esc(LABELS.category[v.category])})` : ''}!
+            <p>ألغِ اختيار "أسئلة جديدة فقط" لمراجعتها مرة أخرى، أو راجع بنك الأخطاء.</p>
+            <div class="row wrap"><button class="btn primary tiny" type="button" data-review>راجع الأسئلة مرة أخرى</button>
             <a class="btn ghost tiny" href="#/mistakes">بنك الأخطاء</a></div></div>`;
           $('[data-review]', msg).addEventListener('click', () => { form.unsolved_only.checked = false; form.requestSubmit(); });
           return undefined;
         }
-        return toast('مفيش أسئلة بالاختيارات دي', 'err');
+        return toast('لا توجد أسئلة بهذه الاختيارات', 'err');
       }
       const start = (questions) => runQuiz(el, questions, {
         answerFn: async (q, key, ms) => {
           const a = await API.post('/catalog/answer', { question_id: q.id, choice: key, time_spent_ms: ms });
-          return { ...a, note: a.added_to_mistakes ? 'اتضاف لبنك الأخطاء' : a.removed_from_mistakes ? 'اتشال من بنك الأخطاء' : '' };
+          return { ...a, note: a.added_to_mistakes ? 'أُضيف إلى بنك الأخطاء' : a.removed_from_mistakes ? 'حُذف من بنك الأخطاء' : '' };
         },
         onDone: (res) => quizResult(el, res, { again: setup, solveSkipped: () => start(res.skipped) }),
       });
@@ -716,7 +716,7 @@ Views.practice = async (el) => {
     });
   };
   if (!State.subscription && State.user.role !== 'admin') {
-    return subscriptionWall(el, { message: 'التدريب يتطلب اشتراكاً فعالاً' });
+    return subscriptionWall(el, { message: 'التدريب يتطلب اشتراكًا فعالًا' });
   }
   setup();
 };
@@ -725,13 +725,13 @@ Views.practice = async (el) => {
 Views.mistakes = async (el) => {
   const summary = await API.get('/mistakes/summary');
   el.innerHTML = `<div class="card-head page-head"><h1>بنك الأخطاء</h1>${badge(`${summary.total} سؤال`, summary.total ? 'bad' : 'good')}</div>
-    <p class="muted">أي سؤال تغلط فيه بيتحفظ هنا تلقائياً. أعد حله — ولو جاوبت صح بيتشال من القائمة.</p>
+    <p class="muted">أي سؤال تخطئ فيه يُحفظ هنا تلقائيًا. أعد حله — وإذا أجبت إجابة صحيحة يُحذف من القائمة.</p>
     ${summary.total ? summary.subjects.map((s) => `<section class="card">
         <div class="card-head"><h2>${esc(s.subject)} ${badge(s.total, 'bad')}</h2>
           <button class="btn primary tiny" data-action="retry" data-subject="${s.subject_id}">أعد حل أخطاء المادة</button></div>
-        <ul class="list">${s.lessons.map((l) => `<li><span>${esc(l.lesson)}</span><span class="muted">${l.mistakes} سؤال · آخر غلطة ${fmtDay(l.last_wrong_at)}</span>
+        <ul class="list">${s.lessons.map((l) => `<li><span>${esc(l.lesson)}</span><span class="muted">${l.mistakes} سؤال · آخر خطأ ${fmtDay(l.last_wrong_at)}</span>
           <button class="btn ghost tiny" data-action="retry" data-subject="${s.subject_id}" data-lesson="${l.lesson_id ?? ''}">أعد الحل</button></li>`).join('')}</ul>
-      </section>`).join('') : empty('مفيش أخطاء محفوظة 🎉 كمّل تدريب!', '<a class="btn primary" href="#/practice">تدريب</a>')}`;
+      </section>`).join('') : empty('لا توجد أخطاء محفوظة 🎉 واصل التدريب!', '<a class="btn primary" href="#/practice">تدريب</a>')}`;
 
   onAction(el, {
     retry: (b) => run(b, async () => {
@@ -747,8 +747,8 @@ Views.mistakes = async (el) => {
         },
         onDone: (res) => {
           host.innerHTML = quizSummary(res, {
-            title: `${res.correct} سؤال اتحلوا صح واتشالوا من البنك`,
-            actions: `<button class="btn ${res.skipped.length ? 'ghost' : 'primary'}" data-action="back">رجوع لبنك الأخطاء</button>`,
+            title: `${res.correct} سؤال حُلّت بشكل صحيح وحُذفت من البنك`,
+            actions: `<button class="btn ${res.skipped.length ? 'ghost' : 'primary'}" data-action="back">العودة إلى بنك الأخطاء</button>`,
           });
           $('[data-action=back]', host).addEventListener('click', () => Views.mistakes(el));
           $('[data-action=solveSkipped]', host)?.addEventListener('click', () => start(res.skipped));
@@ -763,7 +763,7 @@ Views.mistakes = async (el) => {
 Views.competitions = async (el) => {
   const { competitions } = await API.get('/competitions');
   el.innerHTML = `<h1 class="page-head">المسابقات</h1>
-    <p class="muted">مسابقة التيمات كل جمعة، والمسابقة الشهرية فردية. كل طالب بيشوف الأسئلة والاختيارات بترتيب مختلف.</p>
+    <p class="muted">مسابقة الفرق كل جمعة، والمسابقة الشهرية فردية. يرى كل طالب الأسئلة والاختيارات بترتيب مختلف.</p>
     ${competitions.length ? `<div class="grid-cards">${competitions.map((c) => `<a class="card comp" href="#/competition/${c.id}">
         <div class="row between">${badge(LABELS.compStatus[c.status], LABELS.compTone[c.status])}<small class="muted">${esc(LABELS.compType[c.type])}</small></div>
         <h2>${esc(c.title)}</h2>
@@ -772,7 +772,7 @@ Views.competitions = async (el) => {
         ${c.my_submitted_at
           ? (c.results_published ? `<p class="good">درجتك: <b>${c.my_score}/${c.question_count}</b></p>` : '<p class="good">✅ تم التسليم بنجاح</p>')
           : c.status === 'active' ? '<span class="btn primary tiny">ادخل المسابقة</span>' : ''}
-      </a>`).join('')}</div>` : empty('مفيش مسابقات لسه.')}`;
+      </a>`).join('')}</div>` : empty('لا توجد مسابقات بعد.')}`;
 };
 
 let compTimer = null;
@@ -791,7 +791,7 @@ Views.competition = async (el, { id }) => {
       el.innerHTML = `<div class="page-head"><h1>${esc(c.title)}</h1>${badge(LABELS.compStatus[c.status], LABELS.compTone[c.status])}</div>
         ${c.my_submitted_at
           ? '<section class="card center results-hidden submitted-ok"><div class="check-big" aria-hidden="true">✓</div><h2>تم التسليم بنجاح</h2></section>'
-          : '<section class="card center results-hidden"><div class="big">🔒</div><h2>النتيجة لسه ماتعلنتش</h2></section>'}`;
+          : '<section class="card center results-hidden"><div class="big">🔒</div><h2>لم تُعلن النتيجة بعد</h2></section>'}`;
       return;
     }
     let review = '';
@@ -804,21 +804,21 @@ Views.competition = async (el, { id }) => {
     }
     const me = State.user.student_code;
     el.innerHTML = `<div class="page-head"><h1>${esc(c.title)}</h1>${badge(LABELS.compStatus[c.status], LABELS.compTone[c.status])}</div>
-      ${lb.published === false ? '<p class="notice mid">🔒 النتيجة لسه مخفية عن الطلاب — إنت شايفها لأنك أدمن. أعلنها من صفحة المسابقات.</p>' : ''}
-      ${lb.teams ? `<section class="card"><h2>ترتيب التيمات</h2>${table(['#', 'التيم', 'المشاركين', 'النقاط'],
+      ${lb.published === false ? '<p class="notice mid">🔒 النتيجة ما زالت مخفية عن الطلاب — تراها لأنك أدمن. أعلنها من صفحة المسابقات.</p>' : ''}
+      ${lb.teams ? `<section class="card"><h2>ترتيب الفرق</h2>${table(['#', 'الفريق', 'المشاركون', 'النقاط'],
         lb.teams.map((t) => [medal(t.rank), esc(t.team), t.participants, `<b>${t.total_score}</b>`]))}</section>` : ''}
       <section class="card"><h2>ترتيب الطلاب</h2>${lb.individuals.length ? table(['#', 'الطالب', 'الدرجة', 'الوقت'],
-        lb.individuals.map((s) => [medal(s.rank), esc(s.student) + (me && s.student.includes(me) ? ' ⭐' : ''), `<b>${s.score}/${s.total_questions}</b>`, fmtDuration(s.duration_seconds)])) : empty('لسه محدش سلّم')}</section>
+        lb.individuals.map((s) => [medal(s.rank), esc(s.student) + (me && s.student.includes(me) ? ' ⭐' : ''), `<b>${s.score}/${s.total_questions}</b>`, fmtDuration(s.duration_seconds)])) : empty('لم يسلّم أحد بعد')}</section>
       ${review}
-      ${c.status !== 'finished' && c.my_submitted_at ? '<p class="muted center">الإجابات الصحيحة هتظهر بعد انتهاء المسابقة.</p>' : ''}`;
+      ${c.status !== 'finished' && c.my_submitted_at ? '<p class="muted center">ستظهر الإجابات الصحيحة بعد انتهاء المسابقة.</p>' : ''}`;
   };
 
   if (c.my_submitted_at || c.status !== 'active' || State.user.role === 'admin') return showBoard();
 
   el.innerHTML = `<div class="card center">
     <h1>${esc(c.title)}</h1><p class="muted">${esc(LABELS.compType[c.type])}</p>
-    <p>${c.question_count} سؤال · ${c.duration_minutes} دقيقة من وقت البدء · بتنتهي ${fmtDate(c.ends_at)}</p>
-    <p class="muted">التسليم مرة واحدة بس. لو الوقت خلص هيتسلم تلقائياً.</p>
+    <p>${c.question_count} سؤال · ${c.duration_minutes} دقيقة من وقت البدء · تنتهي ${fmtDate(c.ends_at)}</p>
+    <p class="muted">التسليم مرة واحدة فقط. إذا انتهى الوقت فستُسلَّم الإجابات تلقائيًا.</p>
     <button class="btn primary" data-action="start">ابدأ الآن</button></div>`;
 
   onAction(el, {
@@ -829,7 +829,7 @@ Views.competition = async (el, { id }) => {
       } catch (err) {
         if (isSubError(err)) return subscriptionWall(el, err);
         if (err.code === 'TEAM_REQUIRED') {
-          el.innerHTML = `<div class="card center"><h2>${esc(err.message)}</h2><a class="btn primary" href="#/team">صفحة التيم</a></div>`;
+          el.innerHTML = `<div class="card center"><h2>${esc(err.message)}</h2><a class="btn primary" href="#/team">صفحة الفريق</a></div>`;
           return undefined;
         }
         if (err.code === 'TIME_UP') {
@@ -881,10 +881,10 @@ Views.competition = async (el, { id }) => {
       const pushDraft = async () => {
         try {
           await API.req('PUT', `/competitions/${id}/answers`, { answers: answers() });
-          sync.textContent = '✓ اتحفظ';
+          sync.textContent = '✓ تم الحفظ';
           sync.className = 'sync ok';
         } catch {
-          sync.textContent = '⚠ مش متحفظ — اتأكد من النت';
+          sync.textContent = '⚠ لم يُحفظ — تأكد من الاتصال بالإنترنت';
           sync.className = 'sync bad';
         }
       };
@@ -924,8 +924,8 @@ Views.competition = async (el, { id }) => {
           toast(`تم التسليم — درجتك ${r.score}/${r.total_questions}`);
           await showBoard();
           el.insertAdjacentHTML('afterbegin', `<div class="card center"><h2>درجتك</h2><div class="big ${percentTone(r.percent)}">${r.score}/${r.total_questions}</div>
-            <div class="score-split"><span class="good">✅ صح: ${r.correct}</span><span class="bad">❌ غلط: ${r.wrong}</span><span class="mid">⏭ متروك: ${r.skipped}</span></div>
-            ${r.skipped ? '<p class="muted">الأسئلة المتروكة مش متحسبة غلط ومش في بنك الأخطاء.</p>' : ''}</div>`);
+            <div class="score-split"><span class="good">✅ صحيحة: ${r.correct}</span><span class="bad">❌ خاطئة: ${r.wrong}</span><span class="mid">⏭ متروك: ${r.skipped}</span></div>
+            ${r.skipped ? '<p class="muted">الأسئلة المتروكة لا تُحتسب خطأً وليست في بنك الأخطاء.</p>' : ''}</div>`);
         } catch (err) {
           submitting = false;
           toast(errorText(err), 'err');
@@ -937,11 +937,11 @@ Views.competition = async (el, { id }) => {
         const left = unanswered();
         if (!left.length) { submit(); return; }
         form.classList.add('show-missing');
-        const m = modal(`<h2>⚠️ فيه ${left.length} سؤال مجاوبتش عليهم</h2>
-          <p class="muted">اضغط على رقم السؤال عشان ترجعله:</p>
+        const m = modal(`<h2>⚠️ يوجد ${left.length} سؤال لم تُجب عنها</h2>
+          <p class="muted">اضغط على رقم السؤال للعودة إليه:</p>
           <div class="qnav big-nav">${left.map((q) => `<a href="#" data-jump="${q.question_id}">${q.number}</a>`).join('')}</div>
-          <p class="notice mid">لو سلّمت دلوقتي، الأسئلة دي <b>مش هتتحسب غلط</b> ومش هتتضاف لبنك الأخطاء — بس مش هتاخد درجتها.</p>
-          <div class="row wrap"><button class="btn primary" data-back>ارجع وكمّل</button><button class="btn ghost" data-force>سلّم كده</button></div>`);
+          <p class="notice mid">إذا سلّمت الآن، فهذه الأسئلة <b>لن تُحتسب خطأً</b> ولن تُضاف إلى بنك الأخطاء — لكنك لن تحصل على درجتها.</p>
+          <div class="row wrap"><button class="btn primary" data-back>ارجع وأكمل</button><button class="btn ghost" data-force>سلّم كما هي</button></div>`);
         $('[data-back]', m).addEventListener('click', () => { closeModal(); goTo(left[0].question_id); });
         $('[data-force]', m).addEventListener('click', submit);
         $('.qnav', m).addEventListener('click', (ev) => {
@@ -965,7 +965,7 @@ Views.competition = async (el, { id }) => {
           warnedLastMinute = true;
           const left = unanswered().length;
           if (left) {
-            toast(`⏰ باقي دقيقة — وفيه ${left} سؤال من غير إجابة`, 'warn');
+            toast(`⏰ بقيت دقيقة — ويوجد ${left} سؤال بلا إجابة`, 'warn');
             form.classList.add('show-missing');
           }
         }
@@ -992,17 +992,17 @@ Views.team = async (el) => {
   const [{ team }, { invites }] = await Promise.all([API.get('/teams/me'), API.get('/teams/invites')]);
   const myId = State.user.id;
   const isCaptain = team && team.captain_id === myId;
-  const received = invites.length ? `<section class="card"><h2>دعوات وصلتلك</h2><ul class="list">${invites.map((i) => `<li>
+  const received = invites.length ? `<section class="card"><h2>دعوات وصلتك</h2><ul class="list">${invites.map((i) => `<li>
       <span><b>${esc(i.team)}</b> <small class="muted">من ${esc(i.invited_by)} (${esc(i.invited_by_code)}) · ${i.team_size}/4</small></span>
       <span class="row"><button class="btn primary tiny" data-action="accept" data-id="${i.id}">قبول</button>
       <button class="btn ghost tiny" data-action="decline" data-id="${i.id}">رفض</button></span></li>`).join('')}</ul></section>` : '';
 
   if (!team) {
-    el.innerHTML = `<h1 class="page-head">التيم</h1>${received}
-      <section class="card"><h2>أنشئ تيم جديد</h2>
-        <form id="cf" class="form inline"><input name="name" required minlength="2" placeholder="اسم التيم"><button class="btn primary" type="submit">إنشاء</button></form>
-        <p class="muted">التيم 4 طلاب. بعد ما تنشئه ادعي أصحابك بكود الطالب بتاعهم.<br>
-        لو مش في تيم يوم الخميس، النظام هيوزعك تلقائياً على تيم قبل مسابقة الجمعة.</p></section>`;
+    el.innerHTML = `<h1 class="page-head">الفريق</h1>${received}
+      <section class="card"><h2>أنشئ فريقًا جديدًا</h2>
+        <form id="cf" class="form inline"><input name="name" required minlength="2" placeholder="اسم الفريق"><button class="btn primary" type="submit">إنشاء</button></form>
+        <p class="muted">يتكون الفريق من 4 طلاب. بعد إنشائه ادعُ أصدقاءك بكود الطالب الخاص بهم.<br>
+        إذا لم تكن في فريق يوم الخميس، فسيضمّك النظام تلقائيًا إلى فريق قبل مسابقة الجمعة.</p></section>`;
   } else {
     el.innerHTML = `<div class="page-head"><h1>${esc(team.name)}</h1>${badge(`${team.size}/${team.max_size}`, team.size === 4 ? 'good' : 'mid')}${team.is_auto_generated ? badge('توزيع تلقائي') : ''}</div>
       ${received}
@@ -1011,15 +1011,15 @@ Views.team = async (el) => {
         ${isCaptain && m.id !== myId ? `<button class="btn ghost tiny" data-action="kick" data-id="${m.id}">إزالة</button>` : ''}</li>`).join('')}</ul>
       </section>
       ${isCaptain ? `<section class="card"><h2>دعوة عضو</h2>
-        ${team.size < 4 ? `<form id="inv" class="form inline"><input name="student_code" required placeholder="STU-2026-0002" class="mono"><button class="btn primary" type="submit">إرسال دعوة</button></form>` : '<p class="good">التيم مكتمل ✅</p>'}
+        ${team.size < 4 ? `<form id="inv" class="form inline"><input name="student_code" required placeholder="STU-2026-0002" class="mono"><button class="btn primary" type="submit">إرسال دعوة</button></form>` : '<p class="good">الفريق مكتمل ✅</p>'}
         ${team.pending_invites.length ? `<h3>دعوات في الانتظار</h3><ul class="list">${team.pending_invites.map((p) => `<li><span>${esc(p.full_name)} <small class="mono muted">${esc(p.student_code)}</small></span>
           <button class="btn ghost tiny" data-action="cancel" data-id="${p.id}">إلغاء</button></li>`).join('')}</ul>` : ''}
-        <label class="check"><input type="checkbox" id="autofill" ${team.allow_auto_fill ? 'checked' : ''}> اسمح للنظام يكمّل التيم بطلاب عشوائيين قبل مسابقة الجمعة</label>
+        <label class="check"><input type="checkbox" id="autofill" ${team.allow_auto_fill ? 'checked' : ''}> اسمح للنظام بإكمال الفريق بطلاب عشوائيين قبل مسابقة الجمعة</label>
       </section>` : ''}
-      <button class="btn danger" data-action="leave">الخروج من التيم</button>`;
+      <button class="btn danger" data-action="leave">الخروج من الفريق</button>`;
   }
   const reload = () => Views.team(el);
-  if ($('#cf', el)) onSubmit($('#cf', el), async (v) => { await API.post('/teams', v); toast('تم إنشاء التيم'); reload(); });
+  if ($('#cf', el)) onSubmit($('#cf', el), async (v) => { await API.post('/teams', v); toast('تم إنشاء الفريق'); reload(); });
   if ($('#inv', el)) onSubmit($('#inv', el), async (v) => { const r = await API.post('/teams/invites', v); toast(r.message); reload(); });
   $('#autofill', el)?.addEventListener('change', (e) => run(null, async () => {
     await API.patch('/teams/me', { allow_auto_fill: e.target.checked });
@@ -1030,7 +1030,7 @@ Views.team = async (el) => {
     decline: (b) => run(b, async () => { await API.post(`/teams/invites/${b.dataset.id}/decline`); reload(); }),
     cancel: (b) => run(b, async () => { await API.del(`/teams/invites/${b.dataset.id}`); reload(); }),
     kick: (b) => run(b, async () => { if (confirm('إزالة العضو؟')) { await API.del(`/teams/members/${b.dataset.id}`); reload(); } }),
-    leave: (b) => run(b, async () => { if (confirm('متأكد إنك عايز تخرج من التيم؟')) { await API.post('/teams/leave'); toast('خرجت من التيم'); reload(); } }),
+    leave: (b) => run(b, async () => { if (confirm('هل أنت متأكد أنك تريد الخروج من الفريق؟')) { await API.post('/teams/leave'); toast('خرجت من الفريق'); reload(); } }),
   });
 };
 
@@ -1056,11 +1056,11 @@ Views.planner = async (el, params, query) => {
         <label class="check"><input type="checkbox" data-toggle="${t.id}" ${t.is_done ? 'checked' : ''}>
           <span><b>${esc(t.title)}</b><small class="muted">${t.start_time ? esc(t.start_time.slice(0, 5)) : ''} ${t.duration_minutes ? `· ${t.duration_minutes} د` : ''} ${t.subject ? `· ${esc(t.subject)}` : ''}</small></span></label>
         <span class="row">${badge(LABELS.priority[t.priority], { high: 'bad', medium: 'mid', low: '' }[t.priority])}
-        <button class="btn ghost tiny" data-action="del" data-id="${t.id}" aria-label="حذف">🗑</button></span></li>`).join('')}</ul>` : empty('مفيش مهام لليوم ده.')}
+        <button class="btn ghost tiny" data-action="del" data-id="${t.id}" aria-label="حذف">🗑</button></span></li>`).join('')}</ul>` : empty('لا توجد مهام لهذا اليوم.')}
     </section>
     <section class="card"><h2>إضافة مهمة</h2>
       <form id="tf" class="form grid3">
-        <label class="span3">المهمة<input name="title" required maxlength="200" placeholder="مثلاً: حل 20 سؤال على قوانين نيوتن"></label>
+        <label class="span3">المهمة<input name="title" required maxlength="200" placeholder="مثلًا: حل 20 سؤالًا على قوانين نيوتن"></label>
         <label>المادة<select name="subject_id"><option value="">—</option>${subjects.map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select></label>
         <label>الوقت<input type="time" name="start_time"></label>
         <label>المدة (دقيقة)<input type="number" name="duration_minutes" min="5" max="720" step="5" value="60"></label>
@@ -1090,7 +1090,7 @@ Views.subscribe = async (el) => {
   const [{ plans, gateways = {}, manual_payment: mp }, mine] = await Promise.all([API.get('/payments/plans'), API.get('/payments/me')]);
   const cur = mine.current;
   el.innerHTML = `<h1 class="page-head">الاشتراك</h1>
-    ${cur ? `<div class="notice good">اشتراكك الحالي: <b>${esc(cur.name_ar)}</b> — ساري حتى ${fmtDay(cur.ends_at)}. التجديد بيتضاف على المدة.</div>` : ''}
+    ${cur ? `<div class="notice good">اشتراكك الحالي: <b>${esc(cur.name_ar)}</b> — ساري حتى ${fmtDay(cur.ends_at)}. يُضاف التجديد إلى المدة.</div>` : ''}
     <div class="grid-cards plans">${plans.map((p) => `<div class="card plan ${p.code === 'premium' ? 'featured' : ''}">
       ${p.code === 'premium' ? '<span class="ribbon">الأكثر قيمة</span>' : ''}
       <h2>${esc(p.name_ar)}</h2>
@@ -1105,11 +1105,11 @@ Views.subscribe = async (el) => {
 
     <section class="card manual-pay"><h2>الدفع بمحفظة إلكترونية أو إنستاباي</h2>
       <form id="mf" class="form">
-        <div class="pay-step"><span class="step-no">1</span><div class="step-body"><b>اختار الباقة</b>
+        <div class="pay-step"><span class="step-no">1</span><div class="step-body"><b>اختر الباقة</b>
           <select name="plan_code">${plans.map((p) => `<option value="${p.code}" data-price="${Number(p.price_egp)}">باقة ${esc(p.name_ar)}\u200F — ${Number(p.price_egp)} جنيه</option>`).join('')}</select>
           <div class="pay-amount">المبلغ المطلوب: <b id="pay-amount"></b></div></div></div>
 
-        <div class="pay-step"><span class="step-no">2</span><div class="step-body"><b>حوّل المبلغ على واحد من دول</b> <small class="muted">(دوس على اللي هتحوّل عليه)</small>
+        <div class="pay-step"><span class="step-no">2</span><div class="step-body"><b>حوّل المبلغ إلى إحدى هذه الوسائل</b> <small class="muted">(اضغط على الوسيلة التي ستحوّل إليها)</small>
           <div class="pay-methods">
             ${mp.vodafone_cash ? `<label class="pay-method vodafone"><input type="radio" name="provider" value="vodafone_cash" checked>
               <span class="pm-title">محفظة إلكترونية</span>
@@ -1125,17 +1125,17 @@ Views.subscribe = async (el) => {
 
         <div class="pay-step"><span class="step-no">3</span><div class="step-body"><b>ارفع صورة الإيصال</b>
           <div class="grid2">
-            <label><span id="sender-label">الرقم اللي حوّلت منه</span><input name="sender_account" required minlength="5" dir="ltr"></label>
+            <label><span id="sender-label">الرقم الذي حوّلت منه</span><input name="sender_account" required minlength="5" dir="ltr"></label>
             <label>رقم العملية (من الإيصال)<input name="transfer_ref" dir="ltr"></label>
             <label class="span2">صورة الإيصال (سكرين شوت)<input type="file" name="receipt" accept="image/png,image/jpeg,image/webp,application/pdf" required></label>
           </div>
           <button class="btn primary" type="submit">رفع الإيصال للمراجعة</button>
-          <p class="muted small">الإدارة بتراجع الإيصال وتفعّل اشتراكك، وهتلاقي الحالة تحت في «مدفوعاتي».</p></div></div>
+          <p class="muted small">تراجع الإدارة الإيصال وتفعّل اشتراكك، وستجد الحالة بالأسفل في «مدفوعاتي».</p></div></div>
       </form></section>
 
     <section class="card"><h2>مدفوعاتي</h2>${mine.payments.length ? table(['التاريخ', 'الباقة', 'المبلغ', 'الطريقة', 'الحالة'],
       mine.payments.map((p) => [fmtDate(p.created_at), esc(p.plan_code), fmtMoney(p.amount_egp), esc(LABELS.provider[p.provider]),
-        badge(LABELS.paymentStatus[p.status], LABELS.paymentTone[p.status]) + (p.admin_note && p.status === 'rejected' ? `<br><small>${esc(p.admin_note)}</small>` : '')])) : empty('مفيش مدفوعات لسه')}</section>`;
+        badge(LABELS.paymentStatus[p.status], LABELS.paymentTone[p.status]) + (p.admin_note && p.status === 'rejected' ? `<br><small>${esc(p.admin_note)}</small>` : '')])) : empty('لا توجد مدفوعات بعد')}</section>`;
 
   const reload = () => Views.subscribe(el);
   onAction(el, {
@@ -1144,17 +1144,17 @@ Views.subscribe = async (el) => {
       sel.value = b.dataset.plan; showAmount();
       $('#mf', el).scrollIntoView({ behavior: 'smooth', block: 'start' });
     },
-    copy: (b) => navigator.clipboard?.writeText(b.dataset.copy).then(() => toast('اتنسخ ✓')),
+    copy: (b) => navigator.clipboard?.writeText(b.dataset.copy).then(() => toast('تم النسخ ✓')),
     pay: (b) => run(b, async () => {
       const r = await API.post('/payments/checkout', { plan_code: b.dataset.plan, provider: b.dataset.provider });
       if (r.checkout_url) { location.href = r.checkout_url; return; }
       if (r.fawry_reference) {
         modal(`<h2>ادفع في أي فرع فوري</h2><p>الرقم المرجعي:</p><div class="big mono">${esc(r.fawry_reference)}</div>
-          <p class="muted">المبلغ: ${fmtMoney(r.payment.amount_egp)} — الاشتراك هيتفعّل تلقائياً بعد الدفع.</p>`);
+          <p class="muted">المبلغ: ${fmtMoney(r.payment.amount_egp)} — سيُفعَّل الاشتراك تلقائيًا بعد الدفع.</p>`);
         return;
       }
-      const m = modal(`<h2>وضع تجريبي</h2><p>مفاتيح ${esc(LABELS.provider[r.provider])} مش متضافة لسه، فده دفع تجريبي.</p>
-        <p class="muted">في التشغيل الحقيقي هتتحول لصفحة الدفع، والاشتراك يتفعّل تلقائياً عن طريق الـ Webhook.</p>
+      const m = modal(`<h2>وضع تجريبي</h2><p>مفاتيح ${esc(LABELS.provider[r.provider])} لم تُضف بعد، لذا هذا دفع تجريبي.</p>
+        <p class="muted">في التشغيل الفعلي ستنتقل إلى صفحة الدفع، ويُفعَّل الاشتراك تلقائيًا عن طريق الـ Webhook.</p>
         <button class="btn primary" data-sim>محاكاة دفع ناجح (${fmtMoney(r.payment.amount_egp)})</button>`);
       $('[data-sim]', m).addEventListener('click', (e) => run(e.target, async () => {
         await API.post(`/payments/${r.payment.reference}/dev-simulate-paid`);
@@ -1175,7 +1175,7 @@ Views.subscribe = async (el) => {
   const showSender = () => {
     const insta = $('#mf [name=provider]:checked', el)?.value === 'instapay';
     const input = $('#mf [name=sender_account]', el);
-    $('#sender-label', el).textContent = insta ? 'حساب إنستاباي اللي حوّلت منه' : 'رقم المحفظة اللي حوّلت منها';
+    $('#sender-label', el).textContent = insta ? 'حساب إنستاباي الذي حوّلت منه' : 'رقم المحفظة التي حوّلت منها';
     input.placeholder = insta ? 'name@instapay' : '01xxxxxxxxx';
     input.inputMode = insta ? 'email' : 'numeric';
     if (insta) input.removeAttribute('pattern');
@@ -1184,7 +1184,7 @@ Views.subscribe = async (el) => {
   $$('#mf [name=provider]', el).forEach((r) => r.addEventListener('change', showSender));
   showSender();
   onSubmit($('#mf', el), async (v, form) => {
-    if (!v.provider) throw new Error('اختار إنت حوّلت على المحفظة الإلكترونية ولا إنستاباي');
+    if (!v.provider) throw new Error('اختر هل حوّلت إلى المحفظة الإلكترونية أم إنستاباي');
     const fd = new FormData();
     for (const [k, val] of Object.entries(v)) if (val !== undefined) fd.append(k, val);
     fd.append('receipt', form.receipt.files[0]);
@@ -1205,7 +1205,7 @@ Views.offers = async (el) => {
       <div class="price">${fmtMoney(p.final_price)} ${p.discount_percent ? `<s class="muted">${fmtMoney(p.original_price)}</s>` : ''}</div>
       ${p.coupon_code ? `<p>كود الخصم: <b class="mono">${esc(p.coupon_code)}</b></p>` : ''}
       ${p.external_url ? `<a class="btn primary" href="${esc(p.external_url)}" target="_blank" rel="noopener noreferrer">اطلب الآن</a>` : ''}
-    </div>`).join('')}</div>` : empty('مفيش عروض حالياً')}`;
+    </div>`).join('')}</div>` : empty('لا توجد عروض حاليًا')}`;
 };
 
 // ---------------------------------------------------------------- Parent report
@@ -1214,7 +1214,7 @@ Views.report = async (el) => {
   el.innerHTML = `<h1 class="page-head">تقرير ولي الأمر</h1>
     <section class="card"><h2>التقرير الأسبوعي</h2>
       <pre class="report">${esc(text)}</pre>
-      <p class="muted">ده اللي ولي أمرك بيشوفه — الإدارة هي اللي بتبعته.</p></section>
+      <p class="muted">هذا ما يراه ولي أمرك — والإدارة هي التي ترسله.</p></section>
     <section class="card"><h2>التقارير المرسلة</h2>${reports.length ? table(['التاريخ', 'الفترة', 'الطريقة', 'الحالة'],
-      reports.map((r) => [fmtDate(r.sent_at), `${esc(r.period_start.slice(0, 10))} ← ${esc(r.period_end.slice(0, 10))}`, esc({ email: 'إيميل', sms: 'رسالة', log: 'تجريبي' }[r.channel]), badge(r.status === 'sent' ? 'تم' : 'فشل', r.status === 'sent' ? 'good' : 'bad')])) : empty('لسه متبعتش تقارير')}</section>`;
+      reports.map((r) => [fmtDate(r.sent_at), `${esc(r.period_start.slice(0, 10))} ← ${esc(r.period_end.slice(0, 10))}`, esc({ email: 'إيميل', sms: 'رسالة', log: 'تجريبي' }[r.channel]), badge(r.status === 'sent' ? 'تم' : 'فشل', r.status === 'sent' ? 'good' : 'bad')])) : empty('لم تُرسل تقارير بعد')}</section>`;
 };

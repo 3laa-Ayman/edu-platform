@@ -38,7 +38,7 @@ router.get('/subjects', async (req, res) => {
 
 router.get('/questions', requireSubscription('practice'), validate({
   query: z.object({
-    subject_id: z.coerce.number({ message: 'اختار المادة اللي هتحل عليها' }).int().positive(),
+    subject_id: z.coerce.number({ message: 'اختر المادة التي ستحل أسئلتها' }).int().positive(),
     lesson_id: z.coerce.number().int().positive().optional(),
     category: z.enum(['lesson', 'past_exam']).optional(),
     exam_year: z.coerce.number().int().optional(),

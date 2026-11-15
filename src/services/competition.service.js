@@ -71,7 +71,7 @@ async function startEntry(competitionId, user) {
     let teamId = null;
     if (comp.type === 'team_weekly') {
       const team = await getTeamOf(user.id, c);
-      if (!team) throw forbidden('يجب أن تكون عضواً في تيم للمشاركة في مسابقة الجمعة (سيتم توزيعك تلقائياً قبل المسابقة)', 'TEAM_REQUIRED');
+      if (!team) throw forbidden('يجب أن تكون عضواً في فريق للمشاركة في مسابقة الجمعة (سيتم توزيعك تلقائياً قبل المسابقة)', 'TEAM_REQUIRED');
       teamId = team.id;
     }
 
@@ -257,7 +257,7 @@ async function leaderboard(competitionId, limit = 100) {
 async function review(competitionId, userId) {
   const comp = await getCompetition(competitionId);
   await finalizeExpired({ competitionId, userId });
-  if (!comp.results_published_at) throw forbidden('النتيجة لسه ماتعلنتش — هتظهر لما الإدارة تعلنها', 'RESULTS_HIDDEN');
+  if (!comp.results_published_at) throw forbidden('لم تُعلن النتيجة بعد — ستظهر عندما تعلنها الإدارة', 'RESULTS_HIDDEN');
   if (new Date() < comp.ends_at) throw forbidden('تظهر الإجابات الصحيحة بعد انتهاء المسابقة');
   const { rows } = await db.query(
     `SELECT q.id AS question_id, q.question_text, q.option_a, q.option_b, q.option_c, q.option_d,

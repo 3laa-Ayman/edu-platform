@@ -32,10 +32,10 @@ const ROUTES = [
 ];
 
 const NAV = {
-  student: [['/', 'الرئيسية'], ['/practice', 'التدريب'], ['/mistakes', 'بنك الأخطاء'], ['/competitions', 'المسابقات'], ['/team', 'التيم'],
+  student: [['/', 'الرئيسية'], ['/practice', 'التدريب'], ['/mistakes', 'بنك الأخطاء'], ['/competitions', 'المسابقات'], ['/team', 'الفريق'],
     ['/planner', 'المذاكرة'], ['/subscribe', 'الاشتراك'], ['/offers', 'العروض']],
   admin: [['/admin', 'اللوحة'], ['/admin/questions', 'الأسئلة'], ['/admin/subjects', 'المواد'], ['/admin/students', 'الطلاب'],
-    ['/admin/payments', 'المدفوعات'], ['/admin/plans', 'الباقات'], ['/admin/competitions', 'المسابقات'], ['/admin/teams', 'التيمات'],
+    ['/admin/payments', 'المدفوعات'], ['/admin/plans', 'الباقات'], ['/admin/competitions', 'المسابقات'], ['/admin/teams', 'الفرق'],
     ['/admin/products', 'المنتجات'], ['/admin/announcements', 'الإعلانات'], ['/admin/settings', 'الإعدادات']],
 };
 
@@ -128,8 +128,8 @@ async function render() {
     await route.view(el, route.params, query);
   } catch (err) {
     if (isSubError(err)) subscriptionWall(el, err);
-    else el.innerHTML = `<div class="card center"><h2>حصلت مشكلة</h2><p class="muted">${esc(errorText(err))}</p>
-      <button class="btn primary" data-retry>حاول تاني</button></div>`;
+    else el.innerHTML = `<div class="card center"><h2>حدثت مشكلة</h2><p class="muted">${esc(errorText(err))}</p>
+      <button class="btn primary" data-retry>حاول مرة أخرى</button></div>`;
     $('[data-retry]', el)?.addEventListener('click', render);
   }
   window.scrollTo(0, 0);

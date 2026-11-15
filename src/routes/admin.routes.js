@@ -140,7 +140,7 @@ router.post('/payments/:id/reject', validate({ params: idParam, body: z.object({
   if (r.rows[0].user_id) {
     await notify(db, r.rows[0].user_id, {
       kind: 'payment_rejected', tone: 'warning', link: '#/subscribe',
-      title: '❌ الإيصال اترفض', body: `السبب: ${req.body.note} — تقدر ترفع إيصال جديد من صفحة الاشتراك.`,
+      title: '❌ تم رفض الإيصال', body: `السبب: ${req.body.note} — يمكنك رفع إيصال جديد من صفحة الاشتراك.`,
     });
   }
   res.json({ message: 'تم رفض الإيصال' });
@@ -320,7 +320,7 @@ const announcementBody = z.object({
   body: z.string().trim().max(5000).default(''),
   tone: z.enum(['info', 'success', 'warning']).default('info'),
   audience: z.enum(['all', 'subscribers', 'free']).default('all'),
-  link_url: z.string().url().regex(/^https?:\/\//i, 'الرابط لازم يبدأ بـ https://').max(500).optional().nullable(),
+  link_url: z.string().url().regex(/^https?:\/\//i, 'يجب أن يبدأ الرابط بـ https://').max(500).optional().nullable(),
   pinned: z.boolean().default(false),
   is_active: z.boolean().default(true),
   starts_at: z.coerce.date().optional().nullable(),

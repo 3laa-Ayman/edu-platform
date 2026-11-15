@@ -69,7 +69,7 @@ async function authenticate(req, res, next) {
   if (!user || !user.is_active || user.token_version !== payload.tv) throw unauthorized();
   // Students: one session at a time — an older token means the account was opened on another device since.
   if (user.role === 'student' && (!payload.sid || payload.sid !== user.active_session)) {
-    throw new AppError(401, 'اتفتح حسابك من جهاز تاني، فاتقفل هنا. الحساب يتفتح على جهاز واحد بس في نفس الوقت.', 'SESSION_REPLACED');
+    throw new AppError(401, 'فُتح حسابك من جهاز آخر، فأُغلق هنا. لا يمكن فتح الحساب إلا على جهاز واحد في الوقت نفسه.', 'SESSION_REPLACED');
   }
   req.user = user;
   next();

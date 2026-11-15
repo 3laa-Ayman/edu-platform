@@ -131,7 +131,7 @@ router.post('/login', authLimiter, validate({
   const guardKey = guard.keyFor(user, id);
   const mins = await guard.lockedFor(guardKey);
   if (mins) {
-    throw new AppError(429, `محاولات كتير بكلمة مرور غلط على الحساب ده — حاول بعد ${mins} دقيقة، أو استخدم «نسيت كلمة المرور»`, 'ACCOUNT_LOCKED');
+    throw new AppError(429, `محاولات كثيرة بكلمة مرور خاطئة على هذا الحساب — حاول بعد ${mins} دقيقة، أو استخدم «نسيت كلمة المرور»`, 'ACCOUNT_LOCKED');
   }
   const ok = await bcrypt.compare(req.body.password, user?.password_hash || DUMMY_HASH);
   if (!user?.password_hash || !ok) {
@@ -157,7 +157,7 @@ router.post('/login', authLimiter, validate({
     device_verification: true,
     device_token: signDeviceToken(user, keyHash),
     email_hint: maskEmail(user.email),
-    message: 'ده جهاز جديد — أرسلنا رمز تأكيد على إيميلك',
+    message: 'هذا جهاز جديد — أرسلنا رمز تأكيد إلى بريدك الإلكتروني',
     ...devOtp(code),
   });
 });
@@ -183,7 +183,7 @@ router.post('/resend-device-otp', otpLimiter, validate({ body: z.object({ device
   if (!u) throw unauthorized();
   const code = await issueOtp(db, u.id, 'new_device');
   await sendOtpEmail(u.email, code, 'new_device');
-  res.json({ message: 'أرسلنا رمز جديد', ...devOtp(code) });
+  res.json({ message: 'أرسلنا رمزاً جديداً', ...devOtp(code) });
 });
 
 /** The student's devices (max 2) — they can remove the other one, a limited number of times a month. */

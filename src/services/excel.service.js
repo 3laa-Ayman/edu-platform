@@ -161,7 +161,7 @@ async function parseQuestionSheet(buffer, { defaultSubject } = {}) {
       if (media[slot]) { rowErrors.push(`أكثر من صورة في خانة ${SLOT_LABEL[slot]}`); continue; }
       const mime = sniffMime(buffer);
       if (!mime) rowErrors.push(`صورة ${SLOT_LABEL[slot]} بصيغة غير مدعومة (PNG / JPG / WEBP / GIF)`);
-      else if (buffer.length > MAX_IMAGE_BYTES) rowErrors.push(`صورة ${SLOT_LABEL[slot]} أكبر من 2MB — صغّرها`);
+      else if (buffer.length > MAX_IMAGE_BYTES) rowErrors.push(`صورة ${SLOT_LABEL[slot]} أكبر من 2MB — يرجى تصغيرها`);
       else media[slot] = { buffer, mime, hash: sha256(buffer) };
     }
     const passageImage = media.passage || null;
@@ -172,7 +172,7 @@ async function parseQuestionSheet(buffer, { defaultSubject } = {}) {
     // A row with only the passage (no question, no options) just defines the passage for its number.
     if (!r.question && !media.question && !['a', 'b', 'c', 'd'].some((k) => r[`option_${k}`] || media[`option_${k}`])) {
       if (rowErrors.length) errors.push({ row: i, errors: rowErrors });
-      else if (!passageKey && (passageText || passageImage)) errors.push({ row: i, errors: ['صف فيه قطعة من غير أسئلة — اكتب "رقم القطعة" فيه وفي صفوف أسئلتها'] });
+      else if (!passageKey && (passageText || passageImage)) errors.push({ row: i, errors: ['صف يحتوي على قطعة بدون أسئلة — اكتب "رقم القطعة" فيه وفي صفوف أسئلتها'] });
       else if (passageText || passageImage) parsed.push({ row: i, passageOnly: true, passage: passageInfo });
       continue;
     }
@@ -229,8 +229,8 @@ async function parseQuestionSheet(buffer, { defaultSubject } = {}) {
     if (p.passageOnly) continue;
     const { rowErrors, passage, group, ...r } = p;
     if (group) {
-      if (!group.text && !group.image) rowErrors.push(`القطعة رقم "${group.key}" مفيهاش نص ولا صورة في أي صف`);
-      else if (group.conflicts.includes(p.row)) rowErrors.push(`نص أو صورة القطعة رقم "${group.key}" مختلف عن صف تاني بنفس الرقم`);
+      if (!group.text && !group.image) rowErrors.push(`القطعة رقم "${group.key}" لا تحتوي على نص ولا صورة في أي صف`);
+      else if (group.conflicts.includes(p.row)) rowErrors.push(`نص أو صورة القطعة رقم "${group.key}" مختلف عن صف آخر بنفس الرقم`);
       else {
         r.passage = { text: group.text || null, image: group.image };
         r.passage_hash = passageHash(group.text, group.image?.hash);

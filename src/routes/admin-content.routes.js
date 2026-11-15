@@ -161,7 +161,7 @@ router.delete('/questions/:id/media/:slot', validate({ params: slotParams }), as
 // ------------------------------------------------------------------ Reading passages / shared figures
 // A passage is shared by several questions: editing it here changes it for all of them.
 const emptyPassage = (err) => {
-  if (err.code === '23514') throw badRequest('القطعة لازم يبقى فيها نص أو صورة');
+  if (err.code === '23514') throw badRequest('يجب أن تحتوي القطعة على نص أو صورة');
   throw err;
 };
 async function rehashPassage(c, id) {
@@ -169,7 +169,7 @@ async function rehashPassage(c, id) {
   try {
     await c.query(`UPDATE passages SET content_hash = $2 WHERE id = $1`, [id, passageHash(p.passage_text, p.image_hash)]);
   } catch (err) {
-    if (err.code === '23505') throw conflict('فيه قطعة تانية بنفس النص والصورة بالظبط');
+    if (err.code === '23505') throw conflict('توجد قطعة أخرى بنفس النص والصورة تماماً');
     throw err;
   }
 }
@@ -209,7 +209,7 @@ router.delete('/passages/:id/image', validate({ params: idParam }), async (req, 
 /** Unlinks one question from its passage (the passage stays for its other questions). */
 router.delete('/questions/:id/passage', validate({ params: idParam }), async (req, res) => {
   const r = await db.query(`UPDATE questions SET passage_id = NULL, updated_at = now() WHERE id = $1 AND passage_id IS NOT NULL`, [req.p.id]);
-  if (!r.rowCount) throw notFound('السؤال مش مربوط بقطعة');
+  if (!r.rowCount) throw notFound('السؤال غير مرتبط بقطعة');
   res.status(204).end();
 });
 
@@ -228,7 +228,7 @@ router.delete('/questions/:id', validate({ params: idParam, query: z.object({ fo
   const { rowCount: live } = await db.query(
     `SELECT 1 FROM competition_questions cq JOIN competitions c ON c.id = cq.competition_id
       WHERE cq.question_id = $1 AND c.ends_at > now() LIMIT 1`, [req.p.id]);
-  if (live) throw conflict('السؤال داخل مسابقة لسه ما خلصتش، احذفه بعد ما المسابقة تخلص أو اخفيه دلوقتي');
+  if (live) throw conflict('السؤال داخل مسابقة لم تنتهِ بعد، احذفه بعد انتهاء المسابقة أو أخفِه الآن');
   const r = await db.query(`DELETE FROM questions WHERE id = $1`, [req.p.id]);
   if (!r.rowCount) throw notFound('السؤال غير موجود');
   return res.json({ deleted: true, message: 'تم حذف السؤال' });
@@ -332,7 +332,7 @@ router.delete('/admins/:id', validate({ params: idParam }), async (req, res) => 
     const { rows: [a] } = await c.query(`SELECT id, email FROM users WHERE id = $1 AND role = 'admin' FOR UPDATE`, [req.p.id]);
     if (!a) throw notFound('الأدمن غير موجود');
     const { rows: [n] } = await c.query(`SELECT COUNT(*)::int AS n FROM users WHERE role = 'admin' AND is_active AND id <> $1`, [a.id]);
-    if (!n.n) throw conflict('لازم يفضل أدمن واحد نشط على الأقل');
+    if (!n.n) throw conflict('يجب أن يبقى أدمن واحد نشط على الأقل');
     await c.query(`DELETE FROM users WHERE id = $1`, [a.id]);
     return a;
   });

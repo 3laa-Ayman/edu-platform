@@ -12,13 +12,13 @@ Admin.dashboard = async (el) => {
   const d = await API.get('/admin/dashboard');
   const tiles = [
     ['الطلاب', d.students, d.pending_registrations ? `${d.pending_registrations} لم يكملوا التسجيل` : '', '#/admin/students'],
-    ['المشتركين حالياً', d.active_subscribers, '', '#/admin/students'],
+    ['المشتركون حاليًا', d.active_subscribers, '', '#/admin/students'],
     ['الإيرادات', fmtMoney(d.revenue_egp), 'مدفوعات مؤكدة', '#/admin/payments?status=paid'],
     ['إيصالات للمراجعة', d.receipts_pending_review, '', '#/admin/payments'],
     ['الأسئلة', d.questions, '', '#/admin/questions'],
     ['تكلفة الذكاء الاصطناعي', fmtMoney(d.ai_cost_egp, 3), `${d.students_at_ai_limit} طالب عند الحد`, '#/admin/settings'],
-    ['التيمات', d.teams, '', '#/admin/teams'],
-    ['اشتراكات هتخلص خلال 7 أيام', d.expiring_soon, d.expiring_soon ? 'كلّمهم يجددوا' : '', '#/admin/students?expiring=7'],
+    ['الفرق', d.teams, '', '#/admin/teams'],
+    ['اشتراكات تنتهي خلال 7 أيام', d.expiring_soon, d.expiring_soon ? 'تواصل معهم للتجديد' : '', '#/admin/students?expiring=7'],
   ];
   el.innerHTML = `<h1 class="page-head">لوحة التحكم</h1>
     <section class="tiles">${tiles.map(([l, v, s, href]) => `<a href="${href}" class="tile"><span class="tile-label">${l}</span><b>${esc(v)}</b><small>${esc(s)}</small></a>`).join('')}</section>
@@ -48,9 +48,9 @@ Admin.subjects = async (el) => {
       ${s.lessons.length ? `<ul class="list">${s.lessons.map((l) => `<li>
         <span><b>${esc(l.name)}</b><small class="muted">${esc(l.lesson_type || '')} · ${l.questions} سؤال</small></span>
         <span class="row"><button class="btn ghost tiny" data-action="editLesson" data-id="${l.id}" data-name="${esc(l.name)}" data-type="${esc(l.lesson_type || '')}">تعديل</button>
-        <button class="btn danger tiny" data-action="deleteLesson" data-id="${l.id}" data-name="${esc(l.name)}">حذف</button></span></li>`).join('')}</ul>` : '<p class="muted">مفيش دروس لسه.</p>'}
+        <button class="btn danger tiny" data-action="deleteLesson" data-id="${l.id}" data-name="${esc(l.name)}">حذف</button></span></li>`).join('')}</ul>` : '<p class="muted">لا توجد دروس بعد.</p>'}
       <form class="form inline" data-add-lesson="${s.id}"><input name="name" required placeholder="درس جديد"><input name="lesson_type" placeholder="نوع الدرس (اختياري)"><button class="btn ghost" type="submit">إضافة درس</button></form>
-    </section>`).join('') : empty('مفيش مواد لسه. ضيف مادة أو ارفع شيت أسئلة.')}`;
+    </section>`).join('') : empty('لا توجد مواد بعد. أضف مادة أو ارفع شيت أسئلة.')}`;
 
   const reload = () => Admin.subjects(el);
   onSubmit($('#sf', el), async (v) => { await API.post('/admin/subjects', v); toast('تمت إضافة المادة'); reload(); });
@@ -84,7 +84,7 @@ Admin.subjects = async (el) => {
       onSubmit($('#mf', m), async (v) => { await API.patch(`/admin/lessons/${b.dataset.id}`, { name: v.name, lesson_type: v.lesson_type || null }); closeModal(); reload(); });
     },
     deleteLesson: (b) => run(b, async () => {
-      if (!confirm(`حذف درس "${b.dataset.name}"؟ أسئلته هتفضل في المادة من غير درس.`)) return;
+      if (!confirm(`حذف درس "${b.dataset.name}"؟ ستبقى أسئلته في المادة بدون درس.`)) return;
       await API.del(`/admin/lessons/${b.dataset.id}`);
       reload();
     }),
@@ -103,20 +103,20 @@ function questionForm(q, subjects) {
       <label>الدرس<select name="lesson_id"><option value="">بدون درس</option>${(subj?.lessons || []).map((l) => opt(l.id, l.name, q?.lesson_id)).join('')}</select></label>
     </div>
     ${q?.passage ? `<fieldset class="features-box admin-passage"><legend>📖 القطعة / الرسمة المشتركة (#${q.passage.id})</legend>
-      <p class="muted hint">⚠️ القطعة دي مشتركة بين كل أسئلتها — أي تعديل هنا بيتطبق عليهم كلهم.</p>
+      <p class="muted hint">⚠️ هذه القطعة مشتركة بين كل أسئلتها — أي تعديل هنا يُطبَّق عليها جميعًا.</p>
       <label>نص القطعة<textarea name="passage_text" rows="6">${esc(q.passage.text || '')}</textarea></label>
       <div class="media-slot">
         <b>صورة القطعة / الرسمة</b>
         ${q.passage.image ? `<img src="${esc(q.passage.image)}" alt="صورة القطعة"><label class="check"><input type="checkbox" name="rm_passage_image"> حذف الصورة</label>` : ''}
         <input type="file" name="img_passage" accept="image/png,image/jpeg,image/webp,image/gif">
       </div>
-      <label class="check"><input type="checkbox" name="unlink_passage"> فك السؤال ده بس من القطعة</label>
+      <label class="check"><input type="checkbox" name="unlink_passage"> فصل هذا السؤال فقط عن القطعة</label>
     </fieldset>` : ''}
     <label>نص السؤال<textarea name="question_text" rows="3">${esc(q?.question_text || '')}</textarea></label>
     <p class="muted hint">✏️ الأس: اكتب <code>10^8</code> أو <code>10^{-19}</code> ← 10<sup>8</sup> · الرقم الصغير تحت: <code>H_2O</code> ← H<sub>2</sub>O</p>
     <div class="math-preview" aria-live="polite"></div>
     <div class="grid2">${['a', 'b', 'c', 'd'].map((k, i) => `<label>${'أبجد'[i]}<input name="option_${k}" value="${esc(q?.[`option_${k}`] || '')}"></label>`).join('')}</div>
-    <fieldset class="features-box"><legend>الصور (اختياري — ممكن السؤال أو الاختيار يبقى صورة بس)</legend>
+    <fieldset class="features-box"><legend>الصور (اختياري — يمكن أن يكون السؤال أو الاختيار صورة فقط)</legend>
       <div class="media-grid">${MEDIA_SLOTS.map(([slot, label]) => `<div class="media-slot" data-slot="${slot}">
         <b>${label}</b>
         ${media[slot] ? `<img src="${esc(media[slot])}" alt="${label}"><label class="check"><input type="checkbox" name="rm_${slot}"> حذف الصورة</label>` : ''}
@@ -129,7 +129,7 @@ function questionForm(q, subjects) {
       <label>سنة الامتحان (للامتحانات السابقة)<input type="number" name="exam_year" min="1990" max="2100" value="${esc(q?.exam_year || '')}"></label>
       <label>نوع الدرس<input name="lesson_type" value="${esc(q?.lesson_type || '')}"></label>
     </div>
-    <label>الشرح (بيظهر للطالب مجاناً بدل الذكاء الاصطناعي)<textarea name="explanation" rows="4">${esc(q?.explanation || '')}</textarea></label>
+    <label>الشرح (يظهر للطالب مجانًا بدلًا من الذكاء الاصطناعي)<textarea name="explanation" rows="4">${esc(q?.explanation || '')}</textarea></label>
     <label>القانون / الملحوظة<input name="law_note" value="${esc(q?.law_note || '')}"></label>
     <label class="check"><input type="checkbox" name="is_active" ${q?.is_active === false ? '' : 'checked'}> السؤال ظاهر للطلاب</label>
     <button class="btn primary" type="submit">${q ? 'حفظ التعديلات' : 'إضافة السؤال'}</button></form>`;
@@ -155,7 +155,7 @@ async function prepareImage(file) {
 }
 
 function openQuestionModal(q, subjects, onSaved) {
-  if (!subjects.length) { toast('ضيف مادة الأول من صفحة المواد', 'err'); return; }
+  if (!subjects.length) { toast('أضف مادة أولًا من صفحة المواد', 'err'); return; }
   const m = modal(`<h2>${q ? `تعديل السؤال #${q.id}` : 'سؤال جديد'}</h2>${questionForm(q, subjects)}`);
   const f = $('#qf', m);
   f.subject_id.addEventListener('change', () => {
@@ -183,9 +183,9 @@ function openQuestionModal(q, subjects, onSaved) {
   onSubmit(f, async (v) => {
     const files = Object.fromEntries(MEDIA_SLOTS.map(([slot]) => [slot, f[`img_${slot}`].files[0]]));
     const keeps = (slot) => Boolean(files[slot] || (q?.media?.[slot] && !v[`rm_${slot}`]));
-    if (!v.question_text && !keeps('question')) throw new Error('اكتب نص السؤال أو ضيف صورة له');
+    if (!v.question_text && !keeps('question')) throw new Error('اكتب نص السؤال أو أضف صورة له');
     for (const [k, L] of [['option_a', 'أ'], ['option_b', 'ب'], ['option_c', 'ج'], ['option_d', 'د']]) {
-      if (!v[k] && !keeps(k)) throw new Error(`الاختيار ${L} محتاج نص أو صورة`);
+      if (!v[k] && !keeps(k)) throw new Error(`الاختيار ${L} يحتاج إلى نص أو صورة`);
     }
     const body = {
       subject_id: Number(v.subject_id),
@@ -205,7 +205,7 @@ function openQuestionModal(q, subjects, onSaved) {
       // Shared passage: saved before the question so the question's duplicate check uses the new passage.
       const newText = (v.passage_text ?? '').trim();
       const passageImage = f.img_passage.files[0];
-      if (!newText && (v.rm_passage_image || !p.image) && !passageImage) throw new Error('القطعة لازم يبقى فيها نص أو صورة');
+      if (!newText && (v.rm_passage_image || !p.image) && !passageImage) throw new Error('يجب أن تحتوي القطعة على نص أو صورة');
       if (passageImage) {
         const fd = new FormData();
         fd.append('image', await prepareImage(passageImage), passageImage.name);
@@ -242,12 +242,12 @@ Admin.questions = async (el, params, query) => {
 
   el.innerHTML = `<div class="page-head"><h1>بنك الأسئلة</h1><button class="btn primary" data-action="new">+ سؤال جديد</button></div>
     <section class="card"><div class="card-head"><h2>رفع شيت Excel</h2><button class="btn ghost tiny" data-action="template">⬇ تحميل النموذج</button></div>
-      <p class="muted">الأعمدة: السؤال · صورة السؤال · أ · ب · ج · د · الإجابة الصحيحة · الشرح · القانون/الملحوظة · المادة · الدرس · نوع الدرس · التصنيف (درس / امتحان سابق) · سنة الامتحان. المواد والدروس الجديدة بتتضاف لوحدها.</p>
-      <p class="muted">🖼 <b>الصور:</b> الصق الصورة جوه صف السؤال (Insert ← Pictures ← <b>Place over Cells</b>). في عمود "صورة السؤال" = صورة السؤال، في عمود اختيار = صورة الاختيار، في عمود الشرح = صورة الشرح. الملف كله لحد 4MB والصورة الواحدة لحد 2MB — لو الصور كتير قسّم الأسئلة على كذا ملف.</p>
-      <p class="muted">📖 <b>القطع والرسومات المشتركة (اختياري):</b> أعمدة <b>رقم القطعة</b> · <b>القطعة</b> · <b>صورة القطعة</b>. الأسئلة اللي ليها نفس "رقم القطعة" بتتربط بقطعة واحدة بتفضل ثابتة فوق أسئلتها والطالب بيتنقل بينهم. اكتب نص القطعة (أو الصق الرسمة في عمود "صورة القطعة") مرة واحدة في أي صف من صفوفها — أو في صف لوحده فيه رقم القطعة بس من غير سؤال.</p>
+      <p class="muted">الأعمدة: السؤال · صورة السؤال · أ · ب · ج · د · الإجابة الصحيحة · الشرح · القانون/الملحوظة · المادة · الدرس · نوع الدرس · التصنيف (درس / امتحان سابق) · سنة الامتحان. تُضاف المواد والدروس الجديدة تلقائيًا.</p>
+      <p class="muted">🖼 <b>الصور:</b> الصق الصورة داخل صف السؤال (Insert ← Pictures ← <b>Place over Cells</b>). في عمود "صورة السؤال" = صورة السؤال، في عمود اختيار = صورة الاختيار، في عمود الشرح = صورة الشرح. الحد الأقصى للملف 4MB وللصورة الواحدة 2MB — إذا كانت الصور كثيرة فقسّم الأسئلة على عدة ملفات.</p>
+      <p class="muted">📖 <b>القطع والرسومات المشتركة (اختياري):</b> أعمدة <b>رقم القطعة</b> · <b>القطعة</b> · <b>صورة القطعة</b>. الأسئلة التي لها نفس "رقم القطعة" تُربط بقطعة واحدة تبقى ثابتة فوق أسئلتها ويتنقل الطالب بينها. اكتب نص القطعة (أو الصق الرسمة في عمود "صورة القطعة") مرة واحدة في أي صف من صفوفها — أو في صف مستقل يحتوي على رقم القطعة فقط بدون سؤال.</p>
       <form id="uf" class="form grid3">
         <label class="span2">ملف .xlsx (حتى 4MB)<input type="file" name="file" accept=".xlsx" required></label>
-        <label>مادة افتراضية (لو مفيش عمود مادة)<input name="default_subject"></label>
+        <label>مادة افتراضية (إذا لم يوجد عمود مادة)<input name="default_subject"></label>
         <label class="check"><input type="checkbox" name="dry_run"> فحص فقط بدون حفظ</label>
         <button class="btn primary" type="submit">رفع</button>
       </form>
@@ -273,7 +273,7 @@ Admin.questions = async (el, params, query) => {
           esc(LABELS.category[q.category]) + (q.exam_year ? `<br><small class="muted">${q.exam_year}</small>` : ''),
           `<b>${letter(q.correct_option)}</b>`, q.explanation ? '✓' : badge('لا يوجد', 'mid'),
           `<div class="row"><button class="btn ghost tiny" data-action="edit" data-id="${q.id}">تعديل</button>
-            <button class="btn danger tiny" data-action="del" data-id="${q.id}">حذف</button></div>`])) : empty('مفيش أسئلة بالتصفية دي')}
+            <button class="btn danger tiny" data-action="del" data-id="${q.id}">حذف</button></div>`])) : empty('لا توجد أسئلة بهذه التصفية')}
       <div class="row between">${page > 1 ? `<a class="btn ghost tiny" href="#/admin/questions?${pageQs(query, page - 1)}">السابق</a>` : '<span></span>'}
         ${page * 20 < list.total ? `<a class="btn ghost tiny" href="#/admin/questions?${pageQs(query, page + 1)}">التالي</a>` : ''}</div>
     </section>`;
@@ -299,8 +299,8 @@ Admin.questions = async (el, params, query) => {
       const r = await API.upload(`/admin/questions/upload${v.dry_run ? '?dry_run=true' : ''}`, fd);
       const errs = r.errors || [];
       res.innerHTML = `<div class="notice ${errs.length ? 'mid' : 'good'}">${r.dry_run
-        ? `فحص: ${r.valid_rows} صف سليم (فيهم ${r.images} صورة${r.passages ? ` و${r.passages} قطعة/رسمة مشتركة` : ''})، ${r.failed} صف فيه أخطاء`
-        : `تم إضافة <b>${r.inserted}</b> سؤال و${r.images} صورة${r.passages ? ` و${r.passages} قطعة/رسمة مشتركة` : ''} · مكرر (اتجاهل): ${r.duplicates} · فيه أخطاء: ${r.failed}`}</div>
+        ? `فحص: ${r.valid_rows} صف سليم (بها ${r.images} صورة${r.passages ? ` و${r.passages} قطعة/رسمة مشتركة` : ''})، ${r.failed} صف به أخطاء`
+        : `تمت إضافة <b>${r.inserted}</b> سؤال و${r.images} صورة${r.passages ? ` و${r.passages} قطعة/رسمة مشتركة` : ''} · مكرر (تم تجاهله): ${r.duplicates} · به أخطاء: ${r.failed}`}</div>
         ${errs.length ? table(['الصف', 'الأخطاء'], errs.map((e) => [e.row, esc(e.errors.join('، '))])) : ''}`;
       if (!r.dry_run) { toast(`تم رفع ${r.inserted} سؤال`); setTimeout(reload, 1500); }
     } catch (err) {
@@ -317,7 +317,7 @@ Admin.questions = async (el, params, query) => {
       const id = b.dataset.id;
       let r = await API.del(`/admin/questions/${id}`);
       // Already answered: it was hidden; offer to delete it for good.
-      if (r.hidden && confirm(`السؤال ده اتحل قبل كده (${r.answers} إجابة)، فاتخفى عن الطلاب.\n\nعايز تحذفه نهائيًا؟ ده هيمسح إجاباته من إحصائيات الطلاب وبنك الأخطاء، ومش هينفع ترجعه.`)) {
+      if (r.hidden && confirm(`تمت الإجابة عن هذا السؤال من قبل (${r.answers} إجابة)، لذلك أُخفي عن الطلاب.\n\nهل تريد حذفه نهائيًا؟ سيؤدي ذلك إلى مسح إجاباته من إحصائيات الطلاب وبنك الأخطاء، ولا يمكن استرجاعه.`)) {
         r = await API.del(`/admin/questions/${id}?force=true`);
       }
       toast(r.message);
@@ -347,7 +347,7 @@ Admin.payments = async (el, params, query) => {
         ${p.status === 'under_review' ? `<button class="btn primary tiny" data-action="approve" data-id="${p.id}">قبول</button>
           <button class="btn danger tiny" data-action="reject" data-id="${p.id}">رفض</button>` : esc(p.admin_note || '')}
         <button class="btn ghost tiny" data-action="del" data-id="${p.id}" data-status="${p.status}" title="حذف العملية">🗑️</button></div>`]))
-      : empty('مفيش عمليات هنا')}</section>`;
+      : empty('لا توجد عمليات هنا')}</section>`;
   const reload = () => Admin.payments(el, params, query);
   onAction(el, {
     receipt: (b) => run(b, async () => {
@@ -368,20 +368,20 @@ Admin.payments = async (el, params, query) => {
       const paid = p.status === 'paid';
       const m = modal(`<h2>🗑️ حذف العملية؟</h2>
         <p>${esc(p.full_name)} — ${esc(p.plan_code)} — <b>${fmtMoney(p.amount_egp)}</b> (${esc(LABELS.paymentStatus[p.status])})</p>
-        <p class="notice bad">العملية وصورة الإيصال هيتمسحوا نهائياً${paid ? '، والإيرادات هتقل بالمبلغ ده' : ''}.</p>
+        <p class="notice bad">ستُحذف العملية وصورة الإيصال نهائيًا${paid ? '، وستقل الإيرادات بهذا المبلغ' : ''}.</p>
         <form class="form" id="pdf">
-          ${paid ? `<label class="check"><input type="checkbox" name="cancel_subscription"> إلغاء الاشتراك اللي الطالب أخده بالدفع ده كمان</label>
-            <p class="muted small">لو مش متعلّم عليه، اشتراك الطالب بيفضل شغال عادي.</p>` : ''}
+          ${paid ? `<label class="check"><input type="checkbox" name="cancel_subscription"> إلغاء الاشتراك الذي حصل عليه الطالب بهذا الدفع أيضًا</label>
+            <p class="muted small">إذا لم تحدده، يظل اشتراك الطالب ساريًا كالمعتاد.</p>` : ''}
           <button class="btn danger" type="submit">حذف</button></form>`);
       onSubmit($('#pdf', m), async (v) => {
         const r = await API.req('DELETE', `/admin/payments/${p.id}`, { cancel_subscription: Boolean(v.cancel_subscription) });
         closeModal();
-        toast(r.subscription_cancelled ? 'اتمسحت العملية واتلغى الاشتراك' : 'اتمسحت العملية');
+        toast(r.subscription_cancelled ? 'تم حذف العملية وإلغاء الاشتراك' : 'تم حذف العملية');
         reload();
       });
     },
     reject: (b) => {
-      const m = modal(`<h2>رفض الإيصال</h2><form class="form" id="rf"><label>السبب (هيظهر للطالب)<input name="note" required minlength="3" value="الإيصال غير واضح أو المبلغ غير مطابق"></label>
+      const m = modal(`<h2>رفض الإيصال</h2><form class="form" id="rf"><label>السبب (سيظهر للطالب)<input name="note" required minlength="3" value="الإيصال غير واضح أو المبلغ غير مطابق"></label>
         <button class="btn danger" type="submit">رفض</button></form>`);
       onSubmit($('#rf', m), async (v) => {
         await API.post(`/admin/payments/${b.dataset.id}/reject`, v);
@@ -399,7 +399,7 @@ function planFields(p, features) {
       <label>اسم الباقة<input name="name_ar" required value="${esc(p?.name_ar || '')}"></label>
       <label>السعر (جنيه)<input type="number" name="price_egp" min="0" step="0.01" required value="${esc(p?.price_egp ?? '')}"></label>
       <label>المدة (يوم)<input type="number" name="duration_days" min="1" required value="${esc(p?.duration_days ?? 30)}"></label>
-      <label title="الباقة الأعلى في الترتيب بتعتبر الأفضل وبتظهر في الآخر">ترتيب العرض<input type="number" name="rank" min="0" max="100" required value="${esc(p?.rank ?? 1)}"></label>
+      <label title="الباقة الأعلى في الترتيب تُعتبر الأفضل وتظهر في النهاية">ترتيب العرض<input type="number" name="rank" min="0" max="100" required value="${esc(p?.rank ?? 1)}"></label>
     </div>
     <fieldset class="features-box"><legend>المميزات المتاحة في الباقة</legend>
       ${features.map((f) => `<label class="check"><input type="checkbox" name="f_${f}" ${p?.features?.[f] ? 'checked' : ''}> ${esc(LABELS.feature[f] || f)}</label>`).join('')}
@@ -414,7 +414,7 @@ const planPayload = (v, features) => ({
 Admin.plans = async (el) => {
   const { plans, features } = await API.get('/admin/plans');
   el.innerHTML = `<h1 class="page-head">الباقات والأسعار</h1>
-    <p class="muted">تغيير السعر أو المدة بيطبّق على الاشتراكات الجديدة. إلغاء ميزة من باقة بيقفلها فوراً على المشتركين فيها.</p>
+    <p class="muted">تغيير السعر أو المدة يُطبَّق على الاشتراكات الجديدة. إلغاء ميزة من باقة يغلقها فورًا على المشتركين فيها.</p>
     <div class="grid-cards plans-admin">${plans.map((p) => `<form class="card form" data-plan="${esc(p.code)}">
       <div class="card-head"><h2>${esc(p.name_ar)}</h2><span class="row">${badge(p.code)} ${p.is_active ? '' : badge('مخفية', 'bad')}</span></div>
       <p class="muted">${p.active_subscribers} مشترك حالياً</p>
@@ -447,7 +447,7 @@ Admin.plans = async (el) => {
  * Question picker for competitions: filter by subject / lesson / category / text, tick questions (kept across
  * filters and pages). `selected` is a Set of question ids, updated in place; onDone runs on the main button.
  */
-function pickQuestions({ subjects, selected, title = 'اختار أسئلة المسابقة', saveLabel = 'تم', onDone }) {
+function pickQuestions({ subjects, selected, title = 'اختر أسئلة المسابقة', saveLabel = 'تم', onDone }) {
   const m = modal(`<h2>${esc(title)}</h2>
     <form class="form grid3" id="pkf">
       <label>المادة<select name="subject_id"><option value="">كل المواد</option>${subjects.map((s) => opt(s.id, s.name)).join('')}</select></label>
@@ -456,7 +456,7 @@ function pickQuestions({ subjects, selected, title = 'اختار أسئلة ال
       <label class="span3">بحث في نص السؤال<input name="search" placeholder="كلمة من السؤال"></label>
     </form>
     <div class="row wrap pick-bar"><span class="badge good" id="pk-count"></span>
-      <button class="btn ghost tiny" type="button" id="pk-page">اختار كل اللي ظاهر</button>
+      <button class="btn ghost tiny" type="button" id="pk-page">اختر كل الظاهر</button>
       <button class="btn ghost tiny" type="button" id="pk-clear">إلغاء الاختيار</button></div>
     <div id="pk-list" class="pick-list"></div>
     <button class="btn ghost tiny" type="button" id="pk-more" hidden>عرض المزيد</button>
@@ -478,7 +478,7 @@ function pickQuestions({ subjects, selected, title = 'اختار أسئلة ال
     for (const k of ['subject_id', 'lesson_id', 'category', 'search']) if (v[k]) qs.set(k, v[k]);
     const r = await API.get(`/admin/questions?${qs}`);
     items = items.concat(r.items.filter((q) => q.is_active)); // hidden questions can't be in a competition
-    $('#pk-list', m).innerHTML = items.length ? items.map(row).join('') : empty('مفيش أسئلة بالفلتر ده');
+    $('#pk-list', m).innerHTML = items.length ? items.map(row).join('') : empty('لا توجد أسئلة بهذا الفلتر');
     $('#pk-more', m).hidden = page * 50 >= r.total;
   }
   f.subject_id.addEventListener('change', () => {
@@ -506,7 +506,7 @@ function pickQuestions({ subjects, selected, title = 'اختار أسئلة ال
   });
   $('#pk-more', m).addEventListener('click', (e) => run(e.target, () => { page++; return load(false); }));
   $('#pk-done', m).addEventListener('click', (e) => run(e.target, async () => {
-    if (!selected.size) throw new Error('اختار سؤال واحد على الأقل');
+    if (!selected.size) throw new Error('اختر سؤالًا واحدًا على الأقل');
     await onDone?.();
     closeModal();
   }));
@@ -521,7 +521,7 @@ Admin.competitions = async (el) => {
     <section class="card"><h2>مسابقة جديدة</h2>
       <form id="cf" class="form grid3">
         <label class="span2">العنوان<input name="title" required value="مسابقة الجمعة"></label>
-        <label>النوع<select name="type"><option value="team_weekly">تيمات (أسبوعية)</option><option value="individual_monthly">فردية (شهرية)</option></select></label>
+        <label>النوع<select name="type"><option value="team_weekly">فرق (أسبوعية)</option><option value="individual_monthly">فردية (شهرية)</option></select></label>
         <label>تبدأ<input type="datetime-local" name="starts_at" required value="${toLocalInput(now)}"></label>
         <label>تنتهي<input type="datetime-local" name="ends_at" required value="${toLocalInput(new Date(now.getTime() + 2 * 3600000))}"></label>
         <label>مدة الحل (دقيقة)<input type="number" name="duration_minutes" min="1" max="600" value="30"></label>
@@ -535,7 +535,7 @@ Admin.competitions = async (el) => {
           <label>التصنيف<select name="category"><option value="">الكل</option><option value="lesson">دروس</option><option value="past_exam">امتحانات سابقة</option></select></label>
         </div>
         <div class="span3" id="q-manual" hidden>
-          <button class="btn ghost" type="button" data-action="pick">✋ اختار الأسئلة <span class="badge" id="picked-count">0 مختار</span></button>
+          <button class="btn ghost" type="button" data-action="pick">✋ اختر الأسئلة <span class="badge" id="picked-count">0 مختار</span></button>
         </div>
         <button class="btn primary span3" type="submit">إنشاء المسابقة</button>
       </form></section>
@@ -549,7 +549,7 @@ Admin.competitions = async (el) => {
           <a class="btn ghost tiny" href="#/competition/${c.id}">الترتيب</a>
           <button class="btn ghost tiny" data-action="questions" data-id="${c.id}">الأسئلة</button>
           <button class="btn ghost tiny" data-action="edit" data-id="${c.id}">تعديل</button>
-          <button class="btn danger tiny" data-action="del" data-id="${c.id}">حذف</button></div>`])) : empty('مفيش مسابقات')}</section>`;
+          <button class="btn danger tiny" data-action="del" data-id="${c.id}">حذف</button></div>`])) : empty('لا توجد مسابقات')}</section>`;
   const reload = () => Admin.competitions(el);
   // Questions: random from the bank (subject / lesson / category) or picked one by one.
   const picked = new Set();
@@ -567,7 +567,7 @@ Admin.competitions = async (el) => {
   const showPicked = () => { $('#picked-count', el).textContent = `${picked.size} مختار`; };
   onSubmit(cf, async (v) => {
     const manual = v.q_mode === 'manual';
-    if (manual && !picked.size) throw new Error('اختار الأسئلة الأول (زرار «اختار الأسئلة»)');
+    if (manual && !picked.size) throw new Error('اختر الأسئلة أولًا (زر «اختر الأسئلة»)');
     const r = await API.post('/admin/competitions', {
       title: v.title, type: v.type,
       starts_at: new Date(v.starts_at).toISOString(), ends_at: new Date(v.ends_at).toISOString(),
@@ -582,15 +582,15 @@ Admin.competitions = async (el) => {
     pick: () => pickQuestions({ subjects, selected: picked, onDone: showPicked }),
     publish: (b) => run(b, async () => {
       const c = competitions.find((x) => String(x.id) === b.dataset.id);
-      if (!confirm(`إعلان نتيجة «${c.title}»؟\nالطلاب هيشوفوا درجاتهم والترتيب والإجابات الصحيحة${c.status === 'finished' ? '' : ' (الإجابات الصحيحة بتظهر بعد ما المسابقة تخلص)'}، وإجاباتهم هتتضاف لبنك الأخطاء.`)) return;
+      if (!confirm(`إعلان نتيجة «${c.title}»؟\nسيرى الطلاب درجاتهم والترتيب والإجابات الصحيحة${c.status === 'finished' ? '' : ' (تظهر الإجابات الصحيحة بعد انتهاء المسابقة)'}، وستُضاف إجاباتهم إلى بنك الأخطاء.`)) return;
       await API.post(`/admin/competitions/${c.id}/publish`);
-      toast('📢 النتيجة اتعلنت للطلاب');
+      toast('📢 تم إعلان النتيجة للطلاب');
       reload();
     }),
     unpublish: (b) => run(b, async () => {
-      if (!confirm('إخفاء النتيجة عن الطلاب تاني؟')) return;
+      if (!confirm('إخفاء النتيجة عن الطلاب مرة أخرى؟')) return;
       await API.post(`/admin/competitions/${b.dataset.id}/unpublish`);
-      toast('🔒 النتيجة اتخفت');
+      toast('🔒 تم إخفاء النتيجة');
       reload();
     }),
     questions: (b) => run(b, async () => {
@@ -637,20 +637,20 @@ Admin.competitions = async (el) => {
 Admin.teams = async (el, params, query) => {
   const search = query.search || '';
   const { teams, max_size: max } = await API.get(`/admin/teams${search ? `?search=${encodeURIComponent(search)}` : ''}`);
-  el.innerHTML = `<h1 class="page-head">التيمات</h1>
-    <section class="card"><h2>توزيع الطلاب بدون تيم</h2>
-      <p class="muted">بيشتغل تلقائياً كل خميس. بيكمّل التيمات الناقصة الأول، وبعدين يقسم الباقي لتيمات متوازنة.</p>
-      <div class="row wrap"><label class="check"><input type="checkbox" id="reqsub" checked> المشتركين فقط</label>
+  el.innerHTML = `<h1 class="page-head">الفرق</h1>
+    <section class="card"><h2>توزيع الطلاب بدون فريق</h2>
+      <p class="muted">يعمل تلقائيًا كل خميس. يُكمل الفرق الناقصة أولًا، ثم يقسم الباقين إلى فرق متوازنة.</p>
+      <div class="row wrap"><label class="check"><input type="checkbox" id="reqsub" checked> المشتركون فقط</label>
       <button class="btn primary" data-action="assign">وزّع الآن</button></div><div id="assign-result"></div></section>
-    <form id="sf" class="form inline"><input name="search" value="${esc(search)}" placeholder="اسم التيم أو كود/اسم طالب"><button class="btn ghost" type="submit">بحث</button></form>
+    <form id="sf" class="form inline"><input name="search" value="${esc(search)}" placeholder="اسم الفريق أو كود/اسم طالب"><button class="btn ghost" type="submit">بحث</button></form>
     ${teams.length ? `<div class="grid-cards">${teams.map((t) => `<section class="card">
       <div class="card-head"><h2>${esc(t.name)}</h2><span class="row">${badge(`${t.members.length}/${max}`, t.members.length === max ? 'good' : 'mid')}${t.is_auto_generated ? badge('تلقائي') : ''}</span></div>
       <ul class="list">${t.members.map((m) => `<li><span>${m.id === t.captain_id ? '👑 ' : ''}${esc(m.full_name)} <small class="mono muted">${esc(m.student_code)}</small></span>
         <button class="btn ghost tiny" data-action="remove" data-team="${t.id}" data-user="${m.id}">إزالة</button></li>`).join('')}</ul>
       ${t.members.length < max ? `<form class="form inline" data-add-member="${t.id}"><input name="student_code" required placeholder="كود الطالب" class="mono"><button class="btn ghost tiny" type="submit">إضافة</button></form>` : ''}
       <div class="row"><button class="btn ghost tiny" data-action="edit" data-id="${t.id}">تعديل</button>
-        <button class="btn danger tiny" data-action="del" data-id="${t.id}">حذف التيم</button></div>
-    </section>`).join('')}</div>` : empty('مفيش تيمات')}`;
+        <button class="btn danger tiny" data-action="del" data-id="${t.id}">حذف الفريق</button></div>
+    </section>`).join('')}</div>` : empty('لا توجد فرق')}`;
   const reload = () => Admin.teams(el, params, query);
   onSubmit($('#sf', el), async (v) => { location.hash = `#/admin/teams${v.search ? `?search=${encodeURIComponent(v.search)}` : ''}`; });
   listen(el, 'submit', (e) => {
@@ -666,22 +666,22 @@ Admin.teams = async (el, params, query) => {
   onAction(el, {
     assign: (b) => run(b, async () => {
       const r = await API.post('/admin/teams/auto-assign', { require_subscription: $('#reqsub', el).checked });
-      toast(`اتوزع ${r.eligible} طالب: ${r.added_to_existing} في تيمات ناقصة و${r.new_teams.length} تيم جديد`);
+      toast(`تم توزيع ${r.eligible} طالب: ${r.added_to_existing} في فرق ناقصة و${r.new_teams.length} فريق جديد`);
       reload();
     }),
     remove: (b) => run(b, async () => {
-      if (!confirm('إزالة الطالب من التيم؟')) return;
+      if (!confirm('إزالة الطالب من الفريق؟')) return;
       await API.del(`/admin/teams/${b.dataset.team}/members/${b.dataset.user}`);
       reload();
     }),
     del: (b) => run(b, async () => {
-      if (!confirm('حذف التيم؟ أعضاؤه هيبقوا من غير تيم.')) return;
+      if (!confirm('حذف الفريق؟ سيصبح أعضاؤه بدون فريق.')) return;
       await API.del(`/admin/teams/${b.dataset.id}`);
       reload();
     }),
     edit: (b) => {
       const t = teams.find((x) => String(x.id) === b.dataset.id);
-      const m = modal(`<h2>تعديل التيم</h2><form class="form" id="tf">
+      const m = modal(`<h2>تعديل الفريق</h2><form class="form" id="tf">
         <label>الاسم<input name="name" required value="${esc(t.name)}"></label>
         <label>القائد<select name="captain_id">${t.members.map((x) => opt(x.id, `${x.full_name} (${x.student_code})`, t.captain_id)).join('')}</select></label>
         <label class="check"><input type="checkbox" name="allow_auto_fill" ${t.allow_auto_fill ? 'checked' : ''}> يسمح بإكماله تلقائياً</label>
@@ -709,25 +709,25 @@ Admin.students = async (el, params, query) => {
   const { items } = await API.get(`/admin/students?limit=100${search ? `&search=${encodeURIComponent(search)}` : ''}${expiring ? `&expiring=${expiring}` : ''}`);
   el.innerHTML = `<div class="page-head"><h1>الطلاب</h1><button class="btn primary" data-action="new">+ طالب جديد</button>
       <button class="btn parent" data-action="reportsAll">📨 إرسال تقارير أولياء الأمور على واتساب</button></div>
-    ${expiring ? `<p class="notice mid">⏰ الطلاب اللي اشتراكهم هيخلص خلال ${expiring} أيام ولسه ماجددوش — كلّمهم على واتساب يجددوا. <a href="#/admin/students">عرض كل الطلاب</a></p>` : ''}
+    ${expiring ? `<p class="notice mid">⏰ الطلاب الذين ينتهي اشتراكهم خلال ${expiring} أيام ولم يجددوا بعد — تواصل معهم على واتساب للتجديد. <a href="#/admin/students">عرض كل الطلاب</a></p>` : ''}
     <section class="card"><form id="sf" class="form inline"><input name="search" value="${esc(search)}" placeholder="كود الطالب، الإيميل، الاسم أو رقم الموبايل (الطالب أو ولي الأمر)"><button class="btn ghost" type="submit">بحث</button></form>
     ${items.length ? table(['الكود', 'الاسم', 'التواصل', 'الاشتراك', 'الحالة', ''],
       items.map((s) => [s.student_code ? `<span class="mono">${esc(s.student_code)}</span>` : badge('لم يكمل التسجيل', 'mid'), esc(s.full_name),
         `${esc(s.email)}<br><small class="muted">طالب ${esc(s.phone)} · ولي أمر ${esc(s.parent_phone)}</small>`,
-        s.current_plan ? `${badge(s.current_plan, 'good')}<br><small class="muted">لحد ${fmtDay(s.plan_ends_at)}</small>` : badge('بدون', ''),
+        s.current_plan ? `${badge(s.current_plan, 'good')}<br><small class="muted">حتى ${fmtDay(s.plan_ends_at)}</small>` : badge('بدون', ''),
         `${s.is_verified ? '' : badge('غير مفعّل', 'mid')} ${s.is_active ? badge('نشط', 'good') : badge('موقوف', 'bad')}
-          ${s.blocked_device_attempts ? `<span title="محاولات دخول من أجهزة زيادة في آخر 30 يوم">${badge(`⚠️ أجهزة زيادة ×${s.blocked_device_attempts}`, 'bad')}</span>` : ''}
+          ${s.blocked_device_attempts ? `<span title="محاولات دخول من أجهزة زائدة في آخر 30 يومًا">${badge(`⚠️ أجهزة زائدة ×${s.blocked_device_attempts}`, 'bad')}</span>` : ''}
           <br><small class="muted">📱 ${s.devices}/2</small>`,
         `<div class="row"><a class="btn primary tiny" href="#/admin/student/${s.id}">إدارة</a>
           ${waLink(s.phone) ? `<a class="btn wa tiny" href="${waLink(s.phone)}" target="_blank" rel="noopener" title="فتح شات واتساب مع الطالب">💬 واتساب الطالب</a>` : ''}
-          ${s.student_code ? `<button class="btn parent tiny" data-action="wa" data-id="${s.id}" title="إرسال تقرير الأسبوع لولي الأمر على واتساب">📨 تقرير ولي الأمر</button>` : ''}</div>`])) : empty('مفيش طلاب')}
+          ${s.student_code ? `<button class="btn parent tiny" data-action="wa" data-id="${s.id}" title="إرسال تقرير الأسبوع لولي الأمر على واتساب">📨 تقرير ولي الأمر</button>` : ''}</div>`])) : empty('لا يوجد طلاب')}
     </section>`;
   onSubmit($('#sf', el), async (v) => { location.hash = `#/admin/students${v.search ? `?search=${encodeURIComponent(v.search)}` : ''}`; });
   onAction(el, {
     wa: (b) => openWhatsAppReport(b, b.dataset.id),
     reportsAll: (b) => run(b, () => whatsAppQueue()),
     new: () => {
-      const m = modal(`<h2>إضافة طالب</h2><p class="muted">الحساب بيتفعّل على طول من غير رمز تحقق.</p>
+      const m = modal(`<h2>إضافة طالب</h2><p class="muted">يُفعَّل الحساب فورًا بدون رمز تحقق.</p>
         <form class="form grid2" id="nf">${studentFields()}
         <label class="span2">كلمة المرور<input name="password" required minlength="8" placeholder="8 أحرف على الأقل، حروف وأرقام"></label>
         <button class="btn primary span2" type="submit">إضافة</button></form>`);
@@ -753,11 +753,11 @@ async function openWhatsAppReport(btn, studentId, after) {
   await run(btn, async () => {
     try {
       const r = await API.get(`/admin/students/${studentId}/parent-report`);
-      if (!r.whatsapp) throw new Error('رقم ولي الأمر مش رقم موبايل مصري صحيح — عدّله من بيانات الطالب');
+      if (!r.whatsapp) throw new Error('رقم ولي الأمر ليس رقم موبايل مصريًا صحيحًا — عدّله من بيانات الطالب');
       const url = `https://wa.me/${r.whatsapp}?text=${encodeURIComponent(r.text)}`;
       if (win) win.location.href = url; else location.href = url;
       await API.post(`/admin/students/${studentId}/parent-report/whatsapp`);
-      toast('اتفتح واتساب — دوس إرسال هناك');
+      toast('تم فتح واتساب — اضغط إرسال هناك');
       after?.();
     } catch (err) { win?.close(); throw err; }
   });
@@ -779,15 +779,15 @@ async function whatsAppQueue() {
     const next = pending[0];
     const sentNow = students.filter((s) => s.justSent).length;
     $('#waq', m).innerHTML = `
-      <p class="muted">دوس الزرار الأخضر ← واتساب هيفتح على ولي الأمر والتقرير مكتوب ← دوس إرسال وارجع هنا للي بعده.</p>
-      <div class="tiles"><div class="tile"><span class="tile-label">فاضل</span><b>${pending.length}</b></div>
-        <div class="tile"><span class="tile-label">اتبعت دلوقتي</span><b class="good">${sentNow}</b></div>
-        <div class="tile"><span class="tile-label">اتبعتلهم آخر 7 أيام</span><b>${students.filter((s) => s.sent_recently).length}</b></div></div>
-      ${invalid ? `<p class="notice mid small">${invalid} طالب رقم ولي أمرهم مش رقم موبايل مصري صحيح، فمش في القايمة.</p>` : ''}
-      <label class="check"><input type="checkbox" id="waq-all" ${includeSent ? 'checked' : ''}> ابعت كمان للي اتبعتلهم خلال آخر 7 أيام</label>
+      <p class="muted">اضغط الزر الأخضر ← سيفتح واتساب على ولي الأمر والتقرير مكتوب ← اضغط إرسال وارجع هنا للتالي.</p>
+      <div class="tiles"><div class="tile"><span class="tile-label">المتبقي</span><b>${pending.length}</b></div>
+        <div class="tile"><span class="tile-label">أُرسل الآن</span><b class="good">${sentNow}</b></div>
+        <div class="tile"><span class="tile-label">أُرسل إليهم آخر 7 أيام</span><b>${students.filter((s) => s.sent_recently).length}</b></div></div>
+      ${invalid ? `<p class="notice mid small">${invalid} طالب رقم ولي أمرهم ليس رقم موبايل مصريًا صحيحًا، لذا ليسوا في القائمة.</p>` : ''}
+      <label class="check"><input type="checkbox" id="waq-all" ${includeSent ? 'checked' : ''}> أرسل أيضًا لمن أُرسل إليهم خلال آخر 7 أيام</label>
       ${next ? `<button class="btn parent big-btn" data-wa-next="${next.id}">📱 التالي: ${esc(next.full_name)} (${sentNow + 1} من ${sentNow + pending.length})</button>`
-        : `<p class="notice good">✓ خلصت — مفيش حد فاضل.</p>`}
-      <details class="device-log"><summary>القايمة (${students.length})</summary><ul>${students.map((s) =>
+        : `<p class="notice good">✓ اكتمل الإرسال — لم يتبقَّ أحد.</p>`}
+      <details class="device-log"><summary>القائمة (${students.length})</summary><ul>${students.map((s) =>
         `<li>${s.justSent ? '✅' : done.has(s.id) ? '☑️' : '⬜'} ${esc(s.full_name)} <small class="mono muted">${esc(s.student_code)}</small></li>`).join('')}</ul></details>`;
     $('#waq-all', m).addEventListener('change', (e) => { includeSent = e.target.checked; render(); });
     const btn = $('[data-wa-next]', m);
@@ -811,7 +811,7 @@ Admin.student = async (el, { id }, query = {}) => {
     <section class="tiles">
       <div class="tile"><span class="tile-label">الأداء العام</span><b class="${percentTone(d.performance.overall.percent)}">${d.performance.overall.percent ?? '—'}%</b><small>${esc(d.performance.overall.rating)}</small></div>
       <div class="tile"><span class="tile-label">بنك الأخطاء</span><b>${d.open_mistakes}</b><small>سؤال مفتوح</small></div>
-      <div class="tile"><span class="tile-label">التيم</span><b class="small-b">${d.team ? esc(d.team.name) : '—'}</b><small>${d.team ? `<a href="#/admin/teams?search=${encodeURIComponent(d.team.name)}">إدارة التيم</a>` : ''}</small></div>
+      <div class="tile"><span class="tile-label">الفريق</span><b class="small-b">${d.team ? esc(d.team.name) : '—'}</b><small>${d.team ? `<a href="#/admin/teams?search=${encodeURIComponent(d.team.name)}">إدارة الفريق</a>` : ''}</small></div>
       <div class="tile"><span class="tile-label">نقاط AI المستهلكة</span><b>${fmtPoints(egpToPoints(s.ai_spent_egp))}</b><small>من ${fmtPoints(egpToPoints(s.ai_limit_egp))} · تكلفة فعلية ${fmtMoney(s.ai_spent_egp, 3)}</small>${bar(aiPct, aiPct > 80 ? 'bad' : 'good')}</div>
     </section>
 
@@ -819,13 +819,13 @@ Admin.student = async (el, { id }, query = {}) => {
       ${waLink(d.student.phone) ? `<a class="btn wa tiny" href="${waLink(d.student.phone)}" target="_blank" rel="noopener">💬 واتساب الطالب</a>` : ''}</div>
       <form id="pf" class="form grid2">${studentFields(s)}
         <label class="check"><input type="checkbox" name="is_verified" ${s.is_verified ? 'checked' : ''}> الحساب مفعّل (تم تأكيد الإيميل)</label>
-        <label class="check"><input type="checkbox" name="is_active" ${s.is_active ? 'checked' : ''}> الحساب نشط (إلغاؤه بيمنع الدخول)</label>
+        <label class="check"><input type="checkbox" name="is_active" ${s.is_active ? 'checked' : ''}> الحساب نشط (إلغاؤه يمنع الدخول)</label>
         <button class="btn primary span2" type="submit">حفظ البيانات</button></form></section>
 
     <section class="card"><h2>الاشتراكات</h2>
       ${d.subscriptions.length ? table(['الباقة', 'من', 'إلى', 'الحالة', ''], d.subscriptions.map((x) => [esc(x.name_ar), fmtDay(x.starts_at), fmtDay(x.ends_at),
         x.status === 'cancelled' ? badge('ملغي', 'bad') : x.is_current ? badge('ساري', 'good') : badge(new Date(x.starts_at) > new Date() ? 'قادم' : 'منتهي'),
-        x.status === 'active' && new Date(x.ends_at) > new Date() ? `<button class="btn danger tiny" data-action="cancelSub" data-id="${x.id}">إلغاء</button>` : ''])) : empty('مفيش اشتراكات')}
+        x.status === 'active' && new Date(x.ends_at) > new Date() ? `<button class="btn danger tiny" data-action="cancelSub" data-id="${x.id}">إلغاء</button>` : ''])) : empty('لا توجد اشتراكات')}
       <h3>منح اشتراك يدوي</h3>
       <form id="gf" class="form inline">
         <select name="plan_code">${[...plans].sort((a, b) => b.is_active - a.is_active || b.rank - a.rank)
@@ -841,7 +841,7 @@ Admin.student = async (el, { id }, query = {}) => {
         <button class="btn primary" type="submit">حفظ</button></form></section>
       <section class="card"><h2>كلمة المرور</h2><form id="wf" class="form">
         <label>كلمة مرور جديدة للطالب<input name="new_password" required minlength="8" autocomplete="new-password"></label>
-        <p class="muted">هيتعمل له تسجيل خروج من كل الأجهزة.</p>
+        <p class="muted">سيتم تسجيل خروجه من كل الأجهزة.</p>
         <button class="btn primary" type="submit">تغيير كلمة المرور</button></form></section>
     </div>
 
@@ -853,29 +853,29 @@ Admin.student = async (el, { id }, query = {}) => {
     ${deviceSection(d.devices)}
 
     <section class="card"><h2>الأداء في المواد</h2>${d.performance.subjects.length ? d.performance.subjects.map((x) => `<div class="perf-row">
-      <span>${esc(x.subject)}</span>${bar(x.percent, percentTone(x.percent))}<b class="${percentTone(x.percent)}">${x.percent}%</b><small class="muted">${x.correct}/${x.attempts}</small></div>`).join('') : empty('لسه محلش أسئلة')}</section>
+      <span>${esc(x.subject)}</span>${bar(x.percent, percentTone(x.percent))}<b class="${percentTone(x.percent)}">${x.percent}%</b><small class="muted">${x.correct}/${x.attempts}</small></div>`).join('') : empty('لم يحل أي أسئلة بعد')}</section>
 
     <section class="card"><h2>المدفوعات</h2>${d.payments.length ? table(['التاريخ', 'الباقة', 'المبلغ', 'الطريقة', 'الحالة'],
-      d.payments.map((p) => [fmtDate(p.created_at), esc(p.plan_code), fmtMoney(p.amount_egp), esc(LABELS.provider[p.provider]), badge(LABELS.paymentStatus[p.status], LABELS.paymentTone[p.status])])) : empty('مفيش مدفوعات')}</section>
+      d.payments.map((p) => [fmtDate(p.created_at), esc(p.plan_code), fmtMoney(p.amount_egp), esc(LABELS.provider[p.provider]), badge(LABELS.paymentStatus[p.status], LABELS.paymentTone[p.status])])) : empty('لا توجد مدفوعات')}</section>
 
     <section class="card danger-zone"><h2>🗑️ حذف الحساب نهائياً</h2>
-      <p class="muted">بيمسح الطالب وكل بياناته: الإجابات، وبنك الأخطاء، والاشتراكات، والمسابقات، والتيم، والأجهزة، والتقارير. <b>مفيش رجوع.</b>
-        المدفوعات بتفضل محفوظة باسمه عشان حسابات الإيرادات. لو عايز توقفه بس من غير مسح، استخدم "الحساب نشط" فوق.</p>
+      <p class="muted">يحذف الطالب وكل بياناته: الإجابات، وبنك الأخطاء، والاشتراكات، والمسابقات، والفريق، والأجهزة، والتقارير. <b>لا يمكن التراجع.</b>
+        تبقى المدفوعات محفوظة باسمه لأجل حسابات الإيرادات. إذا أردت إيقافه فقط بدون حذف، فاستخدم "الحساب نشط" بالأعلى.</p>
       <button class="btn danger" data-action="deleteStudent">حذف الطالب نهائياً</button></section>`;
 
   const reload = () => Admin.student(el, { id });
   // Parent report: preview of what the parent receives + what was sent before.
-  const CHANNEL = { email: 'إيميل', sms: 'رسالة', log: 'متسجل بس (مفيش إيميل)', whatsapp: 'واتساب' };
+  const CHANNEL = { email: 'إيميل', sms: 'رسالة', log: 'مسجَّل فقط (لا يوجد إيميل)', whatsapp: 'واتساب' };
   async function loadReport() {
     const box = $('#report-body', el);
     if (!box) return;
     try {
       const r = await API.get(`/admin/students/${id}/parent-report`);
-      box.innerHTML = `<p class="muted small">📱 واتساب: <b dir="ltr">${esc(r.whatsapp ? `+${r.whatsapp}` : 'رقم ولي الأمر مش صحيح')}</b> ·
-          ✉️ إيميل: <b dir="ltr">${esc(r.channel === 'email' ? r.to : 'مفيش إيميل لولي الأمر')}</b></p>
+      box.innerHTML = `<p class="muted small">📱 واتساب: <b dir="ltr">${esc(r.whatsapp ? `+${r.whatsapp}` : 'رقم ولي الأمر غير صحيح')}</b> ·
+          ✉️ إيميل: <b dir="ltr">${esc(r.channel === 'email' ? r.to : 'لا يوجد إيميل لولي الأمر')}</b></p>
         <pre class="report">${esc(r.text)}</pre>
-        ${r.history.length ? `<details class="device-log"><summary>التقارير اللي اتبعتت (${r.history.length})</summary>${table(['التاريخ', 'الطريقة', 'الحالة'],
-          r.history.map((h) => [fmtDate(h.sent_at), esc(CHANNEL[h.channel] || h.channel), h.status === 'sent' ? badge('تم', 'good') : `${badge('فشل', 'bad')} <small class="muted">${esc(h.error || '')}</small>`]))}</details>` : '<p class="muted small">لسه متبعتش تقارير للطالب ده.</p>'}`;
+        ${r.history.length ? `<details class="device-log"><summary>التقارير المرسلة (${r.history.length})</summary>${table(['التاريخ', 'الطريقة', 'الحالة'],
+          r.history.map((h) => [fmtDate(h.sent_at), esc(CHANNEL[h.channel] || h.channel), h.status === 'sent' ? badge('تم', 'good') : `${badge('فشل', 'bad')} <small class="muted">${esc(h.error || '')}</small>`]))}</details>` : '<p class="muted small">لم تُرسل تقارير لهذا الطالب بعد.</p>'}`;
     } catch (err) { box.innerHTML = `<p class="notice bad">${esc(errorText(err))}</p>`; }
   }
   loadReport();
@@ -905,39 +905,39 @@ Admin.student = async (el, { id }, query = {}) => {
   });
   onAction(el, {
     cancelSub: (b) => run(b, async () => {
-      if (!confirm('إلغاء الاشتراك ده؟')) return;
+      if (!confirm('إلغاء هذا الاشتراك؟')) return;
       await API.post(`/admin/subscriptions/${b.dataset.id}/cancel`);
       reload();
     }),
     deleteStudent: () => {
       const code = d.student.student_code || d.student.email;
       const m = modal(`<h2>🗑️ حذف ${esc(d.student.full_name)} نهائياً؟</h2>
-        <p class="notice bad">كل بيانات الطالب هتتمسح ومفيش رجوع.</p>
+        <p class="notice bad">ستُحذف كل بيانات الطالب ولا يمكن التراجع.</p>
         <form class="form" id="delf"><label>للتأكيد اكتب ${d.student.student_code ? 'كود الطالب' : 'إيميل الطالب'}: <b class="mono">${esc(code)}</b>
           <input name="confirm" required autocomplete="off" dir="ltr"></label>
           <button class="btn danger" type="submit">حذف نهائي</button></form>`);
       onSubmit($('#delf', m), async (v) => {
         await API.req('DELETE', `/admin/students/${id}`, { confirm: v.confirm });
         closeModal();
-        toast(`اتمسح حساب ${d.student.full_name}`);
+        toast(`تم حذف حساب ${d.student.full_name}`);
         location.hash = '#/admin/students';
       });
     },
     removeDevice: (b) => run(b, async () => {
-      if (!confirm('تشيل الجهاز ده من حساب الطالب؟ لو فاتح منه هيتقفل.')) return;
+      if (!confirm('إزالة هذا الجهاز من حساب الطالب؟ إذا كان مسجلًا الدخول منه فسيُغلق.')) return;
       await API.del(`/admin/students/${id}/devices/${b.dataset.id}`);
-      toast('تم شيل الجهاز');
+      toast('تمت إزالة الجهاز');
       reload();
     }),
     waReport: (b) => openWhatsAppReport(b, id, loadReport),
     sendReport: (b) => run(b, async () => {
-      if (!confirm('إرسال التقرير ده لولي الأمر دلوقتي؟')) return;
+      if (!confirm('إرسال هذا التقرير لولي الأمر الآن؟')) return;
       const r = await API.post(`/admin/students/${id}/parent-report`);
-      toast(r.status === 'sent' ? (r.channel === 'log' ? 'اتسجل التقرير (مفيش إيميل لولي الأمر — الرسائل SMS مش متربطة)' : 'تم إرسال التقرير لولي الأمر ✓') : 'فشل الإرسال — شوف السجل تحت', r.status === 'sent' ? undefined : 'err');
+      toast(r.status === 'sent' ? (r.channel === 'log' ? 'تم تسجيل التقرير (لا يوجد إيميل لولي الأمر — رسائل SMS غير مفعّلة)' : 'تم إرسال التقرير لولي الأمر ✓') : 'فشل الإرسال — راجع السجل بالأسفل', r.status === 'sent' ? undefined : 'err');
       loadReport();
     }),
     resetDevices: (b) => run(b, async () => {
-      if (!confirm('تمسح كل أجهزة الطالب؟ هيتقفل من كل حاجة، وأول دخول بعد كده محتاج رمز على إيميله.')) return;
+      if (!confirm('مسح كل أجهزة الطالب؟ سيُسجَّل خروجه من كل الأجهزة، وسيحتاج أول دخول بعد ذلك إلى رمز يُرسل إلى إيميله.')) return;
       await API.post(`/admin/students/${id}/devices/reset`);
       toast('تم مسح الأجهزة');
       reload();
@@ -946,11 +946,11 @@ Admin.student = async (el, { id }, query = {}) => {
 };
 
 const DEVICE_EVENTS = {
-  added: ['جهاز جديد اتضاف', ''],
-  blocked_limit: ['⚠️ محاولة دخول من جهاز زيادة', 'bad'],
-  removed_by_student: ['الطالب شال جهاز', 'mid'],
-  removed_by_admin: ['الإدارة شالت جهاز', 'mid'],
-  reset_by_admin: ['الإدارة مسحت كل الأجهزة', 'mid'],
+  added: ['تمت إضافة جهاز جديد', ''],
+  blocked_limit: ['⚠️ محاولة دخول من جهاز زائد', 'bad'],
+  removed_by_student: ['أزال الطالب جهازًا', 'mid'],
+  removed_by_admin: ['أزالت الإدارة جهازًا', 'mid'],
+  reset_by_admin: ['مسحت الإدارة كل الأجهزة', 'mid'],
 };
 /** Student's devices (max 2, one session at a time) + history; repeated "extra device" attempts hint at a shared account. */
 function deviceSection(dv) {
@@ -958,11 +958,11 @@ function deviceSection(dv) {
   return `<section class="card">
     <div class="card-head"><h2>الأجهزة (${dv.items.length}/${dv.max})</h2>
       ${dv.items.length ? '<button class="btn ghost tiny" data-action="resetDevices">مسح كل الأجهزة</button>' : ''}</div>
-    ${blocked ? `<p class="notice bad">⚠️ ${blocked} محاولة دخول من أجهزة زيادة في آخر 30 يوم — ممكن يكون بيشارك حسابه.</p>` : ''}
-    ${dv.items.length ? table(['الجهاز', 'اتضاف', 'آخر دخول', 'IP', ''], dv.items.map((x) => [
-      `${esc(x.name)} ${x.active ? badge('فاتح دلوقتي', 'good') : ''}`, fmtDate(x.created_at), fmtDate(x.last_seen_at),
+    ${blocked ? `<p class="notice bad">⚠️ ${blocked} محاولة دخول من أجهزة زائدة في آخر 30 يومًا — ربما يشارك حسابه مع آخرين.</p>` : ''}
+    ${dv.items.length ? table(['الجهاز', 'أُضيف', 'آخر دخول', 'IP', ''], dv.items.map((x) => [
+      `${esc(x.name)} ${x.active ? badge('متصل الآن', 'good') : ''}`, fmtDate(x.created_at), fmtDate(x.last_seen_at),
       `<span class="mono">${esc(x.last_ip || '—')}</span>`,
-      `<button class="btn danger tiny" data-action="removeDevice" data-id="${x.id}">شيل</button>`])) : empty('مفيش أجهزة مسجلة — أول دخول هيحتاج رمز على الإيميل')}
+      `<button class="btn danger tiny" data-action="removeDevice" data-id="${x.id}">إزالة</button>`])) : empty('لا توجد أجهزة مسجلة — سيحتاج أول دخول إلى رمز على الإيميل')}
     ${dv.events.length ? `<details class="device-log"><summary>سجل الأجهزة (${dv.events.length})</summary>
       <ul>${dv.events.map((e) => `<li><span class="${DEVICE_EVENTS[e.type]?.[1] || ''}">${DEVICE_EVENTS[e.type]?.[0] || esc(e.type)}</span>
         ${e.device_name ? `— ${esc(e.device_name)}` : ''} <small class="muted">${fmtDate(e.created_at)}${e.ip ? ` · <span class="mono">${esc(e.ip)}</span>` : ''}</small></li>`).join('')}</ul></details>` : ''}
@@ -994,7 +994,7 @@ Admin.products = async (el) => {
     <section class="card">${products.length ? table(['المنتج', 'السعر', 'الخصم', 'بعد الخصم', 'الكود', ''],
       products.map((p) => [esc(p.title) + (p.is_active ? '' : ` ${badge('مخفي', 'bad')}`), fmtMoney(p.original_price), `${p.discount_percent}%`, `<b>${fmtMoney(p.final_price)}</b>`, esc(p.coupon_code || '—'),
         `<div class="row"><button class="btn ghost tiny" data-action="edit" data-id="${p.id}">تعديل</button>
-          <button class="btn danger tiny" data-action="del" data-id="${p.id}">حذف</button></div>`])) : empty('مفيش منتجات')}</section>`;
+          <button class="btn danger tiny" data-action="del" data-id="${p.id}">حذف</button></div>`])) : empty('لا توجد منتجات')}</section>`;
   const reload = () => Admin.products(el);
   onSubmit($('#pf', el), async (v) => { await API.post('/admin/products', productPayload(v)); toast('تمت الإضافة'); reload(); });
   onAction(el, {
@@ -1008,8 +1008,8 @@ Admin.products = async (el) => {
 };
 
 // ---------------------------------------------------------------- Announcements
-const AUDIENCE = { all: 'كل الطلاب', subscribers: 'المشتركين بس', free: 'غير المشتركين بس' };
-const TONES = { info: '📢 عادي', success: '🎉 خبر حلو', warning: '⚠️ تنبيه مهم' };
+const AUDIENCE = { all: 'كل الطلاب', subscribers: 'المشتركون فقط', free: 'غير المشتركين فقط' };
+const TONES = { info: '📢 عادي', success: '🎉 خبر سار', warning: '⚠️ تنبيه مهم' };
 const options = (map, sel) => Object.entries(map).map(([k, v]) => `<option value="${k}"${k === sel ? ' selected' : ''}>${v}</option>`).join('');
 const announcementFields = (a = {}) => `
   <label class="span3">العنوان<input name="title" required minlength="2" maxlength="200" value="${esc(a.title || '')}"></label>
@@ -1017,10 +1017,10 @@ const announcementFields = (a = {}) => `
   <label>النوع<select name="tone">${options(TONES, a.tone || 'info')}</select></label>
   <label>يظهر لـ<select name="audience">${options(AUDIENCE, a.audience || 'all')}</select></label>
   <label>رابط (اختياري)<input type="url" name="link_url" value="${esc(a.link_url || '')}" placeholder="https://"></label>
-  <label>يبدأ يظهر<input type="datetime-local" name="starts_at" value="${a.starts_at ? toLocalInput(a.starts_at) : ''}"><small class="muted">فاضي = دلوقتي</small></label>
-  <label>يختفي في<input type="datetime-local" name="expires_at" value="${a.expires_at ? toLocalInput(a.expires_at) : ''}"><small class="muted">فاضي = مايختفيش</small></label>
+  <label>يبدأ الظهور<input type="datetime-local" name="starts_at" value="${a.starts_at ? toLocalInput(a.starts_at) : ''}"><small class="muted">فارغ = الآن</small></label>
+  <label>يختفي في<input type="datetime-local" name="expires_at" value="${a.expires_at ? toLocalInput(a.expires_at) : ''}"><small class="muted">فارغ = لا يختفي</small></label>
   <div class="span3 row wrap">
-    <label class="check"><input type="checkbox" name="pinned" ${a.pinned ? 'checked' : ''}> 📌 مثبت (يفضل ظاهر في الرئيسية)</label>
+    <label class="check"><input type="checkbox" name="pinned" ${a.pinned ? 'checked' : ''}> 📌 مثبت (يبقى ظاهرًا في الرئيسية)</label>
     <label class="check"><input type="checkbox" name="is_active" ${a.is_active === false ? '' : 'checked'}> ظاهر للطلاب</label>
   </div>`;
 const announcementPayload = (v) => ({
@@ -1041,15 +1041,15 @@ Admin.announcements = async (el) => {
   const { announcements } = await API.get('/admin/announcements');
   el.innerHTML = `<h1 class="page-head">الإعلانات</h1>
     <section class="card"><h2>إعلان جديد</h2>
-      <p class="muted">بيظهر للطلاب في الصفحة الرئيسية وعلى علامة 🔔 فوق لحد ما يقروه.</p>
+      <p class="muted">يظهر للطلاب في الصفحة الرئيسية وعلى علامة 🔔 بالأعلى حتى يقرؤوه.</p>
       <form id="af" class="form grid3">${announcementFields()}
       <button class="btn primary span3" type="submit">نشر الإعلان</button></form></section>
-    <section class="card">${announcements.length ? table(['الإعلان', 'يظهر لـ', 'الحالة', 'اتقرا', ''],
+    <section class="card">${announcements.length ? table(['الإعلان', 'يظهر لـ', 'الحالة', 'قُرئ', ''],
       announcements.map((a) => [`${a.pinned ? '📌 ' : ''}<b>${esc(a.title)}</b><br><small class="muted">${fmtDate(a.starts_at)}${a.expires_at ? ` ← ${fmtDate(a.expires_at)}` : ''}</small>`,
         AUDIENCE[a.audience], announcementStatus(a), `${a.reads} طالب`,
         `<div class="row"><button class="btn ghost tiny" data-action="edit" data-id="${a.id}">تعديل</button>
           <button class="btn ghost tiny" data-action="toggle" data-id="${a.id}">${a.is_active ? 'إخفاء' : 'إظهار'}</button>
-          <button class="btn danger tiny" data-action="del" data-id="${a.id}">حذف</button></div>`])) : empty('مفيش إعلانات لسه')}</section>`;
+          <button class="btn danger tiny" data-action="del" data-id="${a.id}">حذف</button></div>`])) : empty('لا توجد إعلانات بعد')}</section>`;
   const reload = () => Admin.announcements(el);
   const find = (b) => announcements.find((x) => String(x.id) === b.dataset.id);
   onSubmit($('#af', el), async (v) => { await API.post('/admin/announcements', announcementPayload(v)); toast('تم نشر الإعلان'); reload(); });
@@ -1079,25 +1079,25 @@ Admin.settings = async (el) => {
       <label>عنوان انستاباي<input name="instapay_address" value="${esc(s.instapay_address)}"></label>
       <label class="span2">تعليمات الدفع اليدوي<textarea name="manual_payment_instructions" rows="2">${esc(s.manual_payment_instructions)}</textarea></label>
       <label>رصيد نقاط الذكاء الاصطناعي للطالب الجديد<input type="number" name="default_ai_limit_points" min="0" step="1" value="${Math.round(s.default_ai_limit_egp * s.ai_points_per_egp)}"></label>
-      <label>كام نقطة = 1 جنيه من تكلفة الموديل<input type="number" name="ai_points_per_egp" min="1" step="1" value="${s.ai_points_per_egp}"></label>
+      <label>عدد النقاط مقابل 1 جنيه من تكلفة الموديل<input type="number" name="ai_points_per_egp" min="1" step="1" value="${s.ai_points_per_egp}"></label>
       <p class="muted span2" id="ai-equiv"></p>
       <label>سعر الدولار بالجنيه (لحساب تكلفة Gemini)<input type="number" name="usd_to_egp" min="1" step="0.01" value="${s.usd_to_egp}"></label>
       <button class="btn primary span2" type="submit">حفظ الإعدادات</button></form>
-      <p class="muted">حد الذكاء الاصطناعي بيتطبق على الطلاب الجدد. <button class="btn ghost tiny" data-action="applyAi">طبّقه على كل الطلاب الحاليين</button></p>
+      <p class="muted">يُطبَّق حد الذكاء الاصطناعي على الطلاب الجدد. <button class="btn ghost tiny" data-action="applyAi">طبّقه على كل الطلاب الحاليين</button></p>
     </section>
 
     <section class="card"><h2>الذكاء الاصطناعي (Gemini)</h2>
-      <p class="${aiKey ? 'notice good' : 'notice bad'}">${aiKey ? '✓ مفتاح Gemini متحط على السيرفر' : '⛔ مفتاح Gemini مش متحط — ضيف GEMINI_API_KEY في إعدادات Vercel'}</p>
+      <p class="${aiKey ? 'notice good' : 'notice bad'}">${aiKey ? '✓ مفتاح Gemini مضاف على السيرفر' : '⛔ مفتاح Gemini غير مضاف — أضف GEMINI_API_KEY في إعدادات Vercel'}</p>
       <form id="gf" class="form grid3">
-        <label class="span3">اسم الموديل (زي ما هو مكتوب في Google AI Studio)<input name="ai_model" required list="ai-models" dir="ltr" value="${esc(s.ai_model)}">
+        <label class="span3">اسم الموديل (كما هو مكتوب في Google AI Studio)<input name="ai_model" required list="ai-models" dir="ltr" value="${esc(s.ai_model)}">
           <datalist id="ai-models"><option value="gemini-3.5-flash-lite"><option value="gemini-3.1-flash-lite-preview"><option value="gemini-3.8-flash"></datalist></label>
-        <label class="span3">موديل احتياطي (بيشتغل لوحده لو الأساسي عليه ضغط أو واقف — فاضي = مفيش)<input name="ai_fallback_model" list="ai-models" dir="ltr" value="${esc(s.ai_fallback_model || '')}"></label>
+        <label class="span3">موديل احتياطي (يعمل تلقائيًا إذا كان الأساسي مضغوطًا أو متوقفًا — فارغ = لا يوجد)<input name="ai_fallback_model" list="ai-models" dir="ltr" value="${esc(s.ai_fallback_model || '')}"></label>
         <label>سعر الإدخال (دولار لكل مليون توكن)<input type="number" name="ai_input_usd_per_m" min="0" step="0.01" required value="${s.ai_input_usd_per_m}"></label>
         <label>سعر الإخراج (دولار لكل مليون توكن)<input type="number" name="ai_output_usd_per_m" min="0" step="0.01" required value="${s.ai_output_usd_per_m}"></label>
         <div class="row" style="align-items:end"><button class="btn primary" type="submit">حفظ</button>
           <button class="btn ghost" type="button" data-action="testAi">🧪 جرّب الذكاء الاصطناعي</button></div>
       </form>
-      <p class="muted small">الأسعار بتستخدم في حساب نقط الطلاب. حطها زي صفحة أسعار Gemini، ولو مش متأكد خليها أعلى شوية (الطالب بيتخصم منه التكلفة الفعلية بس).</p>
+      <p class="muted small">تُستخدم الأسعار في حساب نقاط الطلاب. اكتبها كما في صفحة أسعار Gemini، وإذا لم تكن متأكدًا فاجعلها أعلى قليلًا (يُخصم من الطالب التكلفة الفعلية فقط).</p>
       <div id="ai-test"></div>
     </section>
 
@@ -1113,7 +1113,7 @@ Admin.settings = async (el) => {
         <button class="btn primary span3" type="submit">إضافة أدمن</button></form>
     </section>
 
-    <section class="card"><h2>تغيير كلمة المرور بتاعتي</h2><form id="mf" class="form grid2">
+    <section class="card"><h2>تغيير كلمة المرور الخاصة بي</h2><form id="mf" class="form grid2">
       <label>كلمة المرور الحالية<input type="password" name="current_password" required autocomplete="current-password"></label>
       <label>كلمة المرور الجديدة<input type="password" name="new_password" required minlength="8" autocomplete="new-password"></label>
       <button class="btn primary span2" type="submit">تغيير</button></form></section>`;
@@ -1155,9 +1155,9 @@ Admin.settings = async (el) => {
       box.innerHTML = '<p class="muted">جاري التجربة…</p>';
       const r = await API.post('/admin/ai/test');
       box.innerHTML = r.ok
-        ? `<div class="notice good">✓ شغال — ${r.answered_by !== r.model ? `الأساسي (<b dir="ltr">${esc(r.model)}</b>) عليه ضغط فرد الاحتياطي ` : 'الموديل '}<b dir="ltr">${esc(r.answered_by || r.model)}</b> رد في ${(r.ms / 1000).toFixed(1)} ثانية (تكلفة ${fmtMoney(r.cost_egp, 4)}):<br>«${esc(r.reply)}»</div>`
-        : r.mock ? '<div class="notice mid">الوضع التجريبي: مفيش مفتاح Gemini، فالرد تجريبي.</div>'
-          : `<div class="notice bad">⛔ مش شغال مع الموديل <b dir="ltr">${esc(r.model)}</b>:<br><span dir="ltr" class="mono small">${esc(r.error)}</span><br>اتأكد من المفتاح في Vercel ومن اسم الموديل.</div>`;
+        ? `<div class="notice good">✓ يعمل — ${r.answered_by !== r.model ? `الأساسي (<b dir="ltr">${esc(r.model)}</b>) مضغوط فردّ الاحتياطي ` : 'الموديل '}<b dir="ltr">${esc(r.answered_by || r.model)}</b> رد في ${(r.ms / 1000).toFixed(1)} ثانية (تكلفة ${fmtMoney(r.cost_egp, 4)}):<br>«${esc(r.reply)}»</div>`
+        : r.mock ? '<div class="notice mid">الوضع التجريبي: لا يوجد مفتاح Gemini، لذا الرد تجريبي.</div>'
+          : `<div class="notice bad">⛔ لا يعمل مع الموديل <b dir="ltr">${esc(r.model)}</b>:<br><span dir="ltr" class="mono small">${esc(r.error)}</span><br>تأكد من المفتاح في Vercel ومن اسم الموديل.</div>`;
     }),
 
     applyAi: (b) => run(b, async () => {
