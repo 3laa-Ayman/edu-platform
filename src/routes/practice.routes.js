@@ -24,7 +24,7 @@ async function getQuestion(id) {
 /** Subjects → lessons tree with question counts (for navigation menus). */
 router.get('/subjects', async (req, res) => {
   // Same for every student and counts every question: cached briefly (admin changes clear it).
-  const { rows } = await cached('catalog:subjects', 60_000, () => db.query(
+  const { rows } = await cached('catalog:subjects', 15_000, () => db.query(
     `SELECT s.id, s.name,
             COALESCE(json_agg(json_build_object('id', l.id, 'name', l.name, 'lesson_type', l.lesson_type,
                      'questions', (SELECT COUNT(*) FROM questions q WHERE q.lesson_id = l.id AND q.is_active)))
