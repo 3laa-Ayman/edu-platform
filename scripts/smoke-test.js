@@ -187,7 +187,7 @@ async function studentLogin(identifier, password, device) {
   const pastStd = await call('GET', `/api/catalog/questions?category=past_exam&subject_id=${physics.id}`, { token: B.token });
   ok(pastStd.status === 200 && pastStd.data.questions.every((q) => q.category === 'past_exam'), 'past exams available on the standard plan (B is standard)');
 
-  const allQ = await call('GET', '/api/admin/questions?limit=100', { token: AT });
+  const allQ = await call('GET', `/api/admin/questions?limit=100&search=${rnd}`, { token: AT });
   const byText = (t) => allQ.data.items.find((q) => q.question_text.includes(t) && q.question_text.includes(rnd));
   const qWithExp = byText('كتلته 2 كجم');
   const qNoExp = byText('سرعة الضوء');
