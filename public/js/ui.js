@@ -108,6 +108,7 @@ function formValues(form) {
   for (const el of form.elements) {
     if (!el.name || el.type === 'file' || el.type === 'submit') continue;
     if (el.type === 'checkbox') out[el.name] = el.checked;
+    else if (el.type === 'radio') { if (el.checked) out[el.name] = el.value; else if (!(el.name in out)) out[el.name] = undefined; }
     else {
       const v = el.value.trim();
       out[el.name] = v === '' ? undefined : v;
