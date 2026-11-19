@@ -14,6 +14,9 @@ async function recordAnswer(client, { userId, question, selected, source, entryI
     [userId, question.id, selected, isCorrect, source, entryId, timeSpentMs],
   );
 
+  // A competition's own question isn't in the bank, so it never goes to the mistakes bank either.
+  if (question.competition_only) return { isCorrect, removedFromMistakes: false, addedToMistakes: false };
+
   if (isCorrect) {
     const r = await client.query(`DELETE FROM mistakes WHERE user_id = $1 AND question_id = $2`, [userId, question.id]);
     return { isCorrect, removedFromMistakes: r.rowCount > 0, addedToMistakes: false };

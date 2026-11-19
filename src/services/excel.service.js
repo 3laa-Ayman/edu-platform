@@ -255,7 +255,11 @@ async function parseQuestionSheet(buffer, { defaultSubject } = {}) {
 }
 
 /** Inserts validated rows in one transaction; subjects/lessons are created on the fly. Duplicates are skipped. */
-async function importQuestions({ valid, errors }, { adminId, filename }) {
+/**
+ * competitionOnly: the rows become questions of one competition only (not added to the bank, never de-duplicated
+ * against it); their ids are returned in question_ids.
+ */
+async function importQuestions({ valid, errors }, { adminId, filename, competitionOnly = false }) {
   return db.withTransaction(async (c) => {
     const { rows: [upload] } = await c.query(
       `INSERT INTO question_uploads (admin_id, filename, total_rows) VALUES ($1, $2, $3) RETURNING id`,
@@ -267,6 +271,7 @@ async function importQuestions({ valid, errors }, { adminId, filename }) {
     let inserted = 0;
     let duplicates = 0;
     let images = 0;
+    const questionIds = [];
 
     for (const r of valid) {
       if (!subjectIds.has(r.subject)) {
@@ -301,14 +306,17 @@ async function importQuestions({ valid, errors }, { adminId, filename }) {
 
       const res = await c.query(
         `INSERT INTO questions (subject_id, lesson_id, question_text, option_a, option_b, option_c, option_d,
-                                correct_option, explanation, law_note, lesson_type, category, exam_year, content_hash, upload_id, passage_id)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+                                correct_option, explanation, law_note, lesson_type, category, exam_year, content_hash, upload_id, passage_id,
+                                competition_only)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
          ON CONFLICT (content_hash) DO NOTHING RETURNING id`,
         [subjectId, lessonId, r.question, r.option_a, r.option_b, r.option_c, r.option_d, r.correct,
-          r.explanation, r.law_note, r.lesson_type, r.category, r.exam_year, r.hash, upload.id, passageId],
+          r.explanation, r.law_note, r.lesson_type, r.category, r.exam_year,
+          competitionOnly ? crypto.randomBytes(32).toString('hex') : r.hash, upload.id, passageId, competitionOnly],
       );
       if (res.rowCount) {
         inserted++;
+        questionIds.push(Number(res.rows[0].id));
         for (const [slot, m] of Object.entries(r.media || {})) {
           await c.query(
             `INSERT INTO question_media (question_id, slot, mime, data, hash) VALUES ($1, $2, $3, $4, $5)`,
@@ -322,7 +330,7 @@ async function importQuestions({ valid, errors }, { adminId, filename }) {
       `UPDATE question_uploads SET inserted = $2, duplicates = $3, failed = $4, errors = $5 WHERE id = $1`,
       [upload.id, inserted, duplicates, errors.length, JSON.stringify(errors)],
     );
-    return { upload_id: upload.id, total_rows: valid.length + errors.length, inserted, duplicates, images, passages: passageIds.size, failed: errors.length, errors };
+    return { upload_id: upload.id, total_rows: valid.length + errors.length, inserted, duplicates, images, passages: passageIds.size, failed: errors.length, errors, question_ids: questionIds };
   });
 }
 

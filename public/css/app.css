@@ -440,3 +440,10 @@ td .row { flex-wrap: wrap; }
 .site-footer { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding-top: 0; padding-bottom: 84px; font-size: .9rem; }
 .site-footer[hidden] { display: none; }
 .site-footer, .site-footer a { color: var(--muted); }
+
+/* Competition form: the competition's own questions */
+.own-qs { border-top: 1px dashed var(--border); padding-top: 12px; }
+.own-qs h3 { margin: 0 0 8px; font-size: 1rem; }
+.own-tools { align-items: end; gap: 10px; }
+.own-tools label:not(.file-btn) { min-width: 200px; }
+.file-btn { cursor: pointer; }

@@ -27,9 +27,9 @@ router.get('/subjects', async (req, res) => {
   const { rows } = await cached('catalog:subjects', 15_000, () => db.query(
     `SELECT s.id, s.name,
             COALESCE(json_agg(json_build_object('id', l.id, 'name', l.name, 'lesson_type', l.lesson_type,
-                     'questions', (SELECT COUNT(*) FROM questions q WHERE q.lesson_id = l.id AND q.is_active)))
+                     'questions', (SELECT COUNT(*) FROM questions q WHERE q.lesson_id = l.id AND q.is_active AND NOT q.competition_only)))
                      FILTER (WHERE l.id IS NOT NULL), '[]') AS lessons,
-            (SELECT COUNT(*)::int FROM questions q WHERE q.subject_id = s.id AND q.is_active) AS questions
+            (SELECT COUNT(*)::int FROM questions q WHERE q.subject_id = s.id AND q.is_active AND NOT q.competition_only) AS questions
        FROM subjects s LEFT JOIN lessons l ON l.subject_id = s.id
       GROUP BY s.id ORDER BY s.name`,
   ));
@@ -52,7 +52,7 @@ router.get('/questions', requireSubscription('practice'), validate({
   }
   const { rows } = await db.query(
     `${QUESTION_SELECT}
-      WHERE q.is_active
+      WHERE q.is_active AND NOT q.competition_only
         AND ($1::int IS NULL OR q.subject_id = $1)
         AND ($2::int IS NULL OR q.lesson_id = $2)
         AND ($3::text IS NULL OR q.category = $3)
@@ -77,6 +77,7 @@ router.post('/answer', requireSubscription('practice'), validate({
   const choice = normalizeChoice(req.body.choice);
   if (!choice) throw badRequest('الاختيار يجب أن يكون A أو B أو C أو D');
   const q = await getQuestion(req.body.question_id);
+  if (q.competition_only) throw notFound('السؤال غير موجود'); // a competition's own question can't be practised
   const result = await db.withTransaction((c) =>
     recordAnswer(c, { userId: req.user.id, question: q, selected: choice, source: 'practice', timeSpentMs: req.body.time_spent_ms }));
   const { rows: [ai] } = await db.query(

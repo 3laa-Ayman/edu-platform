@@ -4,10 +4,11 @@ const env = require('../config/env');
 const db = require('../config/db');
 const { notify } = require('../services/notification.service');
 const { validate, idParam, pagination, z } = require('../middleware/validate');
-const { excelUpload } = require('../middleware/upload');
+const crypto = require('crypto');
+const { excelUpload, imageUpload } = require('../middleware/upload');
 const { uploadLimiter } = require('../middleware/rateLimit');
 const { parseQuestionSheet, importQuestions } = require('../services/excel.service');
-const { mediaMap } = require('../services/media.service');
+const { mediaMap, saveMedia } = require('../services/media.service');
 const { passageMap } = require('../services/passage.service');
 const { activatePayment } = require('../services/payment.service');
 const { autoAssignTeams } = require('../services/team.service');
@@ -24,7 +25,7 @@ router.get('/dashboard', async (req, res) => {
       (SELECT COUNT(DISTINCT user_id) FROM subscriptions WHERE status = 'active' AND now() BETWEEN starts_at AND ends_at)::int AS active_subscribers,
       (SELECT COALESCE(SUM(amount_egp), 0) FROM payments WHERE status = 'paid')::float AS revenue_egp,
       (SELECT COUNT(*) FROM payments WHERE status = 'under_review')::int AS receipts_pending_review,
-      (SELECT COUNT(*) FROM questions WHERE is_active)::int AS questions,
+      (SELECT COUNT(*) FROM questions WHERE is_active AND NOT competition_only)::int AS questions,
       (SELECT COALESCE(SUM(cost_egp), 0) FROM ai_usage_logs WHERE status = 'success')::float AS ai_cost_egp,
       (SELECT COUNT(*) FROM users WHERE ai_spent_egp >= ai_limit_egp * 0.95)::int AS students_at_ai_limit,
       (SELECT COUNT(*) FROM teams)::int AS teams,
@@ -75,7 +76,7 @@ router.get('/questions', validate({
   const { rows } = await db.query(
     `SELECT q.*, s.name AS subject, l.name AS lesson, COUNT(*) OVER()::int AS total
        FROM questions q JOIN subjects s ON s.id = q.subject_id LEFT JOIN lessons l ON l.id = q.lesson_id
-      WHERE ($1::int IS NULL OR q.subject_id = $1) AND ($2::int IS NULL OR q.lesson_id = $2)
+      WHERE NOT q.competition_only AND ($1::int IS NULL OR q.subject_id = $1) AND ($2::int IS NULL OR q.lesson_id = $2)
         AND ($3::text IS NULL OR q.category = $3)
         AND ($4::boolean = FALSE OR q.explanation IS NULL)
         AND ($5::text IS NULL OR q.question_text ILIKE '%' || $5 || '%'
@@ -216,6 +217,8 @@ router.post('/competitions', validate({
     ends_at: z.coerce.date(),
     duration_minutes: z.number().int().min(1).max(600).default(30),
     question_ids: z.array(z.number().int().positive()).max(200).optional(),
+    // Questions written for this competition only (created first with POST /admin/competition-questions[/upload]).
+    extra_question_ids: z.array(z.number().int().positive()).max(200).optional(),
     random: z.object({
       count: z.number().int().min(1).max(200),
       subject_id: z.number().int().positive().optional(),
@@ -223,7 +226,7 @@ router.post('/competitions', validate({
       category: z.enum(['lesson', 'past_exam']).optional(),
     }).optional(),
   }).refine((b) => b.ends_at > b.starts_at, { message: 'وقت النهاية يجب أن يكون بعد البداية', path: ['ends_at'] })
-    .refine((b) => b.question_ids?.length || b.random, { message: 'حدد question_ids أو random', path: ['question_ids'] }),
+    .refine((b) => b.question_ids?.length || b.random || b.extra_question_ids?.length, { message: 'أضف أسئلة للمسابقة', path: ['question_ids'] }),
 }), async (req, res) => {
   const b = req.body;
   const comp = await db.withTransaction(async (c) => {
@@ -233,18 +236,81 @@ router.post('/competitions', validate({
     const ins = b.question_ids?.length
       ? await c.query(
         `INSERT INTO competition_questions (competition_id, question_id)
-         SELECT $1, id FROM questions WHERE id = ANY($2::bigint[]) AND is_active`, [comp.id, b.question_ids])
-      : await c.query(
+         SELECT $1, id FROM questions WHERE id = ANY($2::bigint[]) AND is_active AND NOT competition_only`, [comp.id, b.question_ids])
+      : b.random ? await c.query(
         `INSERT INTO competition_questions (competition_id, question_id)
          SELECT $1, id FROM questions
-          WHERE is_active AND ($2::int IS NULL OR subject_id = $2) AND ($3::text IS NULL OR category = $3)
+          WHERE is_active AND NOT competition_only AND ($2::int IS NULL OR subject_id = $2) AND ($3::text IS NULL OR category = $3)
             AND ($5::int IS NULL OR lesson_id = $5)
           ORDER BY random() LIMIT $4`,
-        [comp.id, b.random.subject_id ?? null, b.random.category ?? null, b.random.count, b.random.lesson_id ?? null]);
-    if (!ins.rowCount) throw badRequest('لم يتم العثور على أسئلة مطابقة');
-    return { ...comp, question_count: ins.rowCount };
+        [comp.id, b.random.subject_id ?? null, b.random.category ?? null, b.random.count, b.random.lesson_id ?? null])
+      : { rowCount: 0 };
+    if ((b.question_ids?.length || b.random) && !ins.rowCount) throw badRequest('لم يتم العثور على أسئلة مطابقة في البنك');
+    // The competition's own questions: only unused ones (each belongs to a single competition).
+    const extra = b.extra_question_ids?.length ? await c.query(
+      `INSERT INTO competition_questions (competition_id, question_id)
+       SELECT $1, q.id FROM questions q
+        WHERE q.id = ANY($2::bigint[]) AND q.competition_only
+          AND NOT EXISTS (SELECT 1 FROM competition_questions cq WHERE cq.question_id = q.id)`, [comp.id, b.extra_question_ids]) : { rowCount: 0 };
+    if (b.extra_question_ids?.length && extra.rowCount !== new Set(b.extra_question_ids).size) {
+      throw badRequest('بعض الأسئلة الخاصة غير موجودة أو مستخدمة في مسابقة أخرى — أضفها من جديد');
+    }
+    return { ...comp, question_count: ins.rowCount + extra.rowCount, extra_questions: extra.rowCount };
   });
   res.status(201).json({ competition: comp });
+});
+
+// ------------------------------------------------------------------ A competition's own questions
+// Not added to the question bank: hidden from practice, the bank list, random picks and the mistakes bank, and
+// deleted with their competition (unused ones after a day — see the cleanup job).
+const compQuestionBody = z.object({
+  subject_id: z.coerce.number().int().positive(),
+  question_text: z.string().trim().max(5000).default(''),
+  option_a: z.string().trim().min(1, 'اكتب الاختيار أ').max(1000),
+  option_b: z.string().trim().min(1, 'اكتب الاختيار ب').max(1000),
+  option_c: z.string().trim().min(1, 'اكتب الاختيار ج').max(1000),
+  option_d: z.string().trim().min(1, 'اكتب الاختيار د').max(1000),
+  correct_option: z.enum(['A', 'B', 'C', 'D']),
+  explanation: z.string().trim().max(5000).optional(),
+});
+
+/** One question typed in the competition form (multipart: the fields + optional image "image"). */
+router.post('/competition-questions', uploadLimiter, imageUpload.single('image'), validate({ body: compQuestionBody }), async (req, res) => {
+  const b = req.body;
+  if (!b.question_text && !req.file) throw badRequest('اكتب نص السؤال أو ارفع صورة له');
+  const { rowCount: subjectOk } = await db.query(`SELECT 1 FROM subjects WHERE id = $1`, [b.subject_id]);
+  if (!subjectOk) throw badRequest('المادة غير موجودة');
+  const q = await db.withTransaction(async (c) => {
+    const { rows: [q] } = await c.query(
+      `INSERT INTO questions (subject_id, question_text, option_a, option_b, option_c, option_d, correct_option, explanation,
+                              content_hash, competition_only)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, TRUE)
+       RETURNING id, question_text, option_a, option_b, option_c, option_d, correct_option`,
+      [b.subject_id, b.question_text, b.option_a, b.option_b, b.option_c, b.option_d, b.correct_option, b.explanation || null,
+        crypto.randomBytes(32).toString('hex')]);
+    if (req.file) {
+      try {
+        q.image = await saveMedia(c, q.id, 'question', req.file.buffer);
+      } catch (err) {
+        if (err.status === 400) throw badRequest(err.message);
+        throw err;
+      }
+    }
+    return q;
+  });
+  res.status(201).json({ question: q });
+});
+
+/** An Excel sheet (same template as the bank) whose questions are for one competition only. */
+router.post('/competition-questions/upload', uploadLimiter, excelUpload.single('file'), async (req, res) => {
+  if (!req.file) throw badRequest('ارفع ملف Excel في الحقل file');
+  const defaultSubject = typeof req.body?.default_subject === 'string' ? req.body.default_subject.trim().slice(0, 120) : undefined;
+  const parsed = await parseQuestionSheet(req.file.buffer, { defaultSubject });
+  if (!parsed.valid.length) throw badRequest('لا يوجد أي صف صالح في الملف', { errors: parsed.errors });
+  const r = await importQuestions(parsed, { adminId: req.user.id, filename: req.file.originalname, competitionOnly: true });
+  const { rows } = await db.query(
+    `SELECT id, question_text, correct_option FROM questions WHERE id = ANY($1::bigint[]) ORDER BY id`, [r.question_ids]);
+  res.status(201).json({ questions: rows, images: r.images, passages: r.passages, failed: r.failed, errors: r.errors });
 });
 
 router.post('/teams/auto-assign', validate({ body: z.object({ require_subscription: z.boolean().default(true) }) }), async (req, res) => {

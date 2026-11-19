@@ -819,5 +819,60 @@ async function studentLogin(identifier, password, device) {
   await setSup({ support_enabled: supBefore.support_enabled, support_phone: supBefore.support_phone,
     support_for_unsubscribed: supBefore.support_for_unsubscribed, support_message: supBefore.support_message });
 
+  // ---------------- ✍️ A competition's own questions (typed in the form or from Excel — not added to the bank)
+  const pgdb = require('../src/config/db');
+  const graphPng = fs.readFileSync(path.join(__dirname, '../templates/images/graph-b.png'));
+  const ownForm = (fields, img) => {
+    const f = new FormData();
+    for (const [k, v] of Object.entries(fields)) f.append(k, String(v));
+    if (img) f.append('image', new Blob([img], { type: 'image/png' }), 'q.png');
+    return f;
+  };
+  const opts4 = { option_a: 'واحد', option_b: 'اثنان', option_c: 'ثلاثة', option_d: 'أربعة' };
+  const own1 = await call('POST', '/api/admin/competition-questions', { token: AT, form: ownForm({ subject_id: physics.id, question_text: `سؤال خاص ${rnd}`, ...opts4, correct_option: 'C' }, graphPng) });
+  ok(own1.status === 201 && own1.data.question.image, 'admin adds a competition-only question (text + image + options + answer)', own1.data);
+  const own2 = await call('POST', '/api/admin/competition-questions', { token: AT, form: ownForm({ subject_id: physics.id, ...opts4, correct_option: 'A' }, graphPng) });
+  ok(own2.status === 201, 'image-only question accepted');
+  ok((await call('POST', '/api/admin/competition-questions', { token: AT, form: ownForm({ subject_id: physics.id, ...opts4, correct_option: 'A' }) })).status === 400, 'question needs text or an image');
+  ok((await call('POST', '/api/admin/competition-questions', { token: A.token, form: ownForm({ subject_id: physics.id, question_text: 'x', ...opts4, correct_option: 'A' }) })).status === 403, 'students cannot add competition questions');
+  const fx = new FormData();
+  fx.append('file', new Blob([fs.readFileSync(path.join(__dirname, '../templates/questions-template.xlsx'))]), 'comp.xlsx');
+  const ownX = await call('POST', '/api/admin/competition-questions/upload', { token: AT, form: fx });
+  ok(ownX.status === 201 && ownX.data.questions.length >= 3, `Excel sheet just for one competition (${ownX.data.questions?.length} questions, even if they are in the bank)`, ownX.data);
+  ok(!(await call('GET', `/api/admin/questions?search=${encodeURIComponent(`سؤال خاص ${rnd}`)}`, { token: AT })).data.items.length, 'competition-only question not in the question bank');
+  ok((await call('POST', '/api/catalog/answer', { token: A.token, body: { question_id: own1.data.question.id, choice: 'A' } })).status === 404, 'competition-only question cannot be practised');
+  const ownIds = [own1.data.question.id, own2.data.question.id, ...ownX.data.questions.map((q) => q.id)];
+  const tNow = Date.now();
+  const compBody = (title, extra) => ({ title, type: 'individual_monthly', starts_at: new Date(tNow - 60000).toISOString(), ends_at: new Date(tNow + 3600000).toISOString(), ...extra });
+  const compOwn = await call('POST', '/api/admin/competitions', { token: AT, body: compBody(`مسابقة خاصة ${rnd}`, { extra_question_ids: ownIds }) });
+  ok(compOwn.status === 201 && compOwn.data.competition.question_count === ownIds.length && compOwn.data.competition.extra_questions === ownIds.length, 'competition made of its own questions only', compOwn.data);
+  ok((await call('POST', '/api/admin/competitions', { token: AT, body: compBody(`مكرر ${rnd}`, { extra_question_ids: [own1.data.question.id] }) })).status === 400, "a competition's own question can't be reused in another");
+  const mixed = await call('POST', '/api/admin/competitions', { token: AT, body: compBody(`مختلطة ${rnd}`, { random: { count: 2, subject_id: physics.id },
+    extra_question_ids: [(await call('POST', '/api/admin/competition-questions', { token: AT, form: ownForm({ subject_id: physics.id, question_text: `خاص مختلط ${rnd}`, ...opts4, correct_option: 'B' }) })).data.question.id] }) });
+  ok(mixed.status === 201 && mixed.data.competition.question_count === 3, 'random bank questions + own questions together');
+  const cidO = compOwn.data.competition.id;
+  const mBefore = (await call('GET', '/api/mistakes/summary', { token: A.token })).data.total;
+  const eO = await call('POST', `/api/competitions/${cidO}/start`, { token: A.token });
+  const dq = eO.data.questions.find((q) => q.question_id === own1.data.question.id);
+  ok(dq && dq.image && dq.question.includes('سؤال خاص'), 'student solves it with its picture');
+  const keyOf = (q, text) => q.options.find((o) => o.text === text).key;
+  const subO = await call('POST', `/api/competitions/${cidO}/submit`, { token: A.token, body: { answers: [
+    { question_id: own1.data.question.id, choice: keyOf(dq, 'ثلاثة') },
+    { question_id: own2.data.question.id, choice: keyOf(eO.data.questions.find((q) => q.question_id === own2.data.question.id), 'أربعة') }] } });
+  ok(subO.status === 200, 'submitted');
+  await call('POST', `/api/admin/competitions/${cidO}/publish`, { token: AT });
+  const myO = (await call('GET', `/api/competitions/${cidO}/leaderboard`, { token: A.token })).data;
+  ok(myO.individuals?.some((x) => x.score === 1), 'scored with the own answers (1 right, 1 wrong)', myO.individuals);
+  ok((await call('GET', '/api/mistakes/summary', { token: A.token })).data.total === mBefore, "a wrong answer on a competition's own question doesn't go to the mistakes bank");
+  const qsO = (await call('GET', `/api/admin/competitions/${cidO}/questions`, { token: AT })).data.questions;
+  ok(qsO.length === ownIds.length && qsO.every((q) => q.competition_only), 'admin sees them marked as competition-only');
+  ok((await call('DELETE', `/api/admin/competitions/${cidO}`, { token: AT })).status === 204
+    && (await pgdb.query('SELECT COUNT(*)::int AS n FROM questions WHERE id = ANY($1::bigint[])', [ownIds])).rows[0].n === 0, 'deleting the competition deletes its own questions');
+  const orphan = await call('POST', '/api/admin/competition-questions', { token: AT, form: ownForm({ subject_id: physics.id, question_text: `يتيم ${rnd}`, ...opts4, correct_option: 'D' }) });
+  await pgdb.query(`UPDATE questions SET created_at = now() - interval '2 days' WHERE id = $1`, [orphan.data.question.id]);
+  const cleaned = await require('../src/jobs').JOBS.cleanup();
+  ok(cleaned.orphan_competition_questions >= 1
+    && !(await pgdb.query('SELECT 1 FROM questions WHERE id = $1', [orphan.data.question.id])).rowCount, 'unused competition questions removed by the daily cleanup');
+
   console.log(`\n🎉 All ${passed} checks passed`);
 })().catch((e) => { console.error(e); process.exit(1); });

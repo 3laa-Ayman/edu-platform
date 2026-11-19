@@ -527,7 +527,8 @@ Admin.competitions = async (el) => {
         <label>مدة الحل (دقيقة)<input type="number" name="duration_minutes" min="1" max="600" value="30"></label>
         <div class="span3 q-mode"><b>الأسئلة:</b>
           <label class="check"><input type="radio" name="q_mode" value="random" checked> 🎲 عشوائي من البنك</label>
-          <label class="check"><input type="radio" name="q_mode" value="manual"> ✋ أختارها بنفسي</label></div>
+          <label class="check"><input type="radio" name="q_mode" value="manual"> ✋ أختارها بنفسي</label>
+          <label class="check"><input type="radio" name="q_mode" value="own"> ✍️ أسئلة خاصة فقط</label></div>
         <div class="span3 grid3" id="q-random">
           <label>عدد الأسئلة<input type="number" name="count" min="1" max="200" value="10"></label>
           <label>المادة<select name="subject_id"><option value="">كل المواد</option>${subjects.map((s) => opt(s.id, `${s.name} (${s.questions})`)).join('')}</select></label>
@@ -536,6 +537,15 @@ Admin.competitions = async (el) => {
         </div>
         <div class="span3" id="q-manual" hidden>
           <button class="btn ghost" type="button" data-action="pick">✋ اختر الأسئلة <span class="badge" id="picked-count">0 مختار</span></button>
+        </div>
+        <div class="span3 own-qs">
+          <h3>✍️ أسئلة خاصة بالمسابقة <small class="muted">(اختياري — تظهر في هذه المسابقة فقط ولا تُضاف إلى بنك الأسئلة)</small></h3>
+          <div class="row wrap own-tools">
+            <label>مادة الأسئلة<select name="own_subject">${subjects.map((s) => opt(s.id, s.name)).join('')}</select></label>
+            <button class="btn ghost" type="button" data-action="ownAdd">➕ إضافة سؤال</button>
+            <label class="btn ghost file-btn">📄 رفع شيت Excel<input type="file" id="own-file" accept=".xlsx" hidden></label>
+          </div>
+          <div id="own-list"></div>
         </div>
         <button class="btn primary span3" type="submit">إنشاء المسابقة</button>
       </form></section>
@@ -555,10 +565,35 @@ Admin.competitions = async (el) => {
   const picked = new Set();
   const cf = $('#cf', el);
   const showMode = () => {
-    const manual = cf.q_mode.value === 'manual';
-    $('#q-random', el).hidden = manual;
-    $('#q-manual', el).hidden = !manual;
+    const mode = cf.q_mode.value;
+    $('#q-random', el).hidden = mode !== 'random';
+    $('#q-manual', el).hidden = mode !== 'manual';
   };
+  // The competition's own questions (typed here or from an Excel sheet): saved right away, attached on "create".
+  const own = [];
+  const LETTER = { A: 'أ', B: 'ب', C: 'ج', D: 'د' };
+  const showOwn = () => {
+    $('#own-list', el).innerHTML = own.length
+      ? `<p class="muted small">${own.length} سؤال خاص</p>${table(['#', 'السؤال', 'الإجابة', ''], own.map((q, i) => [i + 1,
+        `${q.question_text ? rich(q.question_text) : '<i class="muted">(سؤال بصورة)</i>'}${q.image ? ' 🖼️' : ''}`,
+        `<b>${LETTER[q.correct_option]}</b>`, `<button class="btn ghost tiny" type="button" data-action="ownRemove" data-i="${i}">إزالة</button>`]))}`
+      : '';
+  };
+  $('#own-file', el).addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    run(e.target.closest('label'), async () => {
+      const fd = new FormData();
+      fd.append('file', file);
+      const s = subjects.find((x) => String(x.id) === cf.own_subject.value);
+      if (s) fd.append('default_subject', s.name);
+      const r = await API.upload('/admin/competition-questions/upload', fd);
+      own.push(...r.questions);
+      showOwn();
+      toast(`أُضيف ${r.questions.length} سؤال من الشيت${r.failed ? ` — ${r.failed} صف به أخطاء` : ''}`, r.failed ? 'err' : 'ok');
+    });
+  });
   cf.querySelectorAll('[name=q_mode]').forEach((r) => r.addEventListener('change', showMode));
   cf.subject_id.addEventListener('change', () => {
     const s = subjects.find((x) => String(x.id) === cf.subject_id.value);
@@ -566,20 +601,52 @@ Admin.competitions = async (el) => {
   });
   const showPicked = () => { $('#picked-count', el).textContent = `${picked.size} مختار`; };
   onSubmit(cf, async (v) => {
-    const manual = v.q_mode === 'manual';
-    if (manual && !picked.size) throw new Error('اختر الأسئلة أولًا (زر «اختر الأسئلة»)');
+    const mode = v.q_mode;
+    if (mode === 'manual' && !picked.size) throw new Error('اختر الأسئلة أولًا (زر «اختر الأسئلة»)');
+    if (mode === 'own' && !own.length) throw new Error('أضف أسئلة خاصة أولًا (زر «إضافة سؤال» أو «رفع شيت Excel»)');
     const r = await API.post('/admin/competitions', {
       title: v.title, type: v.type,
       starts_at: new Date(v.starts_at).toISOString(), ends_at: new Date(v.ends_at).toISOString(),
       duration_minutes: Number(v.duration_minutes),
-      ...(manual ? { question_ids: [...picked] }
-        : { random: { count: Number(v.count), subject_id: num(v.subject_id), lesson_id: num(v.lesson_id), category: v.category } }),
+      ...(mode === 'manual' ? { question_ids: [...picked] } : {}),
+      ...(mode === 'random' ? { random: { count: Number(v.count), subject_id: num(v.subject_id), lesson_id: num(v.lesson_id), category: v.category } } : {}),
+      ...(own.length ? { extra_question_ids: own.map((q) => q.id) } : {}),
     });
-    toast(`تم إنشاء المسابقة بـ ${r.competition.question_count} سؤال`);
+    toast(`تم إنشاء المسابقة بـ ${r.competition.question_count} سؤال${r.competition.extra_questions ? ` (منها ${r.competition.extra_questions} خاص)` : ''}`);
     reload();
   });
   onAction(el, {
     pick: () => pickQuestions({ subjects, selected: picked, onDone: showPicked }),
+    ownRemove: (b) => { own.splice(Number(b.dataset.i), 1); showOwn(); },
+    ownAdd: () => {
+      const m = modal(`<h2>➕ سؤال خاص بالمسابقة</h2>
+        <p class="muted small">المادة: ${esc(subjects.find((x) => String(x.id) === cf.own_subject.value)?.name || '')} — يظهر في هذه المسابقة فقط.</p>
+        <form class="form" id="oqf">
+          <label>نص السؤال<textarea name="question_text" rows="3" placeholder="اكتب السؤال (أو ارفع صورة له فقط)"></textarea></label>
+          <label>صورة السؤال (اختياري)<input type="file" name="image" accept="image/png,image/jpeg,image/gif,image/webp"></label>
+          <div class="grid2">
+            <label>أ<input name="option_a" required></label><label>ب<input name="option_b" required></label>
+            <label>ج<input name="option_c" required></label><label>د<input name="option_d" required></label>
+          </div>
+          <label>الإجابة الصحيحة<select name="correct_option" required><option value="">اختر</option>
+            <option value="A">أ</option><option value="B">ب</option><option value="C">ج</option><option value="D">د</option></select></label>
+          <label>الشرح (اختياري — يظهر للطالب بعد إعلان النتيجة)<textarea name="explanation" rows="2"></textarea></label>
+          <button class="btn primary" type="submit">إضافة السؤال</button>
+        </form>`);
+      onSubmit($('#oqf', m), async (v, form) => {
+        const img = form.image.files[0];
+        if (!v.question_text && !img) throw new Error('اكتب نص السؤال أو ارفع صورة له');
+        const fd = new FormData();
+        fd.append('subject_id', cf.own_subject.value);
+        for (const k of ['question_text', 'option_a', 'option_b', 'option_c', 'option_d', 'correct_option', 'explanation']) if (v[k]) fd.append(k, v[k]);
+        if (img) fd.append('image', img);
+        const r = await API.upload('/admin/competition-questions', fd);
+        own.push(r.question);
+        showOwn();
+        closeModal();
+        toast('تمت إضافة السؤال');
+      });
+    },
     publish: (b) => run(b, async () => {
       const c = competitions.find((x) => String(x.id) === b.dataset.id);
       if (!confirm(`إعلان نتيجة «${c.title}»؟\nسيرى الطلاب درجاتهم والترتيب والإجابات الصحيحة${c.status === 'finished' ? '' : ' (تظهر الإجابات الصحيحة بعد انتهاء المسابقة)'}، وستُضاف إجاباتهم إلى بنك الأخطاء.`)) return;
@@ -596,7 +663,9 @@ Admin.competitions = async (el) => {
     questions: (b) => run(b, async () => {
       const c = competitions.find((x) => String(x.id) === b.dataset.id);
       const { questions } = await API.get(`/admin/competitions/${c.id}/questions`);
-      const sel = new Set(questions.map((q) => q.id));
+      const sel = new Set(questions.filter((q) => !q.competition_only).map((q) => q.id));
+      const ownCount = questions.filter((q) => q.competition_only).length;
+      if (ownCount) toast(`هذه المسابقة فيها ${ownCount} سؤال خاص — تبقى كما هي، والاختيار هنا لأسئلة البنك فقط`);
       pickQuestions({
         subjects, selected: sel, title: `أسئلة «${c.title}»`,
         saveLabel: 'حفظ الأسئلة',

@@ -336,7 +336,7 @@ router.patch('/competitions/:id', validate({
 /** The competition's questions (admin view, with the correct answer). */
 router.get('/competitions/:id/questions', validate({ params: idParam }), async (req, res) => {
   const { rows } = await db.query(
-    `SELECT q.id, q.question_text, q.correct_option, q.category, s.name AS subject, l.name AS lesson
+    `SELECT q.id, q.question_text, q.correct_option, q.category, q.competition_only, s.name AS subject, l.name AS lesson
        FROM competition_questions cq JOIN questions q ON q.id = cq.question_id
        JOIN subjects s ON s.id = q.subject_id LEFT JOIN lessons l ON l.id = q.lesson_id
       WHERE cq.competition_id = $1 ORDER BY q.id`, [req.p.id]);
@@ -345,19 +345,23 @@ router.get('/competitions/:id/questions', validate({ params: idParam }), async (
 
 /** Replace the competition's questions — only before any student has started it (everyone must get the same set). */
 router.put('/competitions/:id/questions', validate({
-  params: idParam, body: z.object({ question_ids: z.array(z.number().int().positive()).min(1).max(200) }),
+  params: idParam, body: z.object({ question_ids: z.array(z.number().int().positive()).max(200) }),
 }), async (req, res) => {
   const count = await db.withTransaction(async (c) => {
     const { rows: [comp] } = await c.query(`SELECT id FROM competitions WHERE id = $1 FOR UPDATE`, [req.p.id]);
     if (!comp) throw notFound('المسابقة غير موجودة');
     const { rowCount: started } = await c.query(`SELECT 1 FROM competition_entries WHERE competition_id = $1 LIMIT 1`, [comp.id]);
     if (started) throw conflict('بدأ بعض الطلاب المسابقة بالفعل، فلا يمكن تغيير أسئلتها الآن');
-    await c.query(`DELETE FROM competition_questions WHERE competition_id = $1`, [comp.id]);
-    const ins = await c.query(
+    // Only the bank questions are replaced: the competition's own questions stay.
+    await c.query(
+      `DELETE FROM competition_questions cq USING questions q
+        WHERE cq.competition_id = $1 AND q.id = cq.question_id AND NOT q.competition_only`, [comp.id]);
+    await c.query(
       `INSERT INTO competition_questions (competition_id, question_id)
-       SELECT $1, id FROM questions WHERE id = ANY($2::bigint[]) AND is_active`, [comp.id, req.body.question_ids]);
-    if (!ins.rowCount) throw badRequest('لم يتم العثور على أسئلة مطابقة');
-    return ins.rowCount;
+       SELECT $1, id FROM questions WHERE id = ANY($2::bigint[]) AND is_active AND NOT competition_only`, [comp.id, req.body.question_ids]);
+    const { rows: [{ n }] } = await c.query(`SELECT COUNT(*)::int AS n FROM competition_questions WHERE competition_id = $1`, [comp.id]);
+    if (!n) throw badRequest('لم يتم العثور على أسئلة مطابقة');
+    return n;
   });
   res.json({ question_count: count });
 });
@@ -372,8 +376,15 @@ router.post('/competitions/:id/unpublish', validate({ params: idParam }), async 
 
 /** Deletes the competition with all entries/results (student attempts stay in their history). */
 router.delete('/competitions/:id', validate({ params: idParam }), async (req, res) => {
-  const r = await db.query(`DELETE FROM competitions WHERE id = $1`, [req.p.id]);
-  if (!r.rowCount) throw notFound('المسابقة غير موجودة');
+  await db.withTransaction(async (c) => {
+    const { rows: own } = await c.query(
+      `SELECT q.id FROM competition_questions cq JOIN questions q ON q.id = cq.question_id
+        WHERE cq.competition_id = $1 AND q.competition_only`, [req.p.id]);
+    const r = await c.query(`DELETE FROM competitions WHERE id = $1`, [req.p.id]);
+    if (!r.rowCount) throw notFound('المسابقة غير موجودة');
+    // Its own questions go with it (with their answers and images).
+    if (own.length) await c.query(`DELETE FROM questions WHERE id = ANY($1::bigint[]) AND competition_only`, [own.map((q) => q.id)]);
+  });
   res.status(204).end();
 });
 

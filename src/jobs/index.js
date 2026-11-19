@@ -24,13 +24,17 @@ const JOBS = {
     const invites = await db.query(
       `UPDATE team_invites SET status = 'expired', responded_at = now() WHERE status = 'pending' AND created_at < now() - interval '7 days'`);
     const otps = await db.query(`DELETE FROM otp_codes WHERE created_at < now() - interval '2 days'`);
+    // Questions written for a competition that was never created.
+    const orphanQuestions = await db.query(
+      `DELETE FROM questions q WHERE q.competition_only AND q.created_at < now() - interval '1 day'
+          AND NOT EXISTS (SELECT 1 FROM competition_questions cq WHERE cq.question_id = q.id)`);
     // Registrations that never reached the "set password" step free their email after 7 days.
     const abandoned = await db.query(
       `DELETE FROM users WHERE role = 'student' AND password_hash IS NULL AND created_at < now() - interval '7 days'`);
     const payments = await db.query(
       `UPDATE payments SET status = 'failed', admin_note = 'expired', updated_at = now()
         WHERE status = 'pending' AND method_type = 'gateway' AND created_at < now() - interval '3 days'`);
-    return { parent_reports: reports, renewal_reminders: renewalReminders, competition_entries_finalized: competitions.finalized, invites_expired: invites.rowCount, otps_deleted: otps.rowCount, abandoned_registrations: abandoned.rowCount, payments_expired: payments.rowCount };
+    return { parent_reports: reports, renewal_reminders: renewalReminders, competition_entries_finalized: competitions.finalized, invites_expired: invites.rowCount, otps_deleted: otps.rowCount, abandoned_registrations: abandoned.rowCount, payments_expired: payments.rowCount, orphan_competition_questions: orphanQuestions.rowCount };
   },
 };
 

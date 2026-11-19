@@ -594,3 +594,7 @@ CREATE TABLE IF NOT EXISTS notifications (
 CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications (user_id, created_at DESC);
 -- Renewal reminder sent for this subscription (once, ~3 days before it ends).
 ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS reminder_sent_at TIMESTAMPTZ;
+
+-- Questions written for one competition only (added in the competition form or from an Excel sheet just for it):
+-- never shown in the question bank, practice, random picks or the mistakes bank; removed with their competition.
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS competition_only BOOLEAN NOT NULL DEFAULT FALSE;
