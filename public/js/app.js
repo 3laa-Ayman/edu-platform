@@ -3,6 +3,7 @@ const ROUTES = [
   ['/login', Views.login, 'guest'],
   ['/register', Views.register, 'guest'],
   ['/privacy', Views.privacy, 'public'],
+  ['/terms', Views.terms, 'public'],
   ['/verify', Views.verify, 'guest'],
   ['/forgot', Views.forgot, 'guest'],
   ['/set-password', Views.setPassword, 'guest'],

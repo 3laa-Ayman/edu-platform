@@ -438,4 +438,4 @@ td .row { flex-wrap: wrap; }
 .legal ul { padding-inline-start: 1.4em; margin: .3em 0; }
 .legal ul ul { margin-top: .2em; }
 .site-footer { text-align: center; padding: 18px 16px 84px; font-size: .9rem; }
-.site-footer a { color: var(--muted); }
+.site-footer, .site-footer a { color: var(--muted); }
