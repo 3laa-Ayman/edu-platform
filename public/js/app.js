@@ -92,6 +92,9 @@ function renderTopbar(path) {
   $('#bell')?.addEventListener('click', openAnnouncements);
   refreshBell(false);
   refreshSupport(path);
+  // Terms / privacy links at the bottom: inside the dashboard only (signed-in students and admins).
+  const footer = $('.site-footer');
+  if (footer) footer.hidden = !u;
   $('#logout')?.addEventListener('click', () => {
     API.setToken(null);
     State.user = null;
