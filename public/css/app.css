@@ -437,6 +437,6 @@ td .row { flex-wrap: wrap; }
 .legal h3 { margin: 1em 0 .3em; font-size: 1.02rem; }
 .legal ul { padding-inline-start: 1.4em; margin: .3em 0; }
 .legal ul ul { margin-top: .2em; }
-.site-footer { text-align: start; padding-top: 0; padding-bottom: 84px; font-size: .9rem; }
+.site-footer { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding-top: 0; padding-bottom: 84px; font-size: .9rem; }
 .site-footer[hidden] { display: none; }
 .site-footer, .site-footer a { color: var(--muted); }
