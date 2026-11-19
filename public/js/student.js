@@ -139,6 +139,7 @@ Views.register = async (el) => {
       <label>رقم الطالب<input name="phone" required inputmode="numeric" placeholder="01012345678"></label>
       <label>رقم ولي الأمر<input name="parent_phone" required inputmode="numeric" placeholder="01212345678"></label>
       <label class="span2">البريد الإلكتروني لولي الأمر (اختياري — لاستلام التقارير)<input name="parent_email" type="email"></label>
+      <p class="muted small span2">بإنشاء الحساب فإنك توافق على <a href="#/privacy" target="_blank">سياسة الخصوصية</a>.</p>
       <button class="btn primary span2" type="submit">إرسال رمز التأكيد إلى البريد الإلكتروني</button>
     </form>
     <p class="links">لديك حساب؟ <a href="#/login">سجّل الدخول</a></p>

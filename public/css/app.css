@@ -430,3 +430,12 @@ td .row { flex-wrap: wrap; }
 .support-fab[hidden] { display: none; }
 @media (max-width: 600px) { .support-fab { bottom: 14px; left: 14px; padding: 10px 14px; font-size: .92rem; } }
 .support-fab .wa-icon { flex: none; }
+
+/* Privacy policy & footer */
+.legal { max-width: 860px; margin-inline: auto; line-height: 1.9; }
+.legal h2 { margin-top: 1.6em; font-size: 1.2rem; }
+.legal h3 { margin: 1em 0 .3em; font-size: 1.02rem; }
+.legal ul { padding-inline-start: 1.4em; margin: .3em 0; }
+.legal ul ul { margin-top: .2em; }
+.site-footer { text-align: center; padding: 18px 16px 84px; font-size: .9rem; }
+.site-footer a { color: var(--muted); }

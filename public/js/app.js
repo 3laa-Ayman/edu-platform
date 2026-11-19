@@ -2,6 +2,7 @@
 const ROUTES = [
   ['/login', Views.login, 'guest'],
   ['/register', Views.register, 'guest'],
+  ['/privacy', Views.privacy, 'public'],
   ['/verify', Views.verify, 'guest'],
   ['/forgot', Views.forgot, 'guest'],
   ['/set-password', Views.setPassword, 'guest'],
@@ -55,6 +56,7 @@ async function loadSiteSettings() {
     const s = await API.get('/settings/public');
     Site.name = s.site_name || Site.name;
     Site.pointsPerEgp = s.ai_points_per_egp || Site.pointsPerEgp;
+    Site.supportPhone = s.support_phone || '';
     document.title = Site.name;
   } catch { /* keep default */ }
 }
@@ -116,7 +118,7 @@ async function render() {
 
   if (!route) { location.hash = home; return; }
   if (route.access === 'guest' && u) { location.hash = home; return; }
-  if (route.access !== 'guest' && !u) { location.hash = '#/login'; return; }
+  if (route.access !== 'guest' && route.access !== 'public' && !u) { location.hash = '#/login'; return; }
   if (route.access === 'admin' && u.role !== 'admin') { location.hash = '#/'; return; }
   if (route.access === 'student' && u.role === 'admin') { location.hash = '#/admin'; return; }
 
