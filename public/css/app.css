@@ -429,3 +429,4 @@ td .row { flex-wrap: wrap; }
 .support-fab.locked { background: #5f6b7a; }
 .support-fab[hidden] { display: none; }
 @media (max-width: 600px) { .support-fab { bottom: 14px; left: 14px; padding: 10px 14px; font-size: .92rem; } }
+.support-fab .wa-icon { flex: none; }
