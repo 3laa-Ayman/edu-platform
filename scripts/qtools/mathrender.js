@@ -1,7 +1,7 @@
 /* usage: node mathrender.js items.json   — items: [{"out": "path.png", "html": "<...>"}]
    Renders Arabic RTL math (book style) to tight PNGs with Chromium. Classes:
    .f>.n+.d fraction · .r radical (√ over content) · .s sigma: <span class="s"><span class="t">10</span><span class="g">∑</span><span class="b">ر=1</span></span>
-   <sup>/<sub> exponents · .p power of a group: <span class="p">(س + 2)<sup>6</sup></span> */
+   <sup>/<sub> exponents (an RLM is inserted before each, so a digit exponent after a digit base sits upper-LEFT like the book) · .p power of a group: <span class="p">(س + 2)<sup>6</sup></span> */
 const { chromium } = require('playwright'); const fs = require('fs');
 const CSS = `body{margin:0;background:#fff}
 #c{display:inline-block;padding:10px 16px;font-family:'Noto Sans Arabic','DejaVu Sans',sans-serif;font-size:30px;color:#111;direction:rtl;white-space:nowrap;line-height:1.6}
@@ -40,7 +40,7 @@ const DRAW_RADICALS = `(() => {
   const items = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
   const b = await chromium.launch(); const pg = await b.newPage({ deviceScaleFactor: Number(process.env.SCALE || 2) });
   for (const it of items) {
-    await pg.setContent(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><style>${CSS}</style></head><body><span id="c">${it.html}</span></body></html>`);
+    await pg.setContent(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><style>${CSS}</style></head><body><span id="c">${it.html.replace(/<(sup|sub)>/g, '\u200f<$1>')}</span></body></html>`);
     await pg.evaluate(DRAW_RADICALS);
     await pg.locator('#c').screenshot({ path: it.out, omitBackground: false });
   }
