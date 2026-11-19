@@ -9,6 +9,10 @@ const db = require('../config/db');
 const SCHEMA = z.object({
   site_name: z.string().trim().min(2).max(60),
   support_phone: z.string().trim().max(30),
+  // Customer service on WhatsApp (button for students). Which plans include it: plan feature "priority_support".
+  support_enabled: z.boolean(),
+  support_for_unsubscribed: z.boolean(),
+  support_message: z.string().trim().max(300),
   vodafone_cash_number: z.string().trim().max(30),
   instapay_address: z.string().trim().max(80),
   manual_payment_instructions: z.string().trim().max(500),
@@ -26,6 +30,9 @@ const SCHEMA = z.object({
 const defaults = () => ({
   site_name: 'منصة المذاكرة',
   support_phone: '',
+  support_enabled: true,
+  support_for_unsubscribed: true,
+  support_message: 'السلام عليكم، أحتاج مساعدة بخصوص المنصة.',
   vodafone_cash_number: env.manualPayment.vodafoneCashNumber || '',
   instapay_address: env.manualPayment.instapayAddress || '',
   manual_payment_instructions: 'حوّل المبلغ ثم ارفع صورة الإيصال مع رقم العملية، وسيتم التفعيل بعد مراجعة الإدارة.',

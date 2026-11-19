@@ -420,3 +420,12 @@ td .row { flex-wrap: wrap; }
 .check-big { width: 88px; height: 88px; margin: 0 auto 14px; border-radius: 50%; background: var(--good); color: #fff;
   display: grid; place-items: center; font-size: 52px; font-weight: 700; line-height: 1; }
 :root[data-theme="dark"] .check-big { color: #0b2e17; }
+
+/* Customer service (WhatsApp) floating button */
+.support-fab { position: fixed; bottom: 18px; left: 18px; z-index: 40; display: inline-flex; align-items: center; gap: 6px;
+  padding: 11px 16px; border: 0; border-radius: 999px; background: #25d366; color: #fff; font: inherit; font-weight: 700;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .22); cursor: pointer; }
+.support-fab:hover { filter: brightness(1.05); }
+.support-fab.locked { background: #5f6b7a; }
+.support-fab[hidden] { display: none; }
+@media (max-width: 600px) { .support-fab { bottom: 14px; left: 14px; padding: 10px 14px; font-size: .92rem; } }

@@ -794,5 +794,30 @@ async function studentLogin(identifier, password, device) {
   ok(exp.some((x) => x.id === N2.id) && !exp.some((x) => x.id === N1.id) && exp.every((x) => x.plan_ends_at), 'students list filtered to subscriptions ending within 7 days');
   ok((await call('GET', '/api/notifications', { token: AT })).status === 200, 'notifications endpoint works for any signed-in user');
 
+  // ---------------- 💬 Customer service (WhatsApp)
+  const sup = async (st) => (await call('GET', '/api/support', { token: st.token })).data;
+  const setSup = (body) => call('PATCH', '/api/admin/settings', { token: AT, body });
+  const supBefore = (await call('GET', '/api/admin/settings', { token: AT })).data.settings;
+  await setSup({ support_enabled: true, support_phone: '', support_for_unsubscribed: true });
+  ok((await sup(N1)).enabled === false, 'customer service hidden while no number is set');
+  await setSup({ support_phone: '01012345678', support_message: 'محتاج مساعدة' });
+  const freeSup = await sup(outsider);
+  ok(freeSup.available && freeSup.whatsapp_url.startsWith('https://wa.me/201012345678?text=') && decodeURIComponent(freeSup.whatsapp_url).includes('محتاج مساعدة'),
+    'unsubscribed student opens WhatsApp support (setting on)', freeSup);
+  ok(decodeURIComponent((await sup(A)).whatsapp_url).includes(A.code), 'premium student: message carries the student code');
+  await setSup({ support_for_unsubscribed: false });
+  const lockedSup = await sup(outsider);
+  ok(lockedSup.enabled && !lockedSup.available && !lockedSup.whatsapp_url && lockedSup.plan_name, 'unsubscribed student: locked, told which plan has it (no number sent)', lockedSup);
+  const stdPlanS = (await call('GET', '/api/admin/plans', { token: AT })).data.plans.find((p) => p.code === 'standard');
+  await call('PATCH', '/api/admin/plans/standard', { token: AT, body: { features: { ...stdPlanS.features, priority_support: false } } });
+  ok((await sup(N1)).available === false, 'plan without customer service → locked');
+  await call('PATCH', '/api/admin/plans/standard', { token: AT, body: { features: { ...stdPlanS.features, priority_support: true } } });
+  ok((await sup(N1)).available === true, 'admin enables it for the plan → available');
+  await call('PATCH', '/api/admin/plans/standard', { token: AT, body: { features: stdPlanS.features } });
+  await setSup({ support_enabled: false });
+  ok((await sup(A)).enabled === false, 'admin turns customer service off → hidden for everyone');
+  await setSup({ support_enabled: supBefore.support_enabled, support_phone: supBefore.support_phone,
+    support_for_unsubscribed: supBefore.support_for_unsubscribed, support_message: supBefore.support_message });
+
   console.log(`\n🎉 All ${passed} checks passed`);
 })().catch((e) => { console.error(e); process.exit(1); });

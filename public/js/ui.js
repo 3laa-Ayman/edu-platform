@@ -194,6 +194,6 @@ const LABELS = {
     competitions: 'المسابقات الأسبوعية والشهرية',
     parent_reports: 'تقارير لولي الأمر',
     past_exams: 'أسئلة الامتحانات السابقة',
-    priority_support: 'دعم فني أولوية',
+    priority_support: 'خدمة العملاء عبر واتساب',
   },
 };

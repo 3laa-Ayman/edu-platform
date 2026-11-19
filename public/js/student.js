@@ -337,6 +337,30 @@ const PAY_LOGOS = {
   instapay: '<span class="pay-logo text instapay" title="إنستاباي">InstaPay</span>',
 };
 
+/**
+ * Customer service button (WhatsApp), set up by the admin: hidden when it's off; for students whose plan doesn't
+ * include it, it says which plan does. Hidden while solving a competition (it would cover the page).
+ */
+const SUPPORT_TTL_MS = 60_000;
+let supportCache = { at: 0, data: null };
+async function refreshSupport(path = '') {
+  const fab = $('#support-fab');
+  if (!fab) return;
+  if (State.user?.role !== 'student' || path.startsWith('/competition/')) { fab.hidden = true; return; }
+  try {
+    if (!supportCache.data || Date.now() - supportCache.at > SUPPORT_TTL_MS) supportCache = { at: Date.now(), data: await API.get('/support') };
+  } catch { fab.hidden = true; return; }
+  const d = supportCache.data;
+  fab.hidden = !d.enabled;
+  fab.classList.toggle('locked', d.enabled && !d.available);
+  fab.onclick = () => {
+    if (d.available) { window.open(d.whatsapp_url, '_blank', 'noopener'); return; }
+    modal(`<h2>💬 خدمة العملاء</h2>
+      <p>خدمة العملاء عبر واتساب ${d.plan_name ? `متاحة لمشتركي باقة <b>${esc(d.plan_name)}</b>` : 'غير متاحة في باقتك الحالية'}.</p>
+      <a class="btn primary" href="#/subscribe">${d.plan_name ? `اشترك في ${esc(d.plan_name)}` : 'صفحة الاشتراك'}</a>`);
+  };
+}
+
 /** A personal notification (same look as an announcement), with its link and an "تمام" to mark it read. */
 const noteCard = (n, dismissable = false) => `<article class="announce ${esc(n.tone)}${n.is_read ? ' read' : ''}">
     <div class="announce-main">

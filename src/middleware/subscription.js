@@ -8,6 +8,7 @@ const FEATURE_NAMES = {
   mistakes_bank: 'بنك الأخطاء',
   competitions: 'المسابقات',
   parent_reports: 'تقارير ولي الأمر',
+  priority_support: 'خدمة العملاء عبر واتساب',
 };
 
 async function getActiveSubscription(userId) {

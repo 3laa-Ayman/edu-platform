@@ -1070,11 +1070,11 @@ Admin.announcements = async (el) => {
 
 // ---------------------------------------------------------------- Settings & admin accounts
 Admin.settings = async (el) => {
-  const [{ settings: s, ai_key_configured: aiKey }, { admins, me }] = await Promise.all([API.get('/admin/settings'), API.get('/admin/admins')]);
+  const [{ settings: s, ai_key_configured: aiKey }, { admins, me }, { plans }] = await Promise.all([API.get('/admin/settings'), API.get('/admin/admins'), API.get('/admin/plans')]);
+  const supportPlans = plans.filter((p) => p.features?.priority_support).map((p) => p.name_ar);
   el.innerHTML = `<h1 class="page-head">الإعدادات</h1>
     <section class="card"><h2>إعدادات المنصة</h2><form id="sf" class="form grid2">
       <label>اسم المنصة<input name="site_name" required value="${esc(s.site_name)}"></label>
-      <label>رقم الدعم الفني<input name="support_phone" value="${esc(s.support_phone)}"></label>
       <label>رقم المحفظة الإلكترونية (فودافون/اتصالات/أورانج كاش)<input name="vodafone_cash_number" value="${esc(s.vodafone_cash_number)}"></label>
       <label>عنوان انستاباي<input name="instapay_address" value="${esc(s.instapay_address)}"></label>
       <label class="span2">تعليمات الدفع اليدوي<textarea name="manual_payment_instructions" rows="2">${esc(s.manual_payment_instructions)}</textarea></label>
@@ -1084,6 +1084,18 @@ Admin.settings = async (el) => {
       <label>سعر الدولار بالجنيه (لحساب تكلفة Gemini)<input type="number" name="usd_to_egp" min="1" step="0.01" value="${s.usd_to_egp}"></label>
       <button class="btn primary span2" type="submit">حفظ الإعدادات</button></form>
       <p class="muted">يُطبَّق حد الذكاء الاصطناعي على الطلاب الجدد. <button class="btn ghost tiny" data-action="applyAi">طبّقه على كل الطلاب الحاليين</button></p>
+    </section>
+
+    <section class="card"><h2>💬 خدمة العملاء (واتساب)</h2>
+      <p class="muted">يظهر للطالب زر «خدمة العملاء» في كل الصفحات، وعند الضغط عليه يُفتح واتساب على رقم خدمة العملاء مع رسالة جاهزة فيها اسم الطالب وكوده.</p>
+      <form id="csf" class="form grid2">
+        <label class="check span2"><input type="checkbox" name="support_enabled" ${s.support_enabled ? 'checked' : ''}> تفعيل خدمة العملاء</label>
+        <label>رقم واتساب خدمة العملاء<input name="support_phone" inputmode="numeric" dir="ltr" placeholder="01xxxxxxxxx" value="${esc(s.support_phone)}"></label>
+        <label class="check"><input type="checkbox" name="support_for_unsubscribed" ${s.support_for_unsubscribed ? 'checked' : ''}> متاحة أيضًا للطلاب غير المشتركين (للاستفسار قبل الاشتراك)</label>
+        <label class="span2">الرسالة الجاهزة<textarea name="support_message" rows="2" maxlength="300">${esc(s.support_message || '')}</textarea></label>
+        <p class="span2 ${supportPlans.length ? 'muted' : 'notice mid'}">الباقات التي تشمل خدمة العملاء: <b>${supportPlans.length ? supportPlans.map(esc).join('، ') : 'لا توجد باقة'}</b>
+          — للتعديل افتح <a href="#/admin/plans">الباقات</a> وفعّل أو ألغِ «خدمة العملاء عبر واتساب» في كل باقة.</p>
+        <button class="btn primary span2" type="submit">حفظ</button></form>
     </section>
 
     <section class="card"><h2>الذكاء الاصطناعي (Gemini)</h2>
@@ -1129,13 +1141,20 @@ Admin.settings = async (el) => {
   showEquiv();
   onSubmit($('#sf', el), async (v) => {
     const { default_ai_limit_points: _p, ...rest } = v;
-    await API.patch('/admin/settings', { ...rest, support_phone: v.support_phone ?? '', vodafone_cash_number: v.vodafone_cash_number ?? '',
+    await API.patch('/admin/settings', { ...rest, vodafone_cash_number: v.vodafone_cash_number ?? '',
       instapay_address: v.instapay_address ?? '', manual_payment_instructions: v.manual_payment_instructions ?? '',
       default_ai_limit_egp: Number(v.default_ai_limit_points) / Number(v.ai_points_per_egp),
       ai_points_per_egp: Number(v.ai_points_per_egp), usd_to_egp: Number(v.usd_to_egp) });
     await loadSiteSettings();
     renderTopbar(location.hash.slice(1).split('?')[0]);
     toast('تم حفظ الإعدادات');
+  });
+  onSubmit($('#csf', el), async (v) => {
+    const phone = (v.support_phone || '').replace(/\D/g, '');
+    if (v.support_enabled && !/^(2?01[0125]\d{8})$/.test(phone)) throw new Error('اكتب رقم واتساب مصريًا صحيحًا (مثال: 01012345678)');
+    await API.patch('/admin/settings', { support_enabled: v.support_enabled, support_phone: phone,
+      support_for_unsubscribed: v.support_for_unsubscribed, support_message: v.support_message ?? '' });
+    toast('تم حفظ إعدادات خدمة العملاء');
   });
   onSubmit($('#gf', el), async (v) => {
     await API.patch('/admin/settings', { ai_model: v.ai_model, ai_fallback_model: v.ai_fallback_model ?? '', ai_input_usd_per_m: Number(v.ai_input_usd_per_m), ai_output_usd_per_m: Number(v.ai_output_usd_per_m) });

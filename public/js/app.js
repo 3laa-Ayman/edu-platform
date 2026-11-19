@@ -88,11 +88,13 @@ function renderTopbar(path) {
   $('.nav a.active')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   $('#bell')?.addEventListener('click', openAnnouncements);
   refreshBell(false);
+  refreshSupport(path);
   $('#logout')?.addEventListener('click', () => {
     API.setToken(null);
     State.user = null;
     State.subscription = null;
     bellCache = { at: 0, data: null }; // the next account starts with its own announcements
+    supportCache = { at: 0, data: null };
     location.hash = '#/login';
   });
 }
