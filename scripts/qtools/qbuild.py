@@ -33,7 +33,8 @@ for i, x in enumerate(Q):
     if x['p']:
         r['passage_no'] = str(list(P).index(x['p']) + 1)
         if x['p'] not in seen:
-            seen.add(x['p']); img, txt = P[x['p']]; r['passage'] = txt; r['images']['passage'] = 'img/' + img
+            seen.add(x['p']); img, txt = P[x['p']]; r['passage'] = txt
+            if img: r['images']['passage'] = 'img/' + img
     for v in r['images'].values(): shutil.copy('../img/' + os.path.basename(v), '../build/' + v)
     out.append(r)
 assert set(P) == seen, set(P) - seen
