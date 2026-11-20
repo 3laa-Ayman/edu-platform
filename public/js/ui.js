@@ -58,10 +58,9 @@ function richChunk(text) {
  * a bar (the outer brackets are dropped). Units (م/ث), dates (2026/11/20) and code (10 // 3) are left as they are.
  * Returns the text with \u0003<n>\u0004 placeholders and the rendered fractions.
  */
-const FRAC_NUM = /[0-9٠-٩]/;
 function extractFractions(t) {
   const parts = [];
-  const isNum = (c) => FRAC_NUM.test(c || '') || c === '.';
+  const isTerm = (c) => /[0-9٠-٩.A-Za-z\u0621-\u064A^_{}]/.test(c || '');
   const operand = (from, dir) => { // dir -1: left of the slash, +1: right of it
     let i = from;
     while (t[i] === ' ') i += dir;
@@ -78,11 +77,13 @@ function extractFractions(t) {
       }
       return null;
     }
+    // A number (3, ٣, 1.5) or a short algebra term (س، ٢س، س^٢، x).
     let j = i;
-    while (isNum(t[j])) j += dir;
+    while (isTerm(t[j])) j += dir;
     if (j === i) return null;
     const [a, b] = dir < 0 ? [j + 1, i + 1] : [i, j];
-    return { start: a, end: b, inner: t.slice(a, b), paren: false };
+    const inner = t.slice(a, b);
+    return { start: a, end: b, inner, paren: false, letter: /[A-Za-z\u0621-\u064A]/.test(inner) };
   };
   let out = '';
   let last = 0;
@@ -91,7 +92,10 @@ function extractFractions(t) {
     const left = operand(i - 1, -1);
     const right = left && operand(i + 1, 1);
     if (!left || !right || left.start < last) continue;
-    if (!left.paren && !right.paren) { // number/number: not part of a date or a longer a/b/c chain
+    if (!left.paren && !right.paren) {
+      // Without brackets: number/number or number/term (٣/٤، ١/س، س/٢) — never term/term (units like م/ث، كم/س),
+      // and not part of a date or a longer a/b/c chain.
+      if (left.letter && right.letter) continue;
       const before = t.slice(0, left.start).match(/(\S)\s*$/)?.[1];
       const after = t.slice(right.end).match(/^\s*(\S)/)?.[1];
       if (before === '/' || after === '/') continue;
