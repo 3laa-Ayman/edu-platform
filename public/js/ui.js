@@ -53,9 +53,61 @@ function richChunk(text) {
     .replace(/(\S)([\^_])(?:\{([^{}<>]*)\}|([-−+]?(?:[0-9٠-٩]+(?:\.[0-9٠-٩]+)?|[A-Za-zء-ي])))/g, (_, pre, op, b, r) => pre + supSub(op, b ?? r));
 }
 
+/**
+ * Fractions typed as (numerator)/(denominator) — or number/number like 3/4 or ٣/٤ — become a stacked fraction with
+ * a bar (the outer brackets are dropped). Units (م/ث), dates (2026/11/20) and code (10 // 3) are left as they are.
+ * Returns the text with \u0003<n>\u0004 placeholders and the rendered fractions.
+ */
+const FRAC_NUM = /[0-9٠-٩]/;
+function extractFractions(t) {
+  const parts = [];
+  const isNum = (c) => FRAC_NUM.test(c || '') || c === '.';
+  const operand = (from, dir) => { // dir -1: left of the slash, +1: right of it
+    let i = from;
+    while (t[i] === ' ') i += dir;
+    if (t[i] === (dir < 0 ? ')' : '(')) { // balanced brackets
+      const open = dir < 0 ? ')' : '(';
+      const close = dir < 0 ? '(' : ')';
+      let depth = 0;
+      for (let j = i; j >= 0 && j < t.length; j += dir) {
+        if (t[j] === open) depth++;
+        else if (t[j] === close && --depth === 0) {
+          const [a, b] = dir < 0 ? [j, i] : [i, j];
+          return { start: a, end: b + 1, inner: t.slice(a + 1, b), paren: true };
+        }
+      }
+      return null;
+    }
+    let j = i;
+    while (isNum(t[j])) j += dir;
+    if (j === i) return null;
+    const [a, b] = dir < 0 ? [j + 1, i + 1] : [i, j];
+    return { start: a, end: b, inner: t.slice(a, b), paren: false };
+  };
+  let out = '';
+  let last = 0;
+  for (let i = 0; i < t.length; i++) {
+    if (t[i] !== '/' || t[i - 1] === '/' || t[i + 1] === '/') continue;
+    const left = operand(i - 1, -1);
+    const right = left && operand(i + 1, 1);
+    if (!left || !right || left.start < last) continue;
+    if (!left.paren && !right.paren) { // number/number: not part of a date or a longer a/b/c chain
+      const before = t.slice(0, left.start).match(/(\S)\s*$/)?.[1];
+      const after = t.slice(right.end).match(/^\s*(\S)/)?.[1];
+      if (before === '/' || after === '/') continue;
+    }
+    out += t.slice(last, left.start) + `\u0003${parts.length}\u0004`;
+    parts.push(`<span class="frac"><span class="frac-num">${rich(left.inner)}</span><span class="frac-den">${rich(right.inner)}</span></span>`);
+    last = right.end;
+    i = right.end - 1;
+  }
+  return { text: out + t.slice(last), parts };
+}
+
 function rich(text) {
   // Markdown bold (e.g. in AI explanations) → placeholder chars, so it never ends up split by an LTR run.
-  const t = normalizeMath(text).replace(/\*\*([^*\n]+?)\*\*/g, '\u0001$1\u0002');
+  const fr = extractFractions(normalizeMath(text));
+  const t = fr.text.replace(/\*\*([^*\n]+?)\*\*/g, '\u0001$1\u0002');
   let out = '';
   let last = 0;
   for (const m of t.matchAll(LTR_RUN)) {
@@ -64,7 +116,8 @@ function rich(text) {
     last = m.index + m[0].length;
   }
   out += richChunk(t.slice(last));
-  return out.replace(/\u0001/g, '<strong>').replace(/\u0002/g, '</strong>');
+  return out.replace(/\u0001/g, '<strong>').replace(/\u0002/g, '</strong>')
+    .replace(/\u0003(\d+)\u0004/g, (_, n) => fr.parts[Number(n)]);
 }
 
 const fmtDate = (d) => (d ? new Date(d).toLocaleString('ar-EG-u-nu-latn', { dateStyle: 'medium', timeStyle: 'short' }) : '—');

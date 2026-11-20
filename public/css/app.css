@@ -447,3 +447,9 @@ td .row { flex-wrap: wrap; }
 .own-tools { align-items: end; gap: 10px; }
 .own-tools label:not(.file-btn) { min-width: 200px; }
 .file-btn { cursor: pointer; }
+
+/* Stacked fractions in questions / options / explanations: (numerator)/(denominator) */
+.frac { display: inline-flex; flex-direction: column; align-items: stretch; vertical-align: middle; text-align: center;
+  margin: 0 .2em; line-height: 1.35; font-size: .95em; }
+.frac-num { border-bottom: 1.5px solid currentColor; padding: 0 .25em .05em; }
+.frac-den { padding: .05em .25em 0; }

@@ -70,8 +70,26 @@ for (const [input, runs] of ltr) {
   if (!pass) failed++;
   console.log(`${pass ? '✅' : '❌'} LTR ${input}  →  ${JSON.stringify(got)}${pass ? '' : `   (expected ${JSON.stringify(runs)})`}`);
 }
+// Fractions: (numerator)/(denominator) and number/number → stacked; units, dates and code untouched.
+const F = (n, d) => `<span class="frac"><span class="frac-num">${n}</span><span class="frac-den">${d}</span></span>`;
+const fracs = [
+  ['أبسط صورة للمقدار (٢س^٢ – ٣س – ٥)/(س^٢ + ٣س + ٢) هي:', `أبسط صورة للمقدار ${F('٢س<sup>٢</sup> – ٣س – ٥', 'س<sup>٢</sup> + ٣س + ٢')} هي:`],
+  ['(x+1)/(x-1)', F('x+1', 'x-1')],
+  ['٣/٤ + ١/٢', `${F('٣', '٤')} + ${F('١', '٢')}`],
+  ['3/(x+2)', F('3', 'x+2')],
+  ['((a+b))/(c)', F('(a+b)', 'c')],
+  ['السرعة 20 م/ث', 'السرعة 20 م/ث'],
+  ['بتاريخ 2026/11/20', 'بتاريخ 2026/11/20'],
+  ['ناتج print(10 // 3)', 'ناتج print(10 // 3)'],
+];
+for (const [input, expected] of fracs) {
+  const got = render(input);
+  const pass = got === expected;
+  if (!pass) failed++;
+  console.log(`${pass ? '✅' : '❌'} ${input}  →  ${got}${pass ? '' : `\n     expected ${expected}`}`);
+}
 const boldOk = rich('**Note** مهم').startsWith('<strong>'); // eslint-disable-line no-undef
 if (!boldOk) failed++;
 console.log(`${boldOk ? '✅' : '❌'} bold kept around an LTR run`);
-console.log(failed ? `\n${failed} failed` : `\n🎉 all ${cases.length + ltr.length + 4} math checks passed`);
+console.log(failed ? `\n${failed} failed` : `\n🎉 all ${cases.length + ltr.length + fracs.length + 4} math checks passed`);
 process.exit(failed ? 1 : 0);
