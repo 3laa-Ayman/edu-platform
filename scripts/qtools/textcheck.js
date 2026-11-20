@@ -15,7 +15,12 @@ const UI = fs.readFileSync(require('path').join(__dirname, '../../public/js/ui.j
       bdi.math{unicode-bidi:isolate;white-space:nowrap}</style></head><body><div id="r"></div>
       <script>${UI}</script><script>const C=${JSON.stringify(chunk)};
       document.getElementById('r').innerHTML=C.map(c=>'<div class="q"><b>'+c.n+'.</b> '+rich(c.q)+(c.img?' <span class="i">['+c.img+']</span>':'')+'<br>'+c.o.map((o,j)=>'<span class="o">'+'أبجد'[j]+') '+rich(o)+'</span>').join('')+'</div>').join('');</script></body></html>`);
-    await pg.screenshot({ path: path.join(out, `t${String(k / 10 + 1).padStart(2, '0')}.png`), fullPage: true }); await pg.close();
+    if (k < Number(process.env.START || 0) || k >= Number(process.env.STOP || 1e9)) { await pg.close(); continue; } // optional page range
+    const shot = path.join(out, `t${String(k / 10 + 1).padStart(2, '0')}.png`);
+    for (let t = 1; ; t++) { // Chromium sometimes fails a fullPage capture ("Unable to capture screenshot"): retry
+      try { await pg.screenshot({ path: shot, fullPage: true }); break; } catch (e) { if (t >= 4) throw e; await pg.waitForTimeout(500 * t); }
+    }
+    await pg.close();
   }
   await b.close(); console.log('pages', Math.ceil(Q.length / 10));
 })();
