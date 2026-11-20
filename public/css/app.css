@@ -453,3 +453,9 @@ td .row { flex-wrap: wrap; }
   margin: 0 .2em; line-height: 1.35; font-size: .95em; }
 .frac-num { border-bottom: 1.5px solid currentColor; padding: 0 .25em .05em; }
 .frac-den { padding: .05em .25em 0; }
+
+.sheets-box > summary { cursor: pointer; list-style: none; }
+.sheets-box > summary::-webkit-details-marker { display: none; }
+.sheets-box > summary h2 { display: inline-flex; align-items: center; gap: 8px; margin: 0; }
+.sheets-box > summary h2::after { content: '▾'; font-size: .8em; color: var(--muted); }
+.sheets-box:not([open]) > summary h2::after { content: '◂'; }

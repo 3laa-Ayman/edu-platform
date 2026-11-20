@@ -874,5 +874,38 @@ async function studentLogin(identifier, password, device) {
   ok(cleaned.orphan_competition_questions >= 1
     && !(await pgdb.query('SELECT 1 FROM questions WHERE id = $1', [orphan.data.question.id])).rowCount, 'unused competition questions removed by the daily cleanup');
 
+  // ---------------- 📚 Uploaded sheets: list, download, delete a whole sheet
+  const sheetOf = async (tag) => {
+    const w = new ExcelJS.Workbook();
+    await w.xlsx.readFile(path.join(__dirname, '../templates/questions-template.xlsx'));
+    w.worksheets[0].eachRow((row, n) => { if (n > 1) row.getCell(1).value = `${row.getCell(1).value} [${tag}]`; });
+    return Buffer.from(await w.xlsx.writeBuffer());
+  };
+  const sheetForm = (buf, name) => { const f = new FormData(); f.append('file', new Blob([buf]), name); return f; };
+  const sheetBuf = await sheetOf(`del-${rnd}`);
+  const upS = await call('POST', '/api/admin/questions/upload', { token: AT, form: sheetForm(sheetBuf, `شيت الحذف ${rnd}.xlsx`) });
+  const sheetId = upS.data.upload_id;
+  const listS = (await call('GET', '/api/admin/questions/uploads', { token: AT })).data.uploads;
+  const mine = listS.find((u) => u.id === sheetId);
+  ok(mine && mine.filename === `شيت الحذف ${rnd}.xlsx` && mine.questions === N && mine.has_file && mine.subjects.length, 'uploaded sheet listed with its questions and subjects', mine);
+  ok(!listS.some((u) => u.id === ownX.data?.upload_id), "a competition's sheet is not in the bank's sheets list");
+  const dl = await fetch(`${API}/api/admin/questions/uploads/${sheetId}/file`, { headers: { authorization: `Bearer ${AT}` } });
+  ok(dl.status === 200 && Buffer.from(await dl.arrayBuffer()).equals(sheetBuf), 'the original file can be downloaded again');
+  ok((await call('GET', `/api/admin/questions?upload_id=${sheetId}&limit=100`, { token: AT })).data.total === N, 'question list filtered to one sheet');
+  ok((await call('GET', '/api/admin/questions/uploads', { token: A.token })).status === 403, 'students cannot see sheets');
+  // a student answers one question from the sheet → kept hidden unless forced
+  const sheetQs = (await call('GET', `/api/admin/questions?upload_id=${sheetId}&limit=100`, { token: AT })).data.items;
+  await call('POST', '/api/catalog/answer', { token: A.token, body: { question_id: sheetQs[0].id, choice: 'A' } });
+  const delS = await call('DELETE', `/api/admin/questions/uploads/${sheetId}`, { token: AT });
+  ok(delS.status === 200 && delS.data.deleted === N - 1 && delS.data.hidden === 1, 'delete sheet: all questions deleted, the answered one hidden', delS.data);
+  ok((await call('GET', `/api/admin/questions?upload_id=${sheetId}&limit=100`, { token: AT })).data.total === 1, 'only the hidden answered question is left');
+  const delS2 = await call('DELETE', `/api/admin/questions/uploads/${sheetId}?force=true`, { token: AT });
+  ok(delS2.data.deleted === 1 && !(await call('GET', '/api/admin/questions/uploads', { token: AT })).data.uploads.some((u) => u.id === sheetId), 'force: deleted for good, sheet gone from the list');
+  // a sheet whose question is in a running competition can't be deleted
+  const upL = await call('POST', '/api/admin/questions/upload', { token: AT, form: sheetForm(await sheetOf(`live-${rnd}`), 'live.xlsx') });
+  const liveQ = (await call('GET', `/api/admin/questions?upload_id=${upL.data.upload_id}&limit=1`, { token: AT })).data.items[0];
+  await call('POST', '/api/admin/competitions', { token: AT, body: { title: `حية ${rnd}`, type: 'individual_monthly', starts_at: new Date(Date.now() - 60000).toISOString(), ends_at: new Date(Date.now() + 3600000).toISOString(), question_ids: [liveQ.id] } });
+  ok((await call('DELETE', `/api/admin/questions/uploads/${upL.data.upload_id}`, { token: AT })).status === 409, "sheet in a running competition can't be deleted");
+
   console.log(`\n🎉 All ${passed} checks passed`);
 })().catch((e) => { console.error(e); process.exit(1); });

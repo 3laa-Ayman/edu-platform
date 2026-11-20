@@ -235,9 +235,11 @@ function openQuestionModal(q, subjects, onSaved) {
 Admin.questions = async (el, params, query) => {
   const page = Number(query.page || 1);
   const qs = new URLSearchParams({ page: String(page), limit: '20' });
-  for (const k of ['search', 'subject_id', 'lesson_id', 'category']) if (query[k]) qs.set(k, query[k]);
+  for (const k of ['search', 'subject_id', 'lesson_id', 'category', 'upload_id']) if (query[k]) qs.set(k, query[k]);
   if (query.missing === '1') qs.set('missing_explanation', 'true');
-  const [list, { subjects }] = await Promise.all([API.get(`/admin/questions?${qs}`), API.get('/admin/subjects')]);
+  const [list, { subjects }, { uploads }] = await Promise.all([API.get(`/admin/questions?${qs}`), API.get('/admin/subjects'), API.get('/admin/questions/uploads')]);
+  const fromSheet = query.upload_id ? uploads.find((u) => String(u.id) === query.upload_id) : null;
+  const kb = (n) => (n ? `${Math.max(1, Math.round(n / 1024)).toLocaleString('en')} KB` : '');
   const curSubject = subjects.find((s) => String(s.id) === query.subject_id);
 
   el.innerHTML = `<div class="page-head"><h1>بنك الأسئلة</h1><button class="btn primary" data-action="new">+ سؤال جديد</button></div>
@@ -253,7 +255,19 @@ Admin.questions = async (el, params, query) => {
       </form>
       <div id="result"></div>
     </section>
+    <section class="card" id="sheets"><details class="sheets-box" ${uploads.length <= 5 ? 'open' : ''}><summary><h2>📚 الشيتات المرفوعة ${badge(uploads.length)}</h2></summary>
+      <p class="muted small">كل شيت رفعته وأسئلته. «حذف الشيت» يحذف كل الأسئلة التي أُضيفت منه مرة واحدة (الأسئلة المكررة التي تجاهلها الرفع تتبع شيتها الأصلي).</p>
+      ${uploads.length ? table(['الشيت', 'الأسئلة', 'المواد', 'إجابات الطلاب', ''], uploads.map((u) => [
+        `<b>${esc(u.filename || `شيت #${u.id}`)}</b><br><small class="muted">${fmtDate(u.created_at)}${u.admin_name ? ` · ${esc(u.admin_name)}` : ''}${u.file_size ? ` · ${kb(u.file_size)}` : ''}</small>`,
+        `<b>${u.questions}</b>${u.hidden ? ` ${badge(`${u.hidden} مخفي`, 'bad')}` : ''}${u.duplicates ? `<br><small class="muted">${u.duplicates} مكرر تم تجاهله</small>` : ''}`,
+        esc(u.subjects.join('، ')),
+        u.answered ? `${u.answered} سؤال` : '<span class="muted">لا يوجد</span>',
+        `<div class="row wrap"><a class="btn ghost tiny" href="#/admin/questions?upload_id=${u.id}">عرض الأسئلة</a>
+          ${u.has_file ? `<button class="btn ghost tiny" data-action="sheetFile" data-id="${u.id}">⬇ تحميل</button>` : ''}
+          <button class="btn danger tiny" data-action="sheetDel" data-id="${u.id}">🗑️ حذف الشيت</button></div>`])) : empty('لم تُرفع شيتات بعد')}
+    </details></section>
     <section class="card"><div class="card-head"><h2>الأسئلة ${badge(list.total)}</h2></div>
+      ${query.upload_id ? `<p class="notice mid">📚 أسئلة الشيت «${esc(fromSheet?.filename || `#${query.upload_id}`)}» فقط. <a href="#/admin/questions">عرض كل الأسئلة</a></p>` : ''}
       <form id="ff" class="form grid3">
         <label>بحث<input name="search" value="${esc(query.search || '')}" placeholder="جزء من نص السؤال"></label>
         <label>المادة<select name="subject_id"><option value="">الكل</option>${subjects.map((s) => opt(s.id, s.name, query.subject_id)).join('')}</select></label>
@@ -311,6 +325,24 @@ Admin.questions = async (el, params, query) => {
   });
   onAction(el, {
     new: () => openQuestionModal(null, subjects, reload),
+    sheetFile: (b) => run(b, async () => {
+      const u = uploads.find((x) => String(x.id) === b.dataset.id);
+      const blob = await API.blob(`/admin/questions/uploads/${u.id}/file`);
+      const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: u.filename || `sheet-${u.id}.xlsx` });
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    }),
+    sheetDel: (b) => run(b, async () => {
+      const u = uploads.find((x) => String(x.id) === b.dataset.id);
+      if (!confirm(`حذف الشيت «${u.filename || `#${u.id}`}» وكل أسئلته (${u.questions} سؤال)؟`)) return;
+      let force = false;
+      if (u.answered) {
+        force = confirm(`${u.answered} سؤال من هذا الشيت أجاب عنه طلاب.\n\n• «موافق» = حذفها نهائيًا مع إجابات الطلاب عليها (تُمسح من إحصائياتهم وبنك الأخطاء).\n• «إلغاء» = إخفاؤها عن الطلاب فقط مع الاحتفاظ بإحصائياتهم، وحذف باقي الأسئلة.`);
+      }
+      const r = await API.del(`/admin/questions/uploads/${u.id}${force ? '?force=true' : ''}`);
+      toast(`تم حذف ${r.deleted} سؤال${r.hidden ? ` وإخفاء ${r.hidden}` : ''} من «${r.filename || 'الشيت'}»`);
+      if (query.upload_id) location.hash = '#/admin/questions'; else reload();
+    }),
     edit: (b) => openQuestionModal(list.items.find((x) => String(x.id) === b.dataset.id), subjects, reload),
     del: (b) => run(b, async () => {
       if (!confirm('حذف السؤال؟')) return;

@@ -16,6 +16,18 @@ const { startWeeklyReports } = require('../services/report.service');
 const { continueReports } = require('../jobs');
 const { badRequest, notFound, conflict } = require('../utils/errors');
 
+/** Upload file name as typed: multer hands it over as latin1 bytes, so Arabic names would come out garbled. */
+const fileName = (f) => {
+  const n = String(f.originalname || '');
+  return /[^\u0000-\u00ff]/.test(n) ? n : Buffer.from(n, 'latin1').toString('utf8');
+};
+/** Names saved before that fix: decode them for display when they are clearly garbled UTF-8. */
+const cleanName = (n) => {
+  if (!n || /[^\u0000-\u00ff]/.test(n) || !/[\u00c0-\u00ff]/.test(n)) return n;
+  const fixed = Buffer.from(n, 'latin1').toString('utf8');
+  return fixed.includes('\ufffd') ? n : fixed;
+};
+
 // ------------------------------------------------------------------ Dashboard
 router.get('/dashboard', async (req, res) => {
   const { rows: [d] } = await db.query(`
@@ -49,17 +61,71 @@ router.post('/questions/upload', uploadLimiter, excelUpload.single('file'), asyn
     return res.json({ dry_run: true, valid_rows: parsed.valid.length, images: parsed.images, passages: parsed.passages, failed: parsed.errors.length, errors: parsed.errors });
   }
   if (!parsed.valid.length) throw badRequest('لا يوجد أي صف صالح في الملف', { errors: parsed.errors });
-  res.status(201).json(await importQuestions(parsed, { adminId: req.user.id, filename: req.file.originalname }));
+  res.status(201).json(await importQuestions(parsed, { adminId: req.user.id, filename: fileName(req.file), fileBuffer: req.file.buffer }));
 });
 
 router.get('/questions/template', (req, res) => {
   res.download(path.resolve(__dirname, '../../templates/questions-template.xlsx'));
 });
 
+// ------------------------------------------------------------------ Uploaded sheets (download / delete a whole sheet)
+/** The question-bank sheets that still have questions, newest first. */
 router.get('/questions/uploads', async (req, res) => {
   const { rows } = await db.query(
-    `SELECT id, filename, total_rows, inserted, duplicates, failed, created_at FROM question_uploads ORDER BY created_at DESC LIMIT 50`);
-  res.json({ uploads: rows });
+    `SELECT u.id, u.filename, u.total_rows, u.inserted, u.duplicates, u.failed, u.created_at, u.file_size,
+            (u.file_data IS NOT NULL) AS has_file, a.full_name AS admin_name,
+            COUNT(q.id)::int AS questions,
+            COUNT(q.id) FILTER (WHERE NOT q.is_active)::int AS hidden,
+            COUNT(q.id) FILTER (WHERE EXISTS (SELECT 1 FROM attempts t WHERE t.question_id = q.id))::int AS answered,
+            COALESCE(array_agg(DISTINCT s.name) FILTER (WHERE s.name IS NOT NULL), '{}') AS subjects
+       FROM question_uploads u
+       JOIN questions q ON q.upload_id = u.id AND NOT q.competition_only
+       LEFT JOIN subjects s ON s.id = q.subject_id
+       LEFT JOIN users a ON a.id = u.admin_id
+      WHERE NOT u.for_competition
+      GROUP BY u.id, a.full_name
+      ORDER BY u.created_at DESC
+      LIMIT 200`);
+  res.json({ uploads: rows.map((u) => ({ ...u, filename: cleanName(u.filename) })) });
+});
+
+router.get('/questions/uploads/:id/file', validate({ params: idParam }), async (req, res) => {
+  const { rows: [u] } = await db.query(`SELECT filename, file_data FROM question_uploads WHERE id = $1`, [req.p.id]);
+  if (!u?.file_data) throw notFound('ملف هذا الشيت غير محفوظ (رُفع قبل إضافة حفظ الملفات)');
+  res.attachment(cleanName(u.filename) || `sheet-${req.p.id}.xlsx`).type('xlsx').send(u.file_data);
+});
+
+/**
+ * Deletes every question that came from this sheet. Questions students already answered are hidden instead
+ * (their answers stay in the students' statistics) unless ?force=true, which deletes them with their answers.
+ * Refused while one of the questions is in a competition that hasn't ended.
+ */
+router.delete('/questions/uploads/:id', validate({ params: idParam, query: z.object({ force: z.enum(['true', 'false']).optional() }) }), async (req, res) => {
+  const force = req.q.force === 'true';
+  const result = await db.withTransaction(async (c) => {
+    const { rows: [u] } = await c.query(`SELECT id, filename FROM question_uploads WHERE id = $1 AND NOT for_competition FOR UPDATE`, [req.p.id]);
+    if (!u) throw notFound('الشيت غير موجود');
+    const { rows: qs } = await c.query(
+      `SELECT q.id, q.passage_id, EXISTS (SELECT 1 FROM attempts t WHERE t.question_id = q.id) AS answered
+         FROM questions q WHERE q.upload_id = $1 AND NOT q.competition_only`, [u.id]);
+    const ids = qs.map((q) => q.id);
+    const { rowCount: live } = await c.query(
+      `SELECT 1 FROM competition_questions cq JOIN competitions m ON m.id = cq.competition_id
+        WHERE cq.question_id = ANY($1::bigint[]) AND m.ends_at > now() LIMIT 1`, [ids]);
+    if (live) throw conflict('بعض أسئلة هذا الشيت داخل مسابقة لم تنتهِ بعد — احذف الشيت بعد انتهاء المسابقة');
+    const toHide = force ? [] : qs.filter((q) => q.answered).map((q) => q.id);
+    const toDelete = qs.filter((q) => !toHide.includes(q.id)).map((q) => q.id);
+    if (toHide.length) await c.query(`UPDATE questions SET is_active = FALSE, updated_at = now() WHERE id = ANY($1::bigint[])`, [toHide]);
+    if (toDelete.length) await c.query(`DELETE FROM questions WHERE id = ANY($1::bigint[])`, [toDelete]);
+    // Passages / shared figures left without questions go too.
+    const passageIds = [...new Set(qs.map((q) => q.passage_id).filter(Boolean))];
+    if (passageIds.length) {
+      await c.query(`DELETE FROM passages p WHERE p.id = ANY($1::bigint[]) AND NOT EXISTS (SELECT 1 FROM questions q WHERE q.passage_id = p.id)`, [passageIds]);
+    }
+    if (!toHide.length) await c.query(`DELETE FROM question_uploads WHERE id = $1`, [u.id]);
+    return { filename: cleanName(u.filename), deleted: toDelete.length, hidden: toHide.length };
+  });
+  res.json(result);
 });
 
 router.get('/questions', validate({
@@ -69,6 +135,7 @@ router.get('/questions', validate({
     category: z.enum(['lesson', 'past_exam']).optional(),
     missing_explanation: z.enum(['true', 'false']).optional(),
     search: z.string().max(100).optional(),
+    upload_id: z.coerce.number().int().positive().optional(),
     ...pagination,
   }),
 }), async (req, res) => {
@@ -79,12 +146,13 @@ router.get('/questions', validate({
       WHERE NOT q.competition_only AND ($1::int IS NULL OR q.subject_id = $1) AND ($2::int IS NULL OR q.lesson_id = $2)
         AND ($3::text IS NULL OR q.category = $3)
         AND ($4::boolean = FALSE OR q.explanation IS NULL)
+        AND ($8::bigint IS NULL OR q.upload_id = $8)
         AND ($5::text IS NULL OR q.question_text ILIKE '%' || $5 || '%'
              OR EXISTS (SELECT 1 FROM passages p WHERE p.id = q.passage_id AND p.passage_text ILIKE '%' || $5 || '%'))
       -- Newest first, with a passage's questions kept together (in their upload order).
       ORDER BY MAX(q.id) OVER (PARTITION BY COALESCE(q.passage_id, -q.id)) DESC, q.id LIMIT $6 OFFSET $7`,
     [f.subject_id ?? null, f.lesson_id ?? null, f.category ?? null, f.missing_explanation === 'true',
-      f.search ? f.search.replace(/[%_\\]/g, (m) => `\\${m}`) : null, f.limit, (f.page - 1) * f.limit],
+      f.search ? f.search.replace(/[%_\\]/g, (m) => `\\${m}`) : null, f.limit, (f.page - 1) * f.limit, f.upload_id ?? null],
   );
   const [media, passages] = await Promise.all([mediaMap(rows.map((q) => q.id)), passageMap(rows.map((q) => q.passage_id))]);
   res.json({ total: rows[0]?.total ?? 0, items: rows.map(({ total, ...q }) => ({ ...q, media: media[q.id] || {}, passage: passages[q.passage_id] || null })) });
@@ -307,7 +375,7 @@ router.post('/competition-questions/upload', uploadLimiter, excelUpload.single('
   const defaultSubject = typeof req.body?.default_subject === 'string' ? req.body.default_subject.trim().slice(0, 120) : undefined;
   const parsed = await parseQuestionSheet(req.file.buffer, { defaultSubject });
   if (!parsed.valid.length) throw badRequest('لا يوجد أي صف صالح في الملف', { errors: parsed.errors });
-  const r = await importQuestions(parsed, { adminId: req.user.id, filename: req.file.originalname, competitionOnly: true });
+  const r = await importQuestions(parsed, { adminId: req.user.id, filename: fileName(req.file), competitionOnly: true });
   const { rows } = await db.query(
     `SELECT id, question_text, correct_option FROM questions WHERE id = ANY($1::bigint[]) ORDER BY id`, [r.question_ids]);
   res.status(201).json({ questions: rows, images: r.images, passages: r.passages, failed: r.failed, errors: r.errors });

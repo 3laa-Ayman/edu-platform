@@ -598,3 +598,10 @@ ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS reminder_sent_at TIMESTAMPTZ;
 -- Questions written for one competition only (added in the competition form or from an Excel sheet just for it):
 -- never shown in the question bank, practice, random picks or the mistakes bank; removed with their competition.
 ALTER TABLE questions ADD COLUMN IF NOT EXISTS competition_only BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- Uploaded question sheets are kept (the file itself, to download again) so a whole sheet can be deleted at once.
+ALTER TABLE question_uploads ADD COLUMN IF NOT EXISTS file_data BYTEA;
+ALTER TABLE question_uploads ADD COLUMN IF NOT EXISTS file_size INT;
+ALTER TABLE question_uploads ADD COLUMN IF NOT EXISTS for_competition BOOLEAN NOT NULL DEFAULT FALSE;
+UPDATE question_uploads u SET for_competition = TRUE
+ WHERE NOT u.for_competition AND EXISTS (SELECT 1 FROM questions q WHERE q.upload_id = u.id AND q.competition_only);

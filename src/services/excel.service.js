@@ -259,11 +259,12 @@ async function parseQuestionSheet(buffer, { defaultSubject } = {}) {
  * competitionOnly: the rows become questions of one competition only (not added to the bank, never de-duplicated
  * against it); their ids are returned in question_ids.
  */
-async function importQuestions({ valid, errors }, { adminId, filename, competitionOnly = false }) {
+async function importQuestions({ valid, errors }, { adminId, filename, competitionOnly = false, fileBuffer = null }) {
   return db.withTransaction(async (c) => {
     const { rows: [upload] } = await c.query(
-      `INSERT INTO question_uploads (admin_id, filename, total_rows) VALUES ($1, $2, $3) RETURNING id`,
-      [adminId, filename, valid.length + errors.length],
+      `INSERT INTO question_uploads (admin_id, filename, total_rows, for_competition, file_data, file_size)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+      [adminId, filename, valid.length + errors.length, competitionOnly, fileBuffer || null, fileBuffer ? fileBuffer.length : null],
     );
     const subjectIds = new Map();
     const lessonIds = new Map();
