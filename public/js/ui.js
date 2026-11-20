@@ -60,6 +60,7 @@ function richChunk(text) {
  */
 function extractFractions(t) {
   const parts = [];
+  const POWER = /^[\^_](?:\{[^{}]*\}|[-−+]?[0-9٠-٩]+|[A-Za-z\u0621-\u064A])/;
   const isTerm = (c) => /[0-9٠-٩.A-Za-z\u0621-\u064A^_{}]/.test(c || '');
   const operand = (from, dir) => { // dir -1: left of the slash, +1: right of it
     let i = from;
@@ -72,6 +73,9 @@ function extractFractions(t) {
         if (t[j] === open) depth++;
         else if (t[j] === close && --depth === 0) {
           const [a, b] = dir < 0 ? [j, i] : [i, j];
+          // (س + ٢)^٢ on the right: the power belongs to the bracket, so it stays with it (brackets kept).
+          const pow = dir > 0 && t.slice(b + 1).match(POWER);
+          if (pow) return { start: a, end: b + 1 + pow[0].length, inner: t.slice(a, b + 1 + pow[0].length), paren: true };
           return { start: a, end: b + 1, inner: t.slice(a + 1, b), paren: true };
         }
       }
@@ -82,6 +86,11 @@ function extractFractions(t) {
     while (isTerm(t[j])) j += dir;
     if (j === i) return null;
     const [a, b] = dir < 0 ? [j + 1, i + 1] : [i, j];
+    // (س + ١)^٢ on the left: the scan stopped at the power — take the bracket with it.
+    if (dir < 0 && /^[\^_]/.test(t.slice(a, b)) && t[a - 1] === ')') {
+      const br = operand(a - 1, -1);
+      if (br) return { start: br.start, end: b, inner: t.slice(br.start, b), paren: true };
+    }
     const inner = t.slice(a, b);
     return { start: a, end: b, inner, paren: false, letter: /[A-Za-z\u0621-\u064A]/.test(inner) };
   };
