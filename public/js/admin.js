@@ -48,6 +48,7 @@ Admin.subjects = async (el) => {
       ${s.lessons.length ? `<ul class="list">${s.lessons.map((l) => `<li>
         <span><b>${esc(l.name)}</b><small class="muted">${esc(l.lesson_type || '')} · ${l.questions} سؤال</small></span>
         <span class="row"><button class="btn ghost tiny" data-action="editLesson" data-id="${l.id}" data-name="${esc(l.name)}" data-type="${esc(l.lesson_type || '')}">تعديل</button>
+        ${s.lessons.length > 1 ? `<button class="btn ghost tiny" data-action="mergeLesson" data-id="${l.id}" data-subject="${s.id}">🔀 دمج في درس آخر</button>` : ''}
         <button class="btn danger tiny" data-action="deleteLesson" data-id="${l.id}" data-name="${esc(l.name)}">حذف</button></span></li>`).join('')}</ul>` : '<p class="muted">لا توجد دروس بعد.</p>'}
       <form class="form inline" data-add-lesson="${s.id}"><input name="name" required placeholder="درس جديد"><input name="lesson_type" placeholder="نوع الدرس (اختياري)"><button class="btn ghost" type="submit">إضافة درس</button></form>
     </section>`).join('') : empty('لا توجد مواد بعد. أضف مادة أو ارفع شيت أسئلة.')}`;
@@ -82,6 +83,21 @@ Admin.subjects = async (el) => {
         <label>نوع الدرس<input name="lesson_type" value="${esc(b.dataset.type)}"></label>
         <button class="btn primary" type="submit">حفظ</button></form>`);
       onSubmit($('#mf', m), async (v) => { await API.patch(`/admin/lessons/${b.dataset.id}`, { name: v.name, lesson_type: v.lesson_type || null }); closeModal(); reload(); });
+    },
+    mergeLesson: (b) => {
+      const s = subjects.find((x) => String(x.id) === b.dataset.subject);
+      const l = s.lessons.find((x) => String(x.id) === b.dataset.id);
+      const m = modal(`<h2>🔀 دمج «${esc(l.name)}»</h2>
+        <p class="muted">تنتقل كل أسئلة هذا الدرس (${l.questions} سؤال) إلى الدرس الذي تختاره، ثم يُحذف هذا الدرس. لا تُحذف أي أسئلة ولا إجابات.</p>
+        <form class="form" id="mf"><label>انقل الأسئلة إلى درس<select name="into" required>
+          ${s.lessons.filter((x) => x.id !== l.id).map((x) => opt(x.id, `${x.name} (${x.questions} سؤال)`)).join('')}</select></label>
+          <button class="btn primary" type="submit">دمج</button></form>`);
+      onSubmit($('#mf', m), async (v) => {
+        const r = await API.post(`/admin/lessons/${l.id}/merge`, { into_lesson_id: Number(v.into) });
+        closeModal();
+        toast(`تم نقل ${r.moved} سؤال وحذف «${l.name}»`);
+        reload();
+      });
     },
     deleteLesson: (b) => run(b, async () => {
       if (!confirm(`حذف درس "${b.dataset.name}"؟ ستبقى أسئلته في المادة بدون درس.`)) return;

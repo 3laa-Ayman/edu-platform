@@ -907,5 +907,19 @@ async function studentLogin(identifier, password, device) {
   await call('POST', '/api/admin/competitions', { token: AT, body: { title: `حية ${rnd}`, type: 'individual_monthly', starts_at: new Date(Date.now() - 60000).toISOString(), ends_at: new Date(Date.now() + 3600000).toISOString(), question_ids: [liveQ.id] } });
   ok((await call('DELETE', `/api/admin/questions/uploads/${upL.data.upload_id}`, { token: AT })).status === 409, "sheet in a running competition can't be deleted");
 
+  // ---------------- 🔀 Lessons: natural order + merge
+  const mSubj = (await call('POST', '/api/admin/subjects', { token: AT, body: { name: `رياضيات الدمج ${rnd}` } })).data.subject;
+  const mk = async (n) => (await call('POST', `/api/admin/subjects/${mSubj.id}/lessons`, { token: AT, body: { name: n } })).data.lesson;
+  const L10 = await mk('1-10 إثبات المتطابقات'); const L2 = await mk('1-2 نظرية كثيرة الحدود'); const L1 = await mk('1-1 نظرية ذات الحدين');
+  const order = (await call('GET', '/api/admin/subjects', { token: AT })).data.subjects.find((x) => x.id === mSubj.id).lessons.map((l) => l.name.split(' ')[0]);
+  ok(JSON.stringify(order) === JSON.stringify(['1-1', '1-2', '1-10']), 'lessons in natural order (1-2 before 1-10)', order);
+  const qIn = async (lesson, t) => (await call('POST', '/api/admin/questions', { token: AT, body: { subject_id: mSubj.id, lesson_id: lesson.id, question_text: `${t} ${rnd}`, option_a: '1', option_b: '2', option_c: '3', option_d: '4', correct_option: 'A' } })).data.question;
+  await qIn(L1, 'س1'); await qIn(L2, 'س2'); await qIn(L2, 'س3');
+  const mg = await call('POST', `/api/admin/lessons/${L2.id}/merge`, { token: AT, body: { into_lesson_id: L1.id } });
+  const after = (await call('GET', '/api/admin/subjects', { token: AT })).data.subjects.find((x) => x.id === mSubj.id).lessons;
+  ok(mg.data.moved === 2 && after.length === 2 && after.find((l) => l.id === L1.id).questions === 3, 'merge: questions moved, lesson removed', { mg: mg.data, after });
+  const other = (await call('GET', '/api/admin/subjects', { token: AT })).data.subjects.find((x) => x.id !== mSubj.id && x.lessons.length);
+  ok((await call('POST', `/api/admin/lessons/${L10.id}/merge`, { token: AT, body: { into_lesson_id: other.lessons[0].id } })).status === 400, "can't merge into another subject's lesson");
+
   console.log(`\n🎉 All ${passed} checks passed`);
 })().catch((e) => { console.error(e); process.exit(1); });

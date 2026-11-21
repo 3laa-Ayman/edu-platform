@@ -27,7 +27,8 @@ router.get('/subjects', async (req, res) => {
   const { rows } = await cached('catalog:subjects', 15_000, () => db.query(
     `SELECT s.id, s.name,
             COALESCE(json_agg(json_build_object('id', l.id, 'name', l.name, 'lesson_type', l.lesson_type,
-                     'questions', (SELECT COUNT(*) FROM questions q WHERE q.lesson_id = l.id AND q.is_active AND NOT q.competition_only)))
+                     'questions', (SELECT COUNT(*) FROM questions q WHERE q.lesson_id = l.id AND q.is_active AND NOT q.competition_only))
+                     ORDER BY (SELECT array_agg(m[1]::numeric) FROM regexp_matches(translate(l.name, '٠١٢٣٤٥٦٧٨٩', '0123456789'), '([0-9]+)', 'g') AS m), l.name)
                      FILTER (WHERE l.id IS NOT NULL), '[]') AS lessons,
             (SELECT COUNT(*)::int FROM questions q WHERE q.subject_id = s.id AND q.is_active AND NOT q.competition_only) AS questions
        FROM subjects s LEFT JOIN lessons l ON l.subject_id = s.id

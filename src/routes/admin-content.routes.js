@@ -15,12 +15,14 @@ const { badRequest, conflict, forbidden, notFound } = require('../utils/errors')
 const name = z.string().trim().min(1).max(200);
 
 // ------------------------------------------------------------------ Subjects & lessons
+// Lessons in natural order of the numbers in their names (1-2 before 1-10, المفهوم ٢ before المفهوم ١٠).
+const LESSON_ORDER = `(SELECT array_agg(m[1]::numeric) FROM regexp_matches(translate(l.name, '٠١٢٣٤٥٦٧٨٩', '0123456789'), '([0-9]+)', 'g') AS m), l.name`;
 router.get('/subjects', async (req, res) => {
   const { rows } = await db.query(
     `SELECT s.id, s.name,
-            (SELECT COUNT(*)::int FROM questions q WHERE q.subject_id = s.id) AS questions,
+            (SELECT COUNT(*)::int FROM questions q WHERE q.subject_id = s.id AND NOT q.competition_only) AS questions,
             COALESCE((SELECT json_agg(json_build_object('id', l.id, 'name', l.name, 'lesson_type', l.lesson_type,
-                       'questions', (SELECT COUNT(*) FROM questions q WHERE q.lesson_id = l.id)) ORDER BY l.name)
+                       'questions', (SELECT COUNT(*) FROM questions q WHERE q.lesson_id = l.id AND NOT q.competition_only)) ORDER BY ${LESSON_ORDER})
                       FROM lessons l WHERE l.subject_id = s.id), '[]') AS lessons
        FROM subjects s ORDER BY s.name`,
   );
@@ -63,6 +65,24 @@ router.patch('/lessons/:id', validate({ params: idParam, body: lessonBody.partia
     [req.p.id, req.body.name ?? null, 'lesson_type' in req.body, req.body.lesson_type || null]);
   if (!l) throw notFound('الدرس غير موجود');
   res.json({ lesson: l });
+});
+
+/** Merge: every question of this lesson moves to another lesson of the same subject, then this lesson is removed. */
+router.post('/lessons/:id/merge', validate({ params: idParam, body: z.object({ into_lesson_id: z.number().int().positive() }) }), async (req, res) => {
+  const into = req.body.into_lesson_id;
+  if (into === req.p.id) throw badRequest('اختر درسًا آخر');
+  const moved = await db.withTransaction(async (c) => {
+    const { rows: [src] } = await c.query(`SELECT id, subject_id FROM lessons WHERE id = $1 FOR UPDATE`, [req.p.id]);
+    if (!src) throw notFound('الدرس غير موجود');
+    const { rows: [dst] } = await c.query(`SELECT id, subject_id FROM lessons WHERE id = $1`, [into]);
+    if (!dst) throw notFound('الدرس المطلوب الدمج فيه غير موجود');
+    if (dst.subject_id !== src.subject_id) throw badRequest('يجب أن يكون الدرسان في المادة نفسها');
+    const r = await c.query(`UPDATE questions SET lesson_id = $2, updated_at = now() WHERE lesson_id = $1`, [src.id, dst.id]);
+    await c.query(`UPDATE mistakes SET lesson_id = $2 WHERE lesson_id = $1`, [src.id, dst.id]);
+    await c.query(`DELETE FROM lessons WHERE id = $1`, [src.id]);
+    return r.rowCount;
+  });
+  res.json({ moved });
 });
 
 /** Questions of a deleted lesson stay in the subject without a lesson (lesson_id → NULL). */
