@@ -459,3 +459,29 @@ td .row { flex-wrap: wrap; }
 .sheets-box > summary h2 { display: inline-flex; align-items: center; gap: 8px; margin: 0; }
 .sheets-box > summary h2::after { content: '▾'; font-size: .8em; color: var(--muted); }
 .sheets-box:not([open]) > summary h2::after { content: '◂'; }
+
+/* About us */
+.about { max-width: 1000px; margin-inline: auto; }
+.about-hero { text-align: center; padding: 36px 20px 30px; margin-bottom: 18px; border-radius: var(--radius);
+  background: radial-gradient(120% 140% at 50% 0%, var(--primary-soft), transparent 70%), var(--surface); border: 1px solid var(--border); }
+.about-logo { border-radius: 16px; margin-bottom: 8px; }
+.about-hero h1 { margin: 6px 0 10px; font-size: clamp(1.5rem, 4.5vw, 2.1rem); }
+.about-lead { max-width: 720px; margin: 0 auto 18px; color: var(--muted); line-height: 1.9; font-size: 1.05rem; }
+.about-mission { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px; line-height: 1.9; }
+.about-mission h2 { font-size: 1.1rem; margin: 0 0 6px; }
+.about-mission p { margin: 0; color: var(--muted); }
+.about-title { text-align: center; margin: 30px 0 14px; font-size: 1.35rem; }
+.about-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+.about-feature { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; box-shadow: var(--shadow);
+  transition: transform .15s, border-color .15s; }
+.about-feature:hover { transform: translateY(-2px); border-color: var(--primary); }
+.about-icon { display: inline-grid; place-items: center; width: 46px; height: 46px; border-radius: 12px; background: var(--primary-soft); font-size: 1.45rem; }
+.about-feature h3 { margin: 10px 0 6px; font-size: 1.05rem; }
+.about-feature p { margin: 0; color: var(--muted); line-height: 1.8; font-size: .95rem; }
+.about-steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+.about-step { display: flex; gap: 12px; align-items: flex-start; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
+.about-step-no { flex: none; display: grid; place-items: center; width: 38px; height: 38px; border-radius: 50%; background: var(--primary); color: var(--primary-ink); font-weight: 800; }
+.about-step h3 { margin: 2px 0 4px; font-size: 1rem; }
+.about-step p { margin: 0; color: var(--muted); font-size: .93rem; line-height: 1.7; }
+.about-extra { margin-top: 24px; text-align: center; color: var(--muted); line-height: 1.9; }
+.about-extra p { margin: 4px 0; }
