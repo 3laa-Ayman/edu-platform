@@ -487,8 +487,8 @@ td .row { flex-wrap: wrap; }
 .about-extra p { margin: 4px 0; }
 
 /* "Continue with Google" */
-.google-login { margin: 4px 0 14px; }
+.google-login { margin: 14px 0 4px; }
 .google-login #g-btn { display: flex; justify-content: center; min-height: 44px; }
-.or-sep { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: .9rem; margin-top: 14px; }
+.or-sep { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: .9rem; margin-bottom: 14px; }
 .or-sep::before, .or-sep::after { content: ''; flex: 1; border-top: 1px solid var(--border); }
 .nowrap-email { unicode-bidi: isolate; word-break: break-all; }

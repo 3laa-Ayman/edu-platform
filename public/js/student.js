@@ -9,12 +9,12 @@ Views.login = async (el) => {
     <h1>تسجيل الدخول</h1>
     ${notice ? `<p class="notice mid">📱 ${esc(notice)}</p>` : ''}
     <div id="device-limit"></div>
-    ${googleBlock()}
     <form id="f" class="form">
       <label>البريد الإلكتروني أو كود الطالب<input name="identifier" required autocomplete="username" placeholder="STU-2026-0001"></label>
       <label>كلمة المرور<input name="password" type="password" required autocomplete="current-password"></label>
       <button class="btn primary" type="submit">دخول</button>
     </form>
+    ${googleBlock()}
     <p class="links"><a href="#/register">حساب جديد</a> · <a href="#/forgot">نسيت كلمة المرور؟</a></p>
   </div>`;
   mountGoogle(el);
@@ -56,7 +56,7 @@ Views.login = async (el) => {
  * phone numbers.
  */
 const googleBlock = () => (Site.googleClientId
-  ? '<div class="google-login"><div id="g-btn"></div><div class="or-sep"><span>أو</span></div></div>' : '');
+  ? '<div class="google-login"><div class="or-sep"><span>أو</span></div><div id="g-btn"></div></div>' : '');
 let gsiLoading = null;
 const loadGsi = () => (gsiLoading ??= new Promise((resolve, reject) => {
   const s = Object.assign(document.createElement('script'), { src: 'https://accounts.google.com/gsi/client', async: true });
@@ -206,7 +206,6 @@ Views.register = async (el) => {
   el.innerHTML = `<div class="auth card wide">
     <h1>إنشاء حساب طالب</h1>
     ${regSteps(1)}
-    ${googleBlock()}
     <form id="f" class="form grid2">
       <label class="span2">الاسم بالكامل<input name="full_name" required minlength="3" value="${esc(sessionStorage.getItem('regName') || '')}"></label>
       <label class="span2">البريد الإلكتروني<input name="email" type="email" required autocomplete="email" value="${esc(sessionStorage.getItem('verifyEmail') || '')}"></label>
@@ -216,6 +215,7 @@ Views.register = async (el) => {
       <p class="muted small span2">بإنشاء الحساب فإنك توافق على <a href="#/terms" target="_blank">الشروط والأحكام</a> و<a href="#/privacy" target="_blank">سياسة الخصوصية</a>.</p>
       <button class="btn primary span2" type="submit">إرسال رمز التأكيد إلى البريد الإلكتروني</button>
     </form>
+    ${googleBlock()}
     <p class="links">لديك حساب؟ <a href="#/login">سجّل الدخول</a></p>
   </div>`;
   mountGoogle(el);
