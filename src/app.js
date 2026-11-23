@@ -15,8 +15,15 @@ app.use(helmet({
   contentSecurityPolicy: {
     useDefaults: true,
     // blob: lets the admin preview uploaded receipts fetched with the auth header.
-    directives: { 'img-src': ["'self'", 'data:', 'blob:'] },
+    directives: {
+      'img-src': ["'self'", 'data:', 'blob:', 'https://*.googleusercontent.com'],
+      // "Sign in with Google" button (Google Identity Services).
+      'script-src': ["'self'", 'https://accounts.google.com/gsi/client'],
+      'frame-src': ["'self'", 'https://accounts.google.com/gsi/'],
+      'connect-src': ["'self'", 'https://accounts.google.com/gsi/'],
+    },
   },
+  crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' }, // the Google sign-in popup
 }));
 app.use(cors({
   origin: env.corsOrigins.includes('*') && !env.isProd ? true : env.corsOrigins,

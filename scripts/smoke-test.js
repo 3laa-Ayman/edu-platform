@@ -921,5 +921,30 @@ async function studentLogin(identifier, password, device) {
   const other = (await call('GET', '/api/admin/subjects', { token: AT })).data.subjects.find((x) => x.id !== mSubj.id && x.lessons.length);
   ok((await call('POST', `/api/admin/lessons/${L10.id}/merge`, { token: AT, body: { into_lesson_id: other.lessons[0].id } })).status === 400, "can't merge into another subject's lesson");
 
+  // ---------------- 🔑 Sign in with Google (dev tokens "dev:<email>:<name>" — never accepted in production)
+  ok((await call('GET', '/api/settings/public')).data.google_client_id, 'Google client id offered to the login page');
+  const gEmail = `g-${rnd}@gmail.test`;
+  const g1 = await call('POST', '/api/auth/google', { body: { credential: `dev:${gEmail}:طالب جوجل`, device_id: `gdevice-one-${rnd}` } });
+  ok(g1.status === 200 && g1.data.needs_profile && g1.data.google_token && !g1.data.token, 'new Google student → asked for phone numbers first (no account yet)', g1.data);
+  ok((await call('POST', '/api/auth/google/complete', { body: { google_token: g1.data.google_token, full_name: 'طالب جوجل', phone: '01011112222', parent_phone: '01011112222', device_id: `gdevice-one-${rnd}` } })).status === 400, 'student and parent numbers must differ');
+  ok((await call('POST', '/api/auth/google/complete', { body: { google_token: g1.data.google_token, full_name: 'طالب جوجل', phone: '01011112222', device_id: `gdevice-one-${rnd}` } })).status === 400, 'parent phone is required');
+  const gDone = await call('POST', '/api/auth/google/complete', { body: { google_token: g1.data.google_token, full_name: 'طالب جوجل', phone: '01011112222', parent_phone: '01233334444', device_id: `gdevice-one-${rnd}` } });
+  ok(gDone.status === 201 && gDone.data.token && /^STU-/.test(gDone.data.student_code), 'account created with a student code, signed in (no email code)', gDone.data);
+  const gMe = (await call('GET', '/api/auth/me', { token: gDone.data.token })).data;
+  ok((gMe.user || gMe).phone === '01011112222', 'phones saved');
+  const g2 = await call('POST', '/api/auth/google', { body: { credential: `dev:${gEmail}:x`, device_id: `gdevice-one-${rnd}` } });
+  ok(g2.data.token && !g2.data.device_verification, 'next Google sign-in: straight in');
+  const g3 = await call('POST', '/api/auth/google', { body: { credential: `dev:${gEmail}:x`, device_id: `gdevice-two-${rnd}` } });
+  ok(g3.data.token, 'second device added without an email code');
+  const g4 = await call('POST', '/api/auth/google', { body: { credential: `dev:${gEmail}:x`, device_id: `gdevice-three-${rnd}` } });
+  ok(g4.status >= 400 && g4.data.error.code === 'DEVICE_LIMIT', 'third device still refused (max 2)', g4.data);
+  ok((await call('POST', '/api/auth/register', { body: { full_name: 'محاولة', email: gEmail, phone: '01055556666', parent_phone: '01277778888' } })).status === 409, "email sign-up can't take over a Google account");
+  const pwStudent = await registerStudent(41);
+  const gLink = await call('POST', '/api/auth/google', { body: { credential: `dev:${pwStudent.email}:x`, device_id: `gdevice-link-${rnd}` } });
+  ok(gLink.data.token && !gLink.data.needs_profile, 'existing email account: Google signs in to the same account (no code)');
+  await pgdb.query(`UPDATE users SET created_at = now() - interval '30 days' WHERE email = $1`, [gEmail]);
+  await require('../src/jobs').JOBS.cleanup();
+  ok((await pgdb.query('SELECT 1 FROM users WHERE email = $1', [gEmail])).rowCount === 1, 'daily cleanup keeps Google accounts (they have no password)');
+
   console.log(`\n🎉 All ${passed} checks passed`);
 })().catch((e) => { console.error(e); process.exit(1); });

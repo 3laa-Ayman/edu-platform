@@ -485,3 +485,10 @@ td .row { flex-wrap: wrap; }
 .about-step p { margin: 0; color: var(--muted); font-size: .93rem; line-height: 1.7; }
 .about-extra { margin-top: 24px; text-align: center; color: var(--muted); line-height: 1.9; }
 .about-extra p { margin: 4px 0; }
+
+/* "Continue with Google" */
+.google-login { margin: 4px 0 14px; }
+.google-login #g-btn { display: flex; justify-content: center; min-height: 44px; }
+.or-sep { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: .9rem; margin-top: 14px; }
+.or-sep::before, .or-sep::after { content: ''; flex: 1; border-top: 1px solid var(--border); }
+.nowrap-email { unicode-bidi: isolate; word-break: break-all; }

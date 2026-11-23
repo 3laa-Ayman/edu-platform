@@ -9,6 +9,7 @@ Views.login = async (el) => {
     <h1>تسجيل الدخول</h1>
     ${notice ? `<p class="notice mid">📱 ${esc(notice)}</p>` : ''}
     <div id="device-limit"></div>
+    ${googleBlock()}
     <form id="f" class="form">
       <label>البريد الإلكتروني أو كود الطالب<input name="identifier" required autocomplete="username" placeholder="STU-2026-0001"></label>
       <label>كلمة المرور<input name="password" type="password" required autocomplete="current-password"></label>
@@ -16,6 +17,7 @@ Views.login = async (el) => {
     </form>
     <p class="links"><a href="#/register">حساب جديد</a> · <a href="#/forgot">نسيت كلمة المرور؟</a></p>
   </div>`;
+  mountGoogle(el);
   onSubmit($('#f', el), async (v) => {
     $('#device-limit', el).innerHTML = '';
     try {
@@ -45,6 +47,77 @@ Views.login = async (el) => {
       }
       throw err;
     }
+  });
+};
+
+/**
+ * "Continue with Google" (Google Identity Services), next to email + password. Shown only when the server has a
+ * Google client id. Existing account → signed in at once (no email code); new student → #/google-profile for the
+ * phone numbers.
+ */
+const googleBlock = () => (Site.googleClientId
+  ? '<div class="google-login"><div id="g-btn"></div><div class="or-sep"><span>أو</span></div></div>' : '');
+let gsiLoading = null;
+const loadGsi = () => (gsiLoading ??= new Promise((resolve, reject) => {
+  const s = Object.assign(document.createElement('script'), { src: 'https://accounts.google.com/gsi/client', async: true });
+  s.onload = resolve;
+  s.onerror = () => { gsiLoading = null; reject(new Error('تعذّر تحميل زر Google — تحقق من الاتصال')); };
+  document.head.append(s);
+}));
+async function mountGoogle(el) {
+  const box = $('#g-btn', el);
+  if (!box) return;
+  try { await loadGsi(); } catch { box.closest('.google-login').hidden = true; return; }
+  if (!box.isConnected) return;
+  google.accounts.id.initialize({ client_id: Site.googleClientId, callback: (r) => googleSignIn(el, r.credential), ux_mode: 'popup' });
+  google.accounts.id.renderButton(box, {
+    theme: isDark() ? 'filled_black' : 'outline', size: 'large', shape: 'pill', text: 'continue_with', locale: 'ar',
+    width: Math.min(360, box.clientWidth || 320),
+  });
+}
+async function googleSignIn(el, credential) {
+  const limit = $('#device-limit', el);
+  if (limit) limit.innerHTML = '';
+  try {
+    const r = await API.post('/auth/google', { credential, device_id: deviceId() });
+    if (r.needs_profile) {
+      sessionStorage.setItem('googleSignup', JSON.stringify({ token: r.google_token, name: r.name, email: r.email }));
+      location.hash = '#/google-profile';
+      return;
+    }
+    API.setToken(r.token);
+    await State.refresh();
+    location.hash = State.user.role === 'admin' ? '#/admin' : '#/';
+  } catch (err) {
+    if (err.code === 'DEVICE_LIMIT' && limit) { limit.innerHTML = deviceLimitNotice(err); return; }
+    toast(errorText(err), 'err');
+  }
+}
+
+/** New student via Google: the phone numbers are required (WhatsApp contact), then the account is created. */
+Views.googleProfile = async (el) => {
+  const g = JSON.parse(sessionStorage.getItem('googleSignup') || 'null');
+  if (!g) { location.hash = '#/login'; return; }
+  el.innerHTML = `<div class="auth card wide">
+    <h1>أكمل بياناتك</h1>
+    <p class="muted">تم التحقق من حساب Google <bdi dir="ltr" class="nowrap-email"><b>${esc(g.email)}</b></bdi> ✓ — بقيت خطوة واحدة: أرقام التواصل (مطلوبة للتواصل معك ومع ولي أمرك على واتساب).</p>
+    <form id="f" class="form grid2">
+      <label class="span2">الاسم بالكامل<input name="full_name" required minlength="3" value="${esc(g.name || '')}"></label>
+      <label>رقم الطالب (واتساب)<input name="phone" required inputmode="numeric" placeholder="01012345678" pattern="01[0125][0-9]{8}" title="رقم موبايل مصري، مثال: 01012345678"></label>
+      <label>رقم ولي الأمر (واتساب)<input name="parent_phone" required inputmode="numeric" placeholder="01212345678" pattern="01[0125][0-9]{8}" title="رقم موبايل مصري، مثال: 01212345678"></label>
+      <label class="span2">البريد الإلكتروني لولي الأمر (اختياري — لاستلام التقارير)<input name="parent_email" type="email"></label>
+      <p class="muted small span2">بإنشاء الحساب فإنك توافق على <a href="#/terms" target="_blank">الشروط والأحكام</a> و<a href="#/privacy" target="_blank">سياسة الخصوصية</a>.</p>
+      <button class="btn primary span2" type="submit">إنشاء الحساب</button>
+    </form>
+    <p class="links"><a href="#/login">رجوع</a></p>
+  </div>`;
+  onSubmit($('#f', el), async (v) => {
+    const r = await API.post('/auth/google/complete', { google_token: g.token, ...v, device_id: deviceId() });
+    sessionStorage.removeItem('googleSignup');
+    API.setToken(r.token);
+    await State.refresh();
+    toast(r.message);
+    location.hash = '#/';
   });
 };
 
@@ -133,6 +206,7 @@ Views.register = async (el) => {
   el.innerHTML = `<div class="auth card wide">
     <h1>إنشاء حساب طالب</h1>
     ${regSteps(1)}
+    ${googleBlock()}
     <form id="f" class="form grid2">
       <label class="span2">الاسم بالكامل<input name="full_name" required minlength="3" value="${esc(sessionStorage.getItem('regName') || '')}"></label>
       <label class="span2">البريد الإلكتروني<input name="email" type="email" required autocomplete="email" value="${esc(sessionStorage.getItem('verifyEmail') || '')}"></label>
@@ -144,6 +218,7 @@ Views.register = async (el) => {
     </form>
     <p class="links">لديك حساب؟ <a href="#/login">سجّل الدخول</a></p>
   </div>`;
+  mountGoogle(el);
   onSubmit($('#f', el), async (v) => {
     const r = await API.post('/auth/register', v);
     sessionStorage.setItem('verifyEmail', v.email);

@@ -3,7 +3,8 @@ const bcrypt = require('bcrypt');
 const env = require('../config/env');
 const db = require('../config/db');
 const { validate, idParam, z } = require('../middleware/validate');
-const { authenticate, signToken, signSetupToken, verifySetupToken, signDeviceToken, verifyDeviceToken } = require('../middleware/auth');
+const { authenticate, signToken, signSetupToken, verifySetupToken, signDeviceToken, verifyDeviceToken, signGoogleToken, verifyGoogleToken } = require('../middleware/auth');
+const { verifyGoogleCredential } = require('../services/google-auth.service');
 const devices = require('../services/device.service');
 const { authLimiter, otpLimiter } = require('../middleware/rateLimit');
 const { getActiveSubscription } = require('../middleware/subscription');
@@ -45,8 +46,8 @@ router.post('/register', authLimiter, validate({
   const { default_ai_limit_egp: aiLimit } = await getSettings();
 
   const { user, code } = await db.withTransaction(async (c) => {
-    const { rows: [existing] } = await c.query(`SELECT id, password_hash FROM users WHERE email = $1 FOR UPDATE`, [b.email]);
-    if (existing?.password_hash) throw conflict('هذا البريد الإلكتروني مسجل بالفعل — سجّل الدخول أو استخدم "نسيت كلمة المرور"');
+    const { rows: [existing] } = await c.query(`SELECT id, password_hash, student_code FROM users WHERE email = $1 FOR UPDATE`, [b.email]);
+    if (existing?.password_hash || existing?.student_code) throw conflict('هذا البريد الإلكتروني مسجل بالفعل — سجّل الدخول أو استخدم "نسيت كلمة المرور"');
     let u;
     if (existing) {
       // Unfinished registration with this email: update the details and send a fresh code.
@@ -159,6 +160,84 @@ router.post('/login', authLimiter, validate({
     email_hint: maskEmail(user.email),
     message: 'هذا جهاز جديد — أرسلنا رمز تأكيد إلى بريدك الإلكتروني',
     ...devOtp(code),
+  });
+});
+
+/**
+ * "Continue with Google" (next to email + password, which stay as they are). Google has verified the email, so:
+ *   - existing account → signed in; a new device is added directly, no email code (still max 2 devices, one session)
+ *   - new student → { needs_profile, google_token }: the student must add their phone and the parent's phone
+ *     (POST /google/complete) before the account is created.
+ */
+router.post('/google', authLimiter, validate({
+  body: z.object({ credential: z.string().min(10).max(5000), device_id: deviceId }),
+}), async (req, res) => {
+  const g = await verifyGoogleCredential(req.body.credential);
+  const { rows: [user] } = await db.query(
+    `SELECT * FROM users WHERE google_sub = $1 OR email = $2 ORDER BY (google_sub = $1) DESC NULLS LAST LIMIT 1`, [g.sub, g.email]);
+  // No account yet (or an email sign-up that never finished): ask for the phone numbers first.
+  if (!user || (user.role === 'student' && !user.student_code)) {
+    return res.json({ needs_profile: true, google_token: signGoogleToken(g), name: g.name, email: g.email });
+  }
+  if (!user.is_active) throw forbidden('تم إيقاف هذا الحساب، تواصل مع الدعم', 'ACCOUNT_DISABLED');
+  if (user.role === 'admin') {
+    if (!user.google_sub) await db.query(`UPDATE users SET google_sub = $2 WHERE id = $1`, [user.id, g.sub]);
+    return res.json({ token: signToken(user), user: profile(user) });
+  }
+  const keyHash = devices.hashKey(devices.deviceKey(req, res));
+  const { sid, u } = await db.withTransaction(async (c) => {
+    const { rows: [u] } = await c.query(
+      `UPDATE users SET google_sub = COALESCE(google_sub, $2), is_verified = TRUE, updated_at = now() WHERE id = $1 RETURNING *`,
+      [user.id, g.sub]);
+    let device = await devices.findDevice(c, u.id, keyHash);
+    if (!device) {
+      await devices.assertRoom(c, u, req);
+      device = await devices.addDevice(c, u, keyHash, req);
+    }
+    return { u, sid: await devices.startSession(c, u.id, device, req) };
+  });
+  res.json({ token: signToken(u, sid), user: profile(u) });
+});
+
+/** New student via Google: their phone and the parent's phone (required, for WhatsApp) → account created, signed in. */
+router.post('/google/complete', authLimiter, validate({
+  body: z.object({
+    google_token: z.string().min(10).max(2000),
+    full_name: fullName,
+    phone: egyptPhone,
+    parent_phone: egyptPhone,
+    parent_email: email.optional(),
+    device_id: deviceId,
+  }),
+}), async (req, res) => {
+  const g = verifyGoogleToken(req.body.google_token);
+  const b = req.body;
+  if (b.phone === b.parent_phone) throw badRequest('رقم ولي الأمر يجب أن يكون مختلفاً عن رقم الطالب');
+  const { default_ai_limit_egp: aiLimit } = await getSettings();
+  const keyHash = devices.hashKey(devices.deviceKey(req, res));
+  let sid;
+  const user = await db.withTransaction(async (c) => {
+    const { rows: [existing] } = await c.query(`SELECT * FROM users WHERE email = $1 FOR UPDATE`, [g.email]);
+    if (existing?.student_code || existing?.role === 'admin') throw conflict('هذا الحساب موجود بالفعل — اضغط «المتابعة باستخدام Google» لتسجيل الدخول');
+    const code = await nextStudentCode(c);
+    const { rows: [u] } = existing
+      ? await c.query(
+        `UPDATE users SET full_name = $2, phone = $3, parent_phone = $4, parent_email = $5, google_sub = $6, student_code = $7,
+                is_verified = TRUE, updated_at = now() WHERE id = $1 RETURNING *`,
+        [existing.id, b.full_name, b.phone, b.parent_phone, b.parent_email || null, g.sub, code])
+      : await c.query(
+        `INSERT INTO users (full_name, email, phone, parent_phone, parent_email, ai_limit_egp, google_sub, student_code, is_verified)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, TRUE) RETURNING *`,
+        [b.full_name, g.email, b.phone, b.parent_phone, b.parent_email || null, aiLimit, g.sub, code]);
+    const device = await devices.addDevice(c, u, keyHash, req);
+    sid = await devices.startSession(c, u.id, device, req);
+    return u;
+  });
+  res.status(201).json({
+    message: `تم إنشاء حسابك بنجاح — كود الطالب الخاص بك: ${user.student_code}`,
+    student_code: user.student_code,
+    token: signToken(user, sid),
+    user: profile(user),
   });
 });
 

@@ -2,6 +2,7 @@
 const ROUTES = [
   ['/login', Views.login, 'guest'],
   ['/register', Views.register, 'guest'],
+  ['/google-profile', Views.googleProfile, 'guest'],
   ['/privacy', Views.privacy, 'public'],
   ['/terms', Views.terms, 'public'],
   ['/about', Views.about, 'public'],
@@ -59,6 +60,7 @@ async function loadSiteSettings() {
     Site.name = s.site_name || Site.name;
     Site.pointsPerEgp = s.ai_points_per_egp || Site.pointsPerEgp;
     Site.supportPhone = s.support_phone || '';
+    Site.googleClientId = s.google_client_id || '';
     document.title = Site.name;
   } catch { /* keep default */ }
 }

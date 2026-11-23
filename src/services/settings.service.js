@@ -77,7 +77,8 @@ async function updateSettings(patch, adminId) {
 }
 
 /** Fields safe to expose without login. */
-const publicSettings = (s) => ({ site_name: s.site_name, support_phone: s.support_phone, ai_points_per_egp: s.ai_points_per_egp });
+const publicSettings = (s) => ({ site_name: s.site_name, support_phone: s.support_phone, ai_points_per_egp: s.ai_points_per_egp,
+  google_client_id: env.googleClientId || null });
 
 /** EGP amount → points for display, to one decimal (so a 0.3-point request is visible in the balance). */
 const toPoints = (egp, rate) => Math.round(Number(egp) * rate * 10) / 10;

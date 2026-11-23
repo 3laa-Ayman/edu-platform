@@ -30,7 +30,7 @@ const JOBS = {
           AND NOT EXISTS (SELECT 1 FROM competition_questions cq WHERE cq.question_id = q.id)`);
     // Registrations that never reached the "set password" step free their email after 7 days.
     const abandoned = await db.query(
-      `DELETE FROM users WHERE role = 'student' AND password_hash IS NULL AND created_at < now() - interval '7 days'`);
+      `DELETE FROM users WHERE role = 'student' AND password_hash IS NULL AND google_sub IS NULL AND student_code IS NULL AND created_at < now() - interval '7 days'`);
     const payments = await db.query(
       `UPDATE payments SET status = 'failed', admin_note = 'expired', updated_at = now()
         WHERE status = 'pending' AND method_type = 'gateway' AND created_at < now() - interval '3 days'`);

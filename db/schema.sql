@@ -605,3 +605,7 @@ ALTER TABLE question_uploads ADD COLUMN IF NOT EXISTS file_size INT;
 ALTER TABLE question_uploads ADD COLUMN IF NOT EXISTS for_competition BOOLEAN NOT NULL DEFAULT FALSE;
 UPDATE question_uploads u SET for_competition = TRUE
  WHERE NOT u.for_competition AND EXISTS (SELECT 1 FROM questions q WHERE q.upload_id = u.id AND q.competition_only);
+
+-- "Sign in with Google": the Google account id linked to the student (no password needed for those accounts).
+ALTER TABLE users ADD COLUMN IF NOT EXISTS google_sub VARCHAR(100);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_sub ON users (google_sub) WHERE google_sub IS NOT NULL;

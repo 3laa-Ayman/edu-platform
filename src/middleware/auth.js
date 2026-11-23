@@ -39,6 +39,21 @@ function signDeviceToken(user, keyHash) {
     expiresIn: '15m', issuer: ISSUER, audience: DEVICE_AUDIENCE, algorithm: 'HS256',
   });
 }
+/** Google sign-in of a new student: the verified Google account, until the phone numbers are filled in. */
+const GOOGLE_AUDIENCE = 'google-signup';
+function signGoogleToken(g) {
+  return jwt.sign({ sub: g.sub, email: g.email, name: g.name, purpose: GOOGLE_AUDIENCE }, env.jwtSecret, {
+    expiresIn: '30m', issuer: ISSUER, audience: GOOGLE_AUDIENCE, algorithm: 'HS256',
+  });
+}
+function verifyGoogleToken(token) {
+  try {
+    return jwt.verify(token, env.jwtSecret, { algorithms: ['HS256'], issuer: ISSUER, audience: GOOGLE_AUDIENCE });
+  } catch {
+    throw unauthorized('انتهت المهلة، اضغط «المتابعة باستخدام Google» مرة أخرى');
+  }
+}
+
 function verifyDeviceToken(token) {
   try {
     return jwt.verify(token, env.jwtSecret, { algorithms: ['HS256'], issuer: ISSUER, audience: DEVICE_AUDIENCE });
@@ -80,4 +95,4 @@ const requireRole = (...roles) => (req, res, next) => {
   next();
 };
 
-module.exports = { signToken, signSetupToken, verifySetupToken, signDeviceToken, verifyDeviceToken, authenticate, requireRole, requireAdmin: requireRole('admin') };
+module.exports = { signToken, signSetupToken, verifySetupToken, signDeviceToken, verifyDeviceToken, signGoogleToken, verifyGoogleToken, authenticate, requireRole, requireAdmin: requireRole('admin') };

@@ -32,6 +32,8 @@ module.exports = {
   databaseUrl: process.env.DATABASE_URL,
 
   jwtSecret: process.env.JWT_SECRET,
+  // Google Cloud OAuth "Web client" id (public, not a secret) — enables the "Sign in with Google" button.
+  googleClientId: (process.env.GOOGLE_CLIENT_ID || '').trim(),
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
   bcryptRounds: num(process.env.BCRYPT_ROUNDS, 12),
   otp: {
