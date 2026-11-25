@@ -513,3 +513,12 @@ td .row { flex-wrap: wrap; }
 .q-nav { display: flex; gap: 10px; margin-inline-start: auto; }
 
 .q-meta .q-quit { margin-inline-start: auto; }
+
+/* Admin: a subject's lessons folded (open on click) */
+.lessons-box { margin-top: 6px; }
+.lessons-box > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px; padding: 10px 12px;
+  border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); font-weight: 700; }
+.lessons-box > summary::-webkit-details-marker { display: none; }
+.lessons-box > summary::after { content: '◂'; margin-inline-start: auto; color: var(--muted); }
+.lessons-box[open] > summary::after { content: '▾'; }
+.lessons-box[open] > summary { margin-bottom: 8px; }

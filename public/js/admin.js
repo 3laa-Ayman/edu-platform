@@ -36,6 +36,9 @@ Admin.dashboard = async (el) => {
 // ---------------------------------------------------------------- Subjects & lessons
 Admin.subjects = async (el) => {
   const [{ subjects }, { tracks }] = await Promise.all([API.get('/admin/subjects'), API.get('/admin/tracks')]);
+  // Lessons are folded inside each subject; the ones opened stay open after a change (kept for this tab).
+  let openSubjects;
+  try { openSubjects = new Set(JSON.parse(sessionStorage.getItem('openSubjects') || '[]')); } catch { openSubjects = new Set(); }
   el.innerHTML = `<h1 class="page-head">المواد والدروس</h1>
     <section class="card"><h2>🎓 الأنظمة (البكالوريا)</h2>
       <p class="muted">يختار كل طالب نظامه مرة واحدة أول ما يدخل، ويرى مواد نظامه فقط. حدّد الأنظمة لكل مادة من خانة «الأنظمة» في المادة نفسها؛
@@ -56,16 +59,23 @@ Admin.subjects = async (el) => {
       ${tracks.length ? `<form class="subject-tracks" data-subject-tracks="${s.id}"><b>الأنظمة:</b>
         ${tracks.map((t) => `<label class="check"><input type="checkbox" value="${t.id}" ${s.track_ids.includes(t.id) ? 'checked' : ''}> ${esc(t.name)}</label>`).join('')}
         <small class="muted">${s.track_ids.length ? '' : '(مشتركة لكل الأنظمة)'}</small></form>` : ''}
+      <details class="lessons-box" data-subject="${s.id}" ${openSubjects.has(String(s.id)) ? 'open' : ''}>
+      <summary>📚 الدروس ${badge(s.lessons.length)} <small class="muted">اضغط للفتح/الإغلاق</small></summary>
       ${s.lessons.length ? `<ul class="list">${s.lessons.map((l) => `<li>
         <span><b>${esc(l.name)}</b><small class="muted">${esc(l.lesson_type || '')} · ${l.questions} سؤال</small></span>
         <span class="row"><button class="btn ghost tiny" data-action="editLesson" data-id="${l.id}" data-name="${esc(l.name)}" data-type="${esc(l.lesson_type || '')}">تعديل</button>
         ${s.lessons.length > 1 ? `<button class="btn ghost tiny" data-action="mergeLesson" data-id="${l.id}" data-subject="${s.id}">🔀 دمج في درس آخر</button>` : ''}
         <button class="btn danger tiny" data-action="deleteLesson" data-id="${l.id}" data-name="${esc(l.name)}">حذف</button></span></li>`).join('')}</ul>` : '<p class="muted">لا توجد دروس بعد.</p>'}
       <form class="form inline" data-add-lesson="${s.id}"><input name="name" required placeholder="درس جديد"><input name="lesson_type" placeholder="نوع الدرس (اختياري)"><button class="btn ghost" type="submit">إضافة درس</button></form>
+      </details>
     </section>`).join('') : empty('لا توجد مواد بعد. أضف مادة أو ارفع شيت أسئلة.')}`;
 
   const reload = () => Admin.subjects(el);
   onSubmit($('#sf', el), async (v) => { await API.post('/admin/subjects', v); toast('تمت إضافة المادة'); reload(); });
+  $$('.lessons-box', el).forEach((d) => d.addEventListener('toggle', () => {
+    if (d.open) openSubjects.add(d.dataset.subject); else openSubjects.delete(d.dataset.subject);
+    try { sessionStorage.setItem('openSubjects', JSON.stringify([...openSubjects])); } catch { /* ignore */ }
+  }));
   onSubmit($('#tf', el), async (v) => { await API.post('/admin/tracks', v); toast('تمت إضافة النظام'); reload(); });
   // A subject's tracks are saved as soon as a box is ticked.
   listen(el, 'change', (e) => {
