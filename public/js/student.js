@@ -605,7 +605,7 @@ async function showExplanation(card, qid, btn) {
   box.hidden = false;
   const law = r.law_note ? `<p class="law">📐 ${rich(r.law_note)}</p>` : '';
   if (r.explanation || r.explanation_image) {
-    box.innerHTML = `<div class="src">${r.source === 'question_bank' ? 'شرح من بنك الأسئلة — مجاني' : 'شرح محفوظ — مجاني'}</div>${r.explanation ? `<p>${rich(r.explanation)}</p>` : ''}${qImage(r.explanation_image, 'صورة الشرح')}${law}
+    box.innerHTML = `<div class="src">${r.source === 'question_bank' ? 'شرح من بنك الأسئلة — مجاني' : 'شرح محفوظ — مجاني'}</div>${r.explanation ? `<p class="pre">${rich(r.explanation)}</p>` : ''}${qImage(r.explanation_image, 'صورة الشرح')}${law}
       ${r.source === 'question_bank' ? '<div class="ai-more"><button class="btn ai" data-action="ai" data-simpler="1">🤔 لم أفهم، اشرح لي أكثر</button></div>' : ''}`;
     btn.remove();
     return;
