@@ -24,8 +24,12 @@ assert not bad
 AR = dict(zip('ABCD', 'أبجد')); out = []; seen = set()
 os.makedirs('../build/img', exist_ok=True)
 for i, x in enumerate(Q):
-    k = 'ABCD'.index(letters[i]); opts = list(x['d']); opts.insert(k, x['c'])
-    assert len(set(opts)) == 4
+    if len(x['d']) == 1:  # two-option question (Vrai / Faux…): answer in A or B, C and D left empty
+        k = 0 if letters[i] in 'AC' else 1; opts = [x['d'][0]]; opts.insert(k, x['c']); opts += ['', '']
+        letters[i] = 'AB'[k]
+    else:
+        k = 'ABCD'.index(letters[i]); opts = list(x['d']); opts.insert(k, x['c'])
+        assert len(set(opts)) == 4
     r = dict(question=x['q'], A=opts[0], B=opts[1], C=opts[2], D=opts[3], answer=AR[letters[i]], explanation=x['e'], law=x['law'],
              subject=os.environ.get('SUBJ','الفيزياء'), lesson=L[x['l']], lesson_type=lt, category='درس', images={})
     if x.get('note'): r['note'] = x['note']
