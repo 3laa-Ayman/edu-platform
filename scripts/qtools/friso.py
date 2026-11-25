@@ -4,7 +4,7 @@ import json, re, sys
 F = ('question', 'A', 'B', 'C', 'D', 'explanation', 'law', 'passage')
 AR = re.compile('[؀-ۿ]')
 L = 'A-Za-zÀ-ÖØ-öø-ÿŒœ'
-RUN = re.compile(r'«?…?\s*[' + L + r'0-9(][' + L + r"0-9 '’.,:;!?…\-–—/+=%()«»·→≠≈]*[" + L + r'0-9.!?…)»%]')
+RUN = re.compile(r'«?…?\s*[' + L + r'0-9(−‑][' + L + r"0-9 '’.,:;!?…\-‑−–—/+=%()«»·→≠≈°]*[" + L + r'0-9.!?…)»%°]')
 def iso(line):
     if '⁦' in line or not AR.search(line): return line
     def f(m):
