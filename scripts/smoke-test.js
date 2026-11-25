@@ -181,6 +181,34 @@ async function studentLogin(identifier, password, device) {
   const physics = subjects.data.subjects.find((s) => s.name === 'فيزياء');
   const qs = await call('GET', `/api/catalog/questions?limit=50&subject_id=${physics.id}`, { token: A.token });
   ok(qs.data.questions.length >= 3 && qs.data.questions.every((q) => q.subject_id === physics.id && !('correct_option' in q) && !('explanation' in q)), 'questions of the chosen subject only, served without answers');
+
+  // ---------------- Two-option questions (true / false): C and D left empty in the sheet
+  {
+    const tw = new ExcelJS.Workbook();
+    await tw.xlsx.readFile(path.join(__dirname, '../templates/questions-template.xlsx'));
+    const ws = tw.worksheets[0];
+    const H = {}; ws.getRow(1).eachCell((c, i) => { H[String(c.value)] = i; });
+    for (let r = ws.rowCount; r >= 2; r--) ws.spliceRows(r, 1);
+    const tfSubject = `فرنساوي ${rnd}`;
+    const addRow = (q, a, b, c, d, ans) => {
+      const row = ws.getRow(ws.rowCount + 1);
+      Object.entries({ 'السؤال': q, 'أ': a, 'ب': b, 'ج': c, 'د': d, 'الإجابة الصحيحة': ans, 'المادة': tfSubject }).forEach(([h, v]) => { row.getCell(H[h]).value = v; });
+    };
+    addRow("Sara paie à la caisse.", 'Vrai', 'Faux', '', '', 'ب');
+    const tfForm = (w) => w.xlsx.writeBuffer().then((buf) => { const f = new FormData(); f.append('file', new Blob([buf]), 'tf.xlsx'); return f; });
+    const goodForm = await tfForm(tw);
+    addRow("Only C empty", 'x', 'y', '', 'z', 'أ');
+    addRow("Two options, answer C", 'Vrai', 'Faux', '', '', 'ج');
+    const bad = await call('POST', '/api/admin/questions/upload?dry_run=true', { token: AT, form: await tfForm(tw) });
+    ok(bad.status === 200 && bad.data.valid_rows === 1 && bad.data.failed === 2, 'two-option row valid; one empty option / answer C on a two-option row rejected', bad.data);
+    const upTf = await call('POST', '/api/admin/questions/upload', { token: AT, form: goodForm });
+    ok(upTf.status === 201 && upTf.data.inserted === 1, 'two-option question imported', upTf.data);
+    const tfSubj = (await call('GET', '/api/catalog/subjects', { token: A.token })).data.subjects.find((s) => s.name === tfSubject);
+    const tfQ = (await call('GET', `/api/catalog/questions?subject_id=${tfSubj.id}`, { token: A.token })).data.questions[0];
+    ok(tfQ.options.A === 'Vrai' && tfQ.options.B === 'Faux' && !tfQ.options.C && !tfQ.options.D, 'two-option question served with C and D empty', tfQ.options);
+    const tfAns = await call('POST', '/api/catalog/answer', { token: A.token, body: { question_id: tfQ.id, choice: 'B' } });
+    ok(tfAns.status === 200 && tfAns.data.is_correct === true, 'two-option question answered', tfAns.data);
+  }
   // Past exams are part of the standard plan (admins can still change plan features).
   const stdPlan = (await call('GET', '/api/admin/plans', { token: AT })).data.plans.find((p) => p.code === 'standard');
   await call('PATCH', '/api/admin/plans/standard', { token: AT, body: { features: { ...stdPlan.features, past_exams: true } } });

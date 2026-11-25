@@ -576,8 +576,8 @@ function questionCard(q, idx, total) {
     ${q.question ? `<h2 class="q-text">${rich(q.question)}</h2>` : ''}
     ${qImage(q.image, 'صورة السؤال')}
     <div class="options">
-      ${['A', 'B', 'C', 'D'].map((k, i) => `<button class="option" data-action="choose" data-key="${k}"><span class="opt-key">${'أبجد'[i]}</span>
-        <span class="opt-body">${q.options[k] ? `<span>${rich(q.options[k])}</span>` : ''}${optImage(q.option_images?.[k], `الاختيار ${'أبجد'[i]}`)}</span></button>`).join('')}
+      ${['A', 'B', 'C', 'D'].map((k, i) => (!q.options[k] && !q.option_images?.[k] ? '' : `<button class="option" data-action="choose" data-key="${k}"><span class="opt-key">${'أبجد'[i]}</span>
+        <span class="opt-body">${q.options[k] ? `<span>${rich(q.options[k])}</span>` : ''}${optImage(q.option_images?.[k], `الاختيار ${'أبجد'[i]}`)}</span></button>`)).join('')}
     </div>
     <div class="feedback" hidden></div>
     <div class="explain" hidden></div>

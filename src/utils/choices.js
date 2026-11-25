@@ -14,4 +14,7 @@ function normalizeChoice(value) {
 
 const optionText = (q, letter) => q[`option_${letter.toLowerCase()}`];
 
-module.exports = { LETTERS, normalizeChoice, optionText };
+/** Two-option question (e.g. true / false): C and D are empty, with no image. Old four-option questions are unchanged. */
+const isTwoOption = (q, media = {}) => !q.option_c && !q.option_d && !media.option_c && !media.option_d;
+
+module.exports = { LETTERS, normalizeChoice, optionText, isTwoOption };

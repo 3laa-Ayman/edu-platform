@@ -177,8 +177,11 @@ async function parseQuestionSheet(buffer, { defaultSubject } = {}) {
       continue;
     }
     if (!r.question && !media.question) rowErrors.push('السؤال فارغ (لا نص ولا صورة)');
-    for (const k of ['option_a', 'option_b', 'option_c', 'option_d']) {
-      if (!r[k] && !media[k]) rowErrors.push(`الاختيار ${k.slice(-1).toUpperCase()} فارغ (لا نص ولا صورة)`);
+    // Two-option questions (e.g. true / false): C and D both left empty. Otherwise all four options are required.
+    const has = (k) => Boolean(r[k] || media[k]);
+    const twoOptions = !has('option_c') && !has('option_d');
+    for (const k of twoOptions ? ['option_a', 'option_b'] : ['option_a', 'option_b', 'option_c', 'option_d']) {
+      if (!has(k)) rowErrors.push(`الاختيار ${k.slice(-1).toUpperCase()} فارغ (لا نص ولا صورة)`);
     }
     if (Object.keys(media).length) r.media = media;
     if (!r.subject) rowErrors.push('المادة غير محددة');
@@ -190,6 +193,7 @@ async function parseQuestionSheet(buffer, { defaultSubject } = {}) {
       correct = ['A', 'B', 'C', 'D'].find((L) => norm(r[`option_${L.toLowerCase()}`]) === norm(rawCorrect)) || null;
     }
     if (!correct) rowErrors.push(`الإجابة الصحيحة غير مفهومة: "${rawCorrect}" (استخدم A/B/C/D أو أ/ب/ج/د)`);
+    else if (twoOptions && !['A', 'B'].includes(correct)) rowErrors.push('السؤال له اختياران فقط (أ، ب) — الإجابة الصحيحة لازم تكون أ أو ب');
 
     const rawCategory = get('category');
     const category = rawCategory ? CATEGORY_MAP.get(norm(rawCategory)) : 'lesson';

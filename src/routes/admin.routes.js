@@ -336,11 +336,13 @@ const compQuestionBody = z.object({
   question_text: z.string().trim().max(5000).default(''),
   option_a: z.string().trim().min(1, 'اكتب الاختيار أ').max(1000),
   option_b: z.string().trim().min(1, 'اكتب الاختيار ب').max(1000),
-  option_c: z.string().trim().min(1, 'اكتب الاختيار ج').max(1000),
-  option_d: z.string().trim().min(1, 'اكتب الاختيار د').max(1000),
+  // C and D both empty = two-option question (e.g. true / false).
+  option_c: z.string().trim().max(1000).default(''),
+  option_d: z.string().trim().max(1000).default(''),
   correct_option: z.enum(['A', 'B', 'C', 'D']),
   explanation: z.string().trim().max(5000).optional(),
-});
+}).refine((b) => Boolean(b.option_c) === Boolean(b.option_d), { message: 'اكتب الاختيارين ج و د، أو اتركهما فارغين معًا لسؤال باختيارين', path: ['option_c'] })
+  .refine((b) => b.option_c || ['A', 'B'].includes(b.correct_option), { message: 'السؤال له اختياران فقط — الإجابة الصحيحة لازم تكون أ أو ب', path: ['correct_option'] });
 
 /** One question typed in the competition form (multipart: the fields + optional image "image"). */
 router.post('/competition-questions', uploadLimiter, imageUpload.single('image'), validate({ body: compQuestionBody }), async (req, res) => {

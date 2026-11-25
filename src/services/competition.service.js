@@ -41,7 +41,8 @@ async function renderEntry(entry, client = db) {
         question: q.question_text,
         image: m.question || null,
         passage: passages[q.passage_id] || null,
-        options: LETTERS.map((L, i) => ({ key: L, text: optionText(q, perm[i]), image: m[`option_${perm[i].toLowerCase()}`] || null })),
+        options: LETTERS.map((L, i) => ({ key: L, text: optionText(q, perm[i]), image: m[`option_${perm[i].toLowerCase()}`] || null }))
+          .filter((o) => o.text || o.image), // two-option questions: C and D are empty
       };
     }),
   };

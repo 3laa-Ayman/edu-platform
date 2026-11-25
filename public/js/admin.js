@@ -200,9 +200,13 @@ function openQuestionModal(q, subjects, onSaved) {
     const files = Object.fromEntries(MEDIA_SLOTS.map(([slot]) => [slot, f[`img_${slot}`].files[0]]));
     const keeps = (slot) => Boolean(files[slot] || (q?.media?.[slot] && !v[`rm_${slot}`]));
     if (!v.question_text && !keeps('question')) throw new Error('اكتب نص السؤال أو أضف صورة له');
+    // C and D both empty = two-option question (e.g. true / false); otherwise all four are needed.
+    const two = !v.option_c && !keeps('option_c') && !v.option_d && !keeps('option_d');
     for (const [k, L] of [['option_a', 'أ'], ['option_b', 'ب'], ['option_c', 'ج'], ['option_d', 'د']]) {
-      if (!v[k] && !keeps(k)) throw new Error(`الاختيار ${L} يحتاج إلى نص أو صورة`);
+      if (two && (k === 'option_c' || k === 'option_d')) continue;
+      if (!v[k] && !keeps(k)) throw new Error(`الاختيار ${L} يحتاج إلى نص أو صورة (أو اترك ج و د فارغين معًا لسؤال باختيارين)`);
     }
+    if (two && !['A', 'B'].includes(v.correct_option)) throw new Error('السؤال له اختياران فقط — الإجابة الصحيحة لازم تكون أ أو ب');
     const body = {
       subject_id: Number(v.subject_id),
       lesson_id: v.lesson_id ? Number(v.lesson_id) : null,
@@ -674,7 +678,7 @@ Admin.competitions = async (el) => {
           <label>صورة السؤال (اختياري)<input type="file" name="image" accept="image/png,image/jpeg,image/gif,image/webp"></label>
           <div class="grid2">
             <label>أ<input name="option_a" required></label><label>ب<input name="option_b" required></label>
-            <label>ج<input name="option_c" required></label><label>د<input name="option_d" required></label>
+            <label>ج<input name="option_c" placeholder="اتركه فارغًا لسؤال باختيارين"></label><label>د<input name="option_d" placeholder="اتركه فارغًا لسؤال باختيارين"></label>
           </div>
           <label>الإجابة الصحيحة<select name="correct_option" required><option value="">اختر</option>
             <option value="A">أ</option><option value="B">ب</option><option value="C">ج</option><option value="D">د</option></select></label>
