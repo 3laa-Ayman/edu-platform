@@ -53,6 +53,7 @@ router.use('/reports', require('./reports.routes'));
 router.use('/announcements', require('./announcements.routes'));
 router.use('/notifications', require('./notifications.routes'));
 router.use('/support', require('./support.routes'));
+router.use('/tracks', require('./tracks.routes'));
 // Any admin change clears this instance's short cache (subjects, leaderboards…) so the admin sees it at once.
 const clearCacheAfterWrites = (req, res, next) => {
   if (req.method !== 'GET') res.on('finish', () => invalidate());

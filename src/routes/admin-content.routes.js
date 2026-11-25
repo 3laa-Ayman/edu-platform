@@ -20,6 +20,7 @@ const LESSON_ORDER = `(SELECT array_agg(m[1]::numeric) FROM regexp_matches(trans
 router.get('/subjects', async (req, res) => {
   const { rows } = await db.query(
     `SELECT s.id, s.name,
+            COALESCE((SELECT json_agg(ts.track_id) FROM track_subjects ts WHERE ts.subject_id = s.id), '[]') AS track_ids,
             (SELECT COUNT(*)::int FROM questions q WHERE q.subject_id = s.id AND NOT q.competition_only) AS questions,
             COALESCE((SELECT json_agg(json_build_object('id', l.id, 'name', l.name, 'lesson_type', l.lesson_type,
                        'questions', (SELECT COUNT(*) FROM questions q WHERE q.lesson_id = l.id AND NOT q.competition_only)) ORDER BY ${LESSON_ORDER})
@@ -38,6 +39,46 @@ router.patch('/subjects/:id', validate({ params: idParam, body: z.object({ name:
   const { rows: [s] } = await db.query(`UPDATE subjects SET name = $2 WHERE id = $1 RETURNING *`, [req.p.id, req.body.name]);
   if (!s) throw notFound('المادة غير موجودة');
   res.json({ subject: s });
+});
+
+/** Which tracks a subject belongs to ([] = common to every track). */
+router.put('/subjects/:id/tracks', validate({ params: idParam, body: z.object({ track_ids: z.array(z.number().int().positive()).max(50) }) }), async (req, res) => {
+  await db.withTransaction(async (c) => {
+    const { rowCount } = await c.query(`SELECT 1 FROM subjects WHERE id = $1`, [req.p.id]);
+    if (!rowCount) throw notFound('المادة غير موجودة');
+    await c.query(`DELETE FROM track_subjects WHERE subject_id = $1`, [req.p.id]);
+    if (req.body.track_ids.length) {
+      await c.query(`INSERT INTO track_subjects (track_id, subject_id) SELECT t.id, $1 FROM tracks t WHERE t.id = ANY($2::int[])`,
+        [req.p.id, req.body.track_ids]);
+    }
+  });
+  res.json({ ok: true });
+});
+
+// ------------------------------------------------------------------ Tracks (الأنظمة)
+router.get('/tracks', async (req, res) => {
+  const { rows } = await db.query(
+    `SELECT t.id, t.name, t.sort, (SELECT COUNT(*)::int FROM users u WHERE u.track_id = t.id) AS students
+       FROM tracks t ORDER BY t.sort, t.id`);
+  res.json({ tracks: rows });
+});
+router.post('/tracks', validate({ body: z.object({ name: name.max(100) }) }), async (req, res) => {
+  const { rows: [t] } = await db.query(
+    `INSERT INTO tracks (name, sort) VALUES ($1, (SELECT COALESCE(MAX(sort), 0) + 1 FROM tracks)) RETURNING *`, [req.body.name])
+    .catch((err) => { if (err.code === '23505') throw conflict('يوجد نظام بنفس الاسم'); throw err; });
+  res.status(201).json({ track: t });
+});
+router.patch('/tracks/:id', validate({ params: idParam, body: z.object({ name: name.max(100) }) }), async (req, res) => {
+  const { rows: [t] } = await db.query(`UPDATE tracks SET name = $2 WHERE id = $1 RETURNING *`, [req.p.id, req.body.name])
+    .catch((err) => { if (err.code === '23505') throw conflict('يوجد نظام بنفس الاسم'); throw err; });
+  if (!t) throw notFound('النظام غير موجود');
+  res.json({ track: t });
+});
+/** Its students go back to "no track" (they pick again); its subjects stay. */
+router.delete('/tracks/:id', validate({ params: idParam }), async (req, res) => {
+  const r = await db.query(`DELETE FROM tracks WHERE id = $1`, [req.p.id]);
+  if (!r.rowCount) throw notFound('النظام غير موجود');
+  res.status(204).end();
 });
 
 router.delete('/subjects/:id', validate({ params: idParam }), async (req, res) => {

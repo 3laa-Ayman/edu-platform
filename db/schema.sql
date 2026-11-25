@@ -609,3 +609,24 @@ UPDATE question_uploads u SET for_competition = TRUE
 -- "Sign in with Google": the Google account id linked to the student (no password needed for those accounts).
 ALTER TABLE users ADD COLUMN IF NOT EXISTS google_sub VARCHAR(100);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_sub ON users (google_sub) WHERE google_sub IS NOT NULL;
+
+-- Baccalaureate tracks (الهندسة / الطب / الفنون / الآداب…): each student picks one; a subject linked to tracks is open
+-- only to them, a subject linked to none is common to all.
+CREATE TABLE IF NOT EXISTS tracks (
+  id          SERIAL PRIMARY KEY,
+  name        VARCHAR(100) NOT NULL UNIQUE,
+  sort        INT NOT NULL DEFAULT 0,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS track_subjects (
+  track_id    INT NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+  subject_id  INT NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
+  PRIMARY KEY (track_id, subject_id)
+);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS track_id INT REFERENCES tracks(id) ON DELETE SET NULL;
+-- The four tracks, created once (if the admin deletes or renames them, they are not brought back).
+INSERT INTO tracks (name, sort)
+SELECT v.name, v.sort FROM (VALUES ('الهندسة', 1), ('الطب', 2), ('الفنون', 3), ('الآداب', 4)) AS v(name, sort)
+ WHERE NOT EXISTS (SELECT 1 FROM job_runs WHERE name = 'seed_tracks')
+ON CONFLICT (name) DO NOTHING;
+INSERT INTO job_runs (name, started_at) VALUES ('seed_tracks', now()) ON CONFLICT (name) DO NOTHING;

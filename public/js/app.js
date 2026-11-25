@@ -3,6 +3,7 @@ const ROUTES = [
   ['/login', Views.login, 'guest'],
   ['/register', Views.register, 'guest'],
   ['/google-profile', Views.googleProfile, 'guest'],
+  ['/choose-track', Views.chooseTrack, 'student'],
   ['/privacy', Views.privacy, 'public'],
   ['/terms', Views.terms, 'public'],
   ['/about', Views.about, 'public'],
@@ -128,6 +129,11 @@ async function render() {
   if (route.access !== 'guest' && route.access !== 'public' && !u) { location.hash = '#/login'; return; }
   if (route.access === 'admin' && u.role !== 'admin') { location.hash = '#/'; return; }
   if (route.access === 'student' && u.role === 'admin') { location.hash = '#/admin'; return; }
+  // A student picks their track (الهندسة / الطب / …) once, before studying.
+  if (u?.role === 'student' && State.needsTrack && !['/choose-track', '/privacy', '/terms', '/about'].includes(path)) {
+    location.hash = '#/choose-track';
+    return;
+  }
 
   renderTopbar(path);
   // Fresh element per navigation so listeners from the previous page never leak.

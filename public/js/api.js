@@ -83,6 +83,7 @@ const State = {
     const me = await API.get('/auth/me');
     this.user = me.user;
     this.subscription = me.subscription;
+    this.needsTrack = Boolean(me.needs_track);
     return me;
   },
 };

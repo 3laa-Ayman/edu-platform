@@ -121,6 +121,29 @@ Views.googleProfile = async (el) => {
   });
 };
 
+/** First visit: the student picks their track; only its subjects (plus the common ones) are open to them. */
+Views.chooseTrack = async (el) => {
+  const { tracks, common_subjects: common, my_track_id: mine } = await API.get('/tracks');
+  if (mine) { State.needsTrack = false; location.hash = '#/'; return; }
+  el.innerHTML = `<div class="choose-track">
+    <h1 class="page-head">اختر نظامك</h1>
+    <p class="muted">اختر نظام البكالوريا الذي تدرسه، وستظهر لك مواده فقط${common.length && tracks.some((t) => t.subjects.length) ? ` بالإضافة إلى المواد المشتركة (${esc(common.join('، '))})` : ''}.
+      <b>الاختيار مرة واحدة</b> — لتغييره لاحقًا تواصل مع الإدارة.</p>
+    <div class="track-grid">${tracks.map((t) => `<button class="track-card" type="button" data-action="pick" data-id="${t.id}" data-name="${esc(t.name)}">
+      <b>${esc(t.name)}</b>
+      <small>${t.subjects.length ? esc(t.subjects.join('، ')) : 'لم تُحدد مواده بعد'}</small></button>`).join('')}</div>
+  </div>`;
+  onAction(el, {
+    pick: (b) => run(b, async () => {
+      if (!confirm(`اختيار نظام «${b.dataset.name}»؟\nلا يمكن تغييره بعد ذلك إلا عن طريق الإدارة.`)) return;
+      await API.post('/tracks/choose', { track_id: Number(b.dataset.id) });
+      await State.refresh();
+      toast(`تم اختيار نظام ${b.dataset.name} ✓`);
+      location.hash = '#/';
+    }),
+  });
+};
+
 const deviceLimitNotice = (err) => `<div class="notice bad">
     <b>⛔ هذا الحساب مفتوح على ${err.details?.max || 2} أجهزة بالفعل</b>
     ${err.details?.devices?.length ? `<ul class="device-names">${err.details.devices.map((d) => `<li>📱 ${esc(d)}</li>`).join('')}</ul>` : ''}
@@ -361,7 +384,7 @@ Views.home = async (el) => {
         <h1>أهلاً ${esc(u.full_name.split(' ')[0])} 👋</h1>
         <p class="muted">كود الطالب: <b class="mono">${esc(u.student_code)}</b>
           <button class="btn tiny ghost" data-action="copy">نسخ</button> — شاركه مع أصدقائك ليضيفوك إلى الفريق</p>
-        <p class="muted small"><a href="#/devices">📱 أجهزتي</a></p>
+        <p class="muted small">${u.track ? `🎓 النظام: <b>${esc(u.track.name)}</b> · ` : ''}<a href="#/devices">📱 أجهزتي</a></p>
       </div>
       ${sub
         ? `<div class="sub-chip good">${esc(sub.name_ar)}<small>ساري حتى ${fmtDay(sub.ends_at)}</small></div>`

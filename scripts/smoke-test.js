@@ -972,5 +972,40 @@ async function studentLogin(identifier, password, device) {
   await require('../src/jobs').JOBS.cleanup();
   ok((await pgdb.query('SELECT 1 FROM users WHERE email = $1', [gEmail])).rowCount === 1, 'daily cleanup keeps Google accounts (they have no password)');
 
+  // ---------------- 🎓 Tracks (الهندسة / الطب / …): each student sees their track's subjects + the common ones
+  const trk = async (n) => (await call('POST', '/api/admin/tracks', { token: AT, body: { name: `${n} ${rnd}` } })).data.track;
+  const tEng = await trk('هندسة'); const tMed = await trk('طب');
+  const mkSubj = async (n) => (await call('POST', '/api/admin/subjects', { token: AT, body: { name: `${n} ${rnd}` } })).data.subject;
+  const sEng = await mkSubj('ميكانيكا'); const sMed = await mkSubj('أحياء متقدمة'); const sCommon = await mkSubj('لغة عربية مشتركة');
+  await pgdb.query('DELETE FROM track_subjects');
+  ok((await call('GET', '/api/auth/me', { token: N1.token })).data.needs_track === false, 'no subject linked to a track yet → students are not asked to pick');
+  await call('PUT', `/api/admin/subjects/${sEng.id}/tracks`, { token: AT, body: { track_ids: [tEng.id] } });
+  await call('PUT', `/api/admin/subjects/${sMed.id}/tracks`, { token: AT, body: { track_ids: [tMed.id] } });
+  const qOf = async (subject, t) => (await call('POST', '/api/admin/questions', { token: AT, body: { subject_id: subject.id, question_text: `${t} ${rnd}`, option_a: '1', option_b: '2', option_c: '3', option_d: '4', correct_option: 'A' } })).data.question;
+  await qOf(sEng, 'هندسي'); const qMed = await qOf(sMed, 'طبي'); await qOf(sCommon, 'مشترك');
+  const tStu = N1; // has a subscription, no track yet
+  ok((await call('GET', '/api/auth/me', { token: tStu.token })).data.needs_track === true, 'student without a track is asked to pick one');
+  const subjNames = async () => (await call('GET', '/api/catalog/subjects', { token: tStu.token })).data.subjects.map((x) => x.id);
+  const tBefore = await subjNames();
+  ok(tBefore.includes(sCommon.id) && !tBefore.includes(sEng.id) && !tBefore.includes(sMed.id), 'tBefore picking: only common subjects');
+  const tList = (await call('GET', '/api/tracks', { token: tStu.token })).data;
+  ok(tList.tracks.find((t) => t.id === tEng.id)?.subjects.includes(`ميكانيكا ${rnd}`), 'tracks listed with their subjects');
+  ok((await call('POST', '/api/tracks/choose', { token: tStu.token, body: { track_id: tEng.id } })).status === 200, 'student picks الهندسة');
+  const tAfter = await subjNames();
+  ok(tAfter.includes(sEng.id) && tAfter.includes(sCommon.id) && !tAfter.includes(sMed.id), 'engineering student sees engineering + common subjects only', tAfter);
+  ok((await call('GET', `/api/catalog/questions?subject_id=${sMed.id}`, { token: tStu.token })).status === 403, "can't open another track's questions");
+  ok((await call('POST', '/api/catalog/answer', { token: tStu.token, body: { question_id: qMed.id, choice: 'A' } })).status === 403, "can't answer another track's question");
+  ok((await call('GET', `/api/catalog/questions?subject_id=${sEng.id}`, { token: tStu.token })).data.questions.length === 1, 'opens own track questions');
+  ok((await call('POST', '/api/tracks/choose', { token: tStu.token, body: { track_id: tMed.id } })).status === 409, 'picking again is refused (admin changes it)');
+  ok((await call('GET', '/api/auth/me', { token: tStu.token })).data.user.track?.id === tEng.id, 'me shows the track');
+  await call('PATCH', `/api/admin/students/${tStu.id}`, { token: AT, body: { track_id: tMed.id } });
+  const tMoved = await subjNames();
+  ok(tMoved.includes(sMed.id) && !tMoved.includes(sEng.id), 'admin moves the student to الطب → subjects follow');
+  ok((await call('GET', '/api/catalog/subjects', { token: AT })).data.subjects.some((x) => x.id === sMed.id) && (await call('GET', '/api/catalog/subjects', { token: AT })).data.subjects.some((x) => x.id === sEng.id), 'admin sees every subject');
+  await call('DELETE', `/api/admin/tracks/${tMed.id}`, { token: AT });
+  ok((await call('GET', '/api/auth/me', { token: tStu.token })).data.needs_track === true, 'track deleted → student picks again');
+  ok((await call('POST', '/api/tracks/choose', { token: A.token, body: { track_id: 999999 } })).status === 404, 'unknown track refused');
+  await call('DELETE', `/api/admin/tracks/${tEng.id}`, { token: AT });
+
   console.log(`\n🎉 All ${passed} checks passed`);
 })().catch((e) => { console.error(e); process.exit(1); });

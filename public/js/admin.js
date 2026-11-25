@@ -35,8 +35,16 @@ Admin.dashboard = async (el) => {
 
 // ---------------------------------------------------------------- Subjects & lessons
 Admin.subjects = async (el) => {
-  const { subjects } = await API.get('/admin/subjects');
+  const [{ subjects }, { tracks }] = await Promise.all([API.get('/admin/subjects'), API.get('/admin/tracks')]);
   el.innerHTML = `<h1 class="page-head">المواد والدروس</h1>
+    <section class="card"><h2>🎓 الأنظمة (البكالوريا)</h2>
+      <p class="muted">يختار كل طالب نظامه مرة واحدة أول ما يدخل، ويرى مواد نظامه فقط. حدّد الأنظمة لكل مادة من خانة «الأنظمة» في المادة نفسها؛
+        المادة التي لا تختار لها أي نظام تكون <b>مشتركة</b> لكل الأنظمة. <b>لن يُطلب من الطلاب اختيار نظامهم إلا بعد أن تحدد نظامًا لمادة واحدة على الأقل.</b></p>
+      ${tracks.length ? `<ul class="list">${tracks.map((t) => `<li><span><b>${esc(t.name)}</b><small class="muted">${t.students} طالب</small></span>
+        <span class="row"><button class="btn ghost tiny" data-action="renameTrack" data-id="${t.id}" data-name="${esc(t.name)}">تعديل الاسم</button>
+        <button class="btn danger tiny" data-action="deleteTrack" data-id="${t.id}" data-name="${esc(t.name)}" data-students="${t.students}">حذف</button></span></li>`).join('')}</ul>` : '<p class="muted">لا توجد أنظمة — كل المواد متاحة لكل الطلاب.</p>'}
+      <form id="tf" class="form inline"><input name="name" required maxlength="100" placeholder="نظام جديد"><button class="btn ghost" type="submit">إضافة نظام</button></form>
+    </section>
     <section class="card"><h2>مادة جديدة</h2>
       <form id="sf" class="form inline"><input name="name" required maxlength="120" placeholder="اسم المادة، مثلاً: الأحياء"><button class="btn primary" type="submit">إضافة</button></form>
     </section>
@@ -45,6 +53,9 @@ Admin.subjects = async (el) => {
         <div class="row"><button class="btn ghost tiny" data-action="renameSubject" data-id="${s.id}" data-name="${esc(s.name)}">تعديل الاسم</button>
         <a class="btn ghost tiny" href="#/admin/questions?subject_id=${s.id}">الأسئلة</a>
         <button class="btn danger tiny" data-action="deleteSubject" data-id="${s.id}" data-name="${esc(s.name)}">حذف</button></div></div>
+      ${tracks.length ? `<form class="subject-tracks" data-subject-tracks="${s.id}"><b>الأنظمة:</b>
+        ${tracks.map((t) => `<label class="check"><input type="checkbox" value="${t.id}" ${s.track_ids.includes(t.id) ? 'checked' : ''}> ${esc(t.name)}</label>`).join('')}
+        <small class="muted">${s.track_ids.length ? '' : '(مشتركة لكل الأنظمة)'}</small></form>` : ''}
       ${s.lessons.length ? `<ul class="list">${s.lessons.map((l) => `<li>
         <span><b>${esc(l.name)}</b><small class="muted">${esc(l.lesson_type || '')} · ${l.questions} سؤال</small></span>
         <span class="row"><button class="btn ghost tiny" data-action="editLesson" data-id="${l.id}" data-name="${esc(l.name)}" data-type="${esc(l.lesson_type || '')}">تعديل</button>
@@ -55,6 +66,18 @@ Admin.subjects = async (el) => {
 
   const reload = () => Admin.subjects(el);
   onSubmit($('#sf', el), async (v) => { await API.post('/admin/subjects', v); toast('تمت إضافة المادة'); reload(); });
+  onSubmit($('#tf', el), async (v) => { await API.post('/admin/tracks', v); toast('تمت إضافة النظام'); reload(); });
+  // A subject's tracks are saved as soon as a box is ticked.
+  listen(el, 'change', (e) => {
+    const f = e.target.closest('[data-subject-tracks]');
+    if (!f) return;
+    const ids = $$('input:checked', f).map((i) => Number(i.value));
+    run(null, async () => {
+      await API.put(`/admin/subjects/${f.dataset.subjectTracks}/tracks`, { track_ids: ids });
+      $('small', f).textContent = ids.length ? '' : '(مشتركة لكل الأنظمة)';
+      toast('تم حفظ أنظمة المادة');
+    });
+  });
   listen(el, 'submit', (e) => {
     const f = e.target;
     if (!f.dataset.addLesson) return;
@@ -67,6 +90,17 @@ Admin.subjects = async (el) => {
     });
   });
   onAction(el, {
+    renameTrack: (b) => {
+      const m = modal(`<h2>تعديل اسم النظام</h2><form class="form" id="mf"><label>الاسم<input name="name" required maxlength="100" value="${esc(b.dataset.name)}"></label><button class="btn primary" type="submit">حفظ</button></form>`);
+      onSubmit($('#mf', m), async (v) => { await API.patch(`/admin/tracks/${b.dataset.id}`, v); closeModal(); reload(); });
+    },
+    deleteTrack: (b) => run(b, async () => {
+      const n = Number(b.dataset.students);
+      if (!confirm(`حذف نظام «${b.dataset.name}»؟${n ? `\n${n} طالب في هذا النظام سيُطلب منهم اختيار نظام من جديد.` : ''}\nلن تُحذف أي مادة.`)) return;
+      await API.del(`/admin/tracks/${b.dataset.id}`);
+      toast('تم حذف النظام');
+      reload();
+    }),
     renameSubject: (b) => {
       const m = modal(`<h2>تعديل اسم المادة</h2><form class="form" id="mf"><label>الاسم<input name="name" required value="${esc(b.dataset.name)}"></label><button class="btn primary" type="submit">حفظ</button></form>`);
       onSubmit($('#mf', m), async (v) => { await API.patch(`/admin/subjects/${b.dataset.id}`, v); closeModal(); reload(); });
@@ -923,7 +957,7 @@ async function whatsAppQueue() {
 }
 
 Admin.student = async (el, { id }, query = {}) => {
-  const [d, { plans }] = await Promise.all([API.get(`/admin/students/${id}`), API.get('/admin/plans')]);
+  const [d, { plans }, { tracks }] = await Promise.all([API.get(`/admin/students/${id}`), API.get('/admin/plans'), API.get('/admin/tracks')]);
   const s = d.student;
   const aiPct = s.ai_limit_egp ? (s.ai_spent_egp / s.ai_limit_egp) * 100 : 0;
   el.innerHTML = `<div class="page-head"><a class="btn ghost tiny" href="#/admin/students">→ الطلاب</a><h1>${esc(s.full_name)}</h1>
@@ -941,6 +975,8 @@ Admin.student = async (el, { id }, query = {}) => {
       <form id="pf" class="form grid2">${studentFields(s)}
         <label class="check"><input type="checkbox" name="is_verified" ${s.is_verified ? 'checked' : ''}> الحساب مفعّل (تم تأكيد الإيميل)</label>
         <label class="check"><input type="checkbox" name="is_active" ${s.is_active ? 'checked' : ''}> الحساب نشط (إلغاؤه يمنع الدخول)</label>
+        ${tracks.length ? `<label>النظام<select name="track_id"><option value="">لم يختر بعد (يختاره عند الدخول)</option>
+          ${tracks.map((t) => opt(t.id, t.name, String(s.track_id ?? ''))).join('')}</select></label>` : ''}
         <button class="btn primary span2" type="submit">حفظ البيانات</button></form></section>
 
     <section class="card"><h2>الاشتراكات</h2>
@@ -1005,6 +1041,7 @@ Admin.student = async (el, { id }, query = {}) => {
     await API.patch(`/admin/students/${id}`, {
       full_name: v.full_name, email: v.email, phone: v.phone, parent_phone: v.parent_phone,
       parent_email: v.parent_email || null, is_verified: v.is_verified, is_active: v.is_active,
+      ...(tracks.length ? { track_id: v.track_id ? Number(v.track_id) : null } : {}),
     });
     toast('تم حفظ البيانات');
     reload();

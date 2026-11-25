@@ -496,3 +496,13 @@ td .row { flex-wrap: wrap; }
 .support-plans { border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; display: flex; flex-wrap: wrap; gap: 6px 18px; }
 .support-plans legend { padding: 0 6px; font-weight: 700; }
 .support-plans small { flex-basis: 100%; }
+
+/* Tracks */
+.choose-track { max-width: 900px; margin-inline: auto; }
+.track-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin-top: 16px; }
+.track-card { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; text-align: start; padding: 20px; cursor: pointer;
+  background: var(--surface); color: var(--text); border: 2px solid var(--border); border-radius: var(--radius); font: inherit; }
+.track-card:hover { border-color: var(--primary); background: var(--primary-soft); }
+.track-card b { font-size: 1.25rem; }
+.track-card small { color: var(--muted); line-height: 1.7; }
+.subject-tracks { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; padding: 8px 0 12px; border-bottom: 1px dashed var(--border); margin-bottom: 8px; }
