@@ -590,7 +590,7 @@ function passageRange(questions, i, pidOf = (q) => q.passage?.id) {
 
 // ---------------------------------------------------------------- Shared question card (practice + mistakes retry)
 function questionCard(q, idx, total) {
-  const prev = idx > 0 ? '<button class="btn primary" data-action="prev">→ السؤال السابق</button>' : '';
+  const prev = idx > 0 ? '<button class="btn soft" data-action="prev">→ السؤال السابق</button>' : '';
   return `<div class="card qcard">
     <div class="q-meta">
       <span>سؤال ${idx + 1} من ${total}</span>
@@ -606,10 +606,10 @@ function questionCard(q, idx, total) {
     <div class="feedback" hidden></div>
     <div class="explain" hidden></div>
     <div class="q-actions">
-      ${prev}
       <button class="btn ghost tiny" data-action="skip">تخطي السؤال ←</button>
       <button class="btn ghost" data-action="explain" hidden>عرض الشرح</button>
-      <button class="btn primary" data-action="next" disabled title="اختر إجابة أولًا">${idx + 1 < total ? 'السؤال التالي' : 'إنهاء'}</button>
+      <div class="q-nav">${prev}
+        <button class="btn primary" data-action="next" disabled title="اختر إجابة أولًا">${idx + 1 < total ? 'السؤال التالي ←' : 'إنهاء'}</button></div>
     </div>
     <p class="next-hint">اختر إجابة لتتمكن من المتابعة، أو اضغط "تخطي السؤال"</p>
   </div>`;

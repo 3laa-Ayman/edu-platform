@@ -506,3 +506,8 @@ td .row { flex-wrap: wrap; }
 .track-card b { font-size: 1.25rem; }
 .track-card small { color: var(--muted); line-height: 1.7; }
 .subject-tracks { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; padding: 8px 0 12px; border-bottom: 1px dashed var(--border); margin-bottom: 8px; }
+
+/* Practice: previous + next side by side; "previous" in the platform's soft accent */
+.btn.soft { background: var(--primary-soft); color: var(--primary); border-color: var(--primary); }
+.btn.soft:hover { background: var(--primary); color: var(--primary-ink); }
+.q-nav { display: flex; gap: 10px; margin-inline-start: auto; }
