@@ -39,7 +39,7 @@ function normalizeMath(text) {
  * A run of English/code inside Arabic text (print(10 // 3), Integer (int), F = m×a^2...). Without an LTR isolate the
  * browser reorders its brackets and spaces around the Arabic words. Must contain a Latin letter (checked when matching).
  */
-const LTR_RUN = /(?:[A-Za-z]|[(\[{](?=[A-Za-z0-9]))[A-Za-z0-9 .,:;!?'"=+\-−*/%<>()[\]{}^_×·&|#@$\\~]*[A-Za-z0-9)\]}'"%]/g;
+const LTR_RUN = /(?:[A-Za-z0-9]|[(\[{](?=[A-Za-z0-9]))[A-Za-z0-9 .,:;!?'"=+\-−*/%<>()[\]{}^_×·&|#@$\\~°µΩ]*[A-Za-z0-9)\]}'"%°]/g;
 
 /** Formats one piece of text: escape, then exponents / subscripts. */
 function richChunk(text) {
@@ -101,6 +101,9 @@ function extractFractions(t) {
     const left = operand(i - 1, -1);
     const right = left && operand(i + 1, 1);
     if (!left || !right || left.start < last) continue;
+    // Units are not fractions: J/(g·°C), kJ/(mol·K) — Latin unit letters over a unit, no numbers or + − = in them.
+    const unit = (o) => /[A-Za-z°µΩ]/.test(o.inner) && !/[\u0600-\u06FF0-9٠-٩+\-−–=]/.test(o.inner);
+    if (!left.paren && unit(left) && unit(right)) continue;
     if (!left.paren && !right.paren) {
       // Without brackets: number/number or number/term (٣/٤، ١/س، س/٢) — never term/term (units like م/ث، كم/س),
       // and not part of a date or a longer a/b/c chain.
@@ -124,9 +127,19 @@ function rich(text) {
   let out = '';
   let last = 0;
   for (const m of t.matchAll(LTR_RUN)) {
-    if (!/[A-Za-z]/.test(m[0])) continue;
-    out += `${richChunk(t.slice(last, m.index))}<bdi dir="ltr">${richChunk(m[0])}</bdi>`;
-    last = m.index + m[0].length;
+    let run = m[0];
+    let start = m.index;
+    // A bracket with no partner inside the run belongs to the Arabic sentence around it: «(… O = 16)» — leave it outside.
+    const count = (str, ch) => str.split(ch).length - 1;
+    while (/[)\]}]$/.test(run) && count(run, '(') + count(run, '[') + count(run, '{') < count(run, ')') + count(run, ']') + count(run, '}')) run = run.slice(0, -1).trimEnd();
+    while (/^[(\[{]/.test(run) && count(run, '(') + count(run, '[') + count(run, '{') > count(run, ')') + count(run, ']') + count(run, '}')) {
+      const cut = run.length - run.slice(1).trimStart().length;
+      run = run.slice(cut);
+      start += cut;
+    }
+    if (!/[A-Za-z]/.test(run)) continue;
+    out += `${richChunk(t.slice(last, start))}<bdi dir="ltr">${richChunk(run)}</bdi>`;
+    last = start + run.length;
   }
   out += richChunk(t.slice(last));
   return out.replace(/\u0001/g, '<strong>').replace(/\u0002/g, '</strong>')
