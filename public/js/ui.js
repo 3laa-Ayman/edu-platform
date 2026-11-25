@@ -123,7 +123,9 @@ function extractFractions(t) {
 
 function rich(text) {
   // Markdown bold (e.g. in AI explanations) → placeholder chars, so it never ends up split by an LTR run.
-  const fr = extractFractions(normalizeMath(text));
+  // Units as in the book: J/(g·°C) → J/g·°C, kJ/(mol·K) → kJ/mol·K (brackets around a unit-only denominator dropped).
+  const fr = extractFractions(normalizeMath(text)
+    .replace(/([A-Za-zµΩ°])\/\(([A-Za-zµΩ°·⋅. ]+)\)/g, (m, a, unit) => (/[A-Za-z]/.test(unit) ? `${a}/${unit.trim()}` : m)));
   const t = fr.text.replace(/\*\*([^*\n]+?)\*\*/g, '\u0001$1\u0002');
   let out = '';
   let last = 0;
