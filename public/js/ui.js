@@ -39,8 +39,8 @@ function normalizeMath(text) {
  * A run of English/code inside Arabic text (print(10 // 3), Integer (int), F = m×a^2...). Without an LTR isolate the
  * browser reorders its brackets and spaces around the Arabic words. Must contain a Latin letter (checked when matching).
  */
-// Unicode sub/superscript digits (CH₄, m², 10⁻¹⁹) belong to the formula they follow.
-const LTR_RUN = /(?:[A-Za-z0-9]|[-−–+](?=\s?[0-9])|[(\[{](?=[A-Za-z0-9]))[A-Za-z0-9 .,:;!?'"=+\-−–*/%<>()[\]{}^_×·&|#@$\\~°µΩ\u2070-\u207E\u2080-\u208E\u00B9\u00B2\u00B3]*[A-Za-z0-9)\]}'"%°\u2070-\u207E\u2080-\u208E\u00B9\u00B2\u00B3]/g;
+// Unicode sub/superscript digits (CH₄, m², 10⁻¹⁹), Greek letters (ΔH, λ) and reaction arrows (⇌ →) belong to the formula.
+const LTR_RUN = /(?:[A-Za-z0-9\u0370-\u03FF]|[-−–+](?=\s?[0-9])|[(\[{](?=[A-Za-z0-9]))[A-Za-z0-9 .,:;!?'"=+\-−–*/%<>()[\]{}^_×·&|#@$\\~°µΩ\u0370-\u03FF⇌⇄↔→←⟶⟵⇒⇔≈≠≤≥\u2070-\u207E\u2080-\u208E\u00B9\u00B2\u00B3]*[A-Za-z0-9)\]}'"%°\u2070-\u207E\u2080-\u208E\u00B9\u00B2\u00B3]/g;
 
 /** Formats one piece of text: escape, then exponents / subscripts. */
 function richChunk(text) {

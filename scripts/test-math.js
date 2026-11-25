@@ -68,6 +68,8 @@ const ltr = [
   ['السعة الحرارية 4.2 J/(g·°C) للماء', ['4.2 J/g·°C']],
   ['حل 15 سؤال في 3 ساعات', []],
   ['CH₄', ['CH₄']],
+  ['في التفاعل المتزن N₂O₄(g) ⇌ 2NO₂(g) و ΔH = −57 kJ، عند خفض', ['N₂O₄(g) ⇌ 2NO₂(g)', 'ΔH = −57 kJ']],
+  ['الطول الموجي λ = 500 nm تقريبًا', ['λ = 500 nm']],
   ['−273°C', ['−273°C']],
   ['درجة الحرارة −5 درجات', ['−5']],
   ['من -10 إلى 20', ['-10']],
@@ -118,8 +120,13 @@ for (const [input, expected] of fracs) {
   if (!pass) failed++;
   console.log(`${pass ? '✅' : '❌'} ${input}  →  ${got}${pass ? '' : `\n     expected ${expected}`}`);
 }
+// A whole reaction (with arrow) is one left-to-right piece.
+const rx = rich('2H_2 + O_2 → 2H_2O'); // eslint-disable-line no-undef
+const rxOk = rx.startsWith('<bdi dir="ltr">') && rx.endsWith('</bdi>') && render('2H_2 + O_2 → 2H_2O') === '2H<sub>2</sub> + O<sub>2</sub> → 2H<sub>2</sub>O';
+if (!rxOk) failed++;
+console.log(`${rxOk ? '✅' : '❌'} reaction with arrow kept as one LTR piece`);
 const boldOk = rich('**Note** مهم').startsWith('<strong>'); // eslint-disable-line no-undef
 if (!boldOk) failed++;
 console.log(`${boldOk ? '✅' : '❌'} bold kept around an LTR run`);
-console.log(failed ? `\n${failed} failed` : `\n🎉 all ${cases.length + ltr.length + fracs.length + 4} math checks passed`);
+console.log(failed ? `\n${failed} failed` : `\n🎉 all ${cases.length + ltr.length + fracs.length + 5} math checks passed`);
 process.exit(failed ? 1 : 0);
