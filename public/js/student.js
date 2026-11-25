@@ -590,6 +590,7 @@ function passageRange(questions, i, pidOf = (q) => q.passage?.id) {
 
 // ---------------------------------------------------------------- Shared question card (practice + mistakes retry)
 function questionCard(q, idx, total) {
+  const prev = idx > 0 ? '<button class="btn primary" data-action="prev">→ السؤال السابق</button>' : '';
   return `<div class="card qcard">
     <div class="q-meta">
       <span>سؤال ${idx + 1} من ${total}</span>
@@ -605,6 +606,7 @@ function questionCard(q, idx, total) {
     <div class="feedback" hidden></div>
     <div class="explain" hidden></div>
     <div class="q-actions">
+      ${prev}
       <button class="btn ghost tiny" data-action="skip">تخطي السؤال ←</button>
       <button class="btn ghost" data-action="explain" hidden>عرض الشرح</button>
       <button class="btn primary" data-action="next" disabled title="اختر إجابة أولًا">${idx + 1 < total ? 'السؤال التالي' : 'إنهاء'}</button>
@@ -667,7 +669,23 @@ function runQuiz(el, questions, { answerFn, onDone, allowExplain = true }) {
   let correct = 0;
   let wrong = 0;
   const skipped = [];
+  const answers = []; // answers[i] = { key, r } once answered — shown again when the student comes back to it
   let shownAt = 0;
+  const card = () => $('.qcard', el);
+  const showAnswered = ({ key, r }) => {
+    markOptions(card(), key, r.correct_option);
+    // Answered: no more skipping; "next" becomes active (it stays visible but disabled until now).
+    $('[data-action=skip]', card())?.remove();
+    $('.next-hint', card())?.remove();
+    const next = $('[data-action=next]', card());
+    next.disabled = false;
+    next.removeAttribute('title');
+    const fb = $('.feedback', card());
+    fb.hidden = false;
+    fb.className = `feedback ${r.is_correct ? 'good' : 'bad'}`;
+    fb.innerHTML = `${r.is_correct ? '✅ إجابة صحيحة' : '❌ إجابة خاطئة'}${r.note ? ` — <small>${esc(r.note)}</small>` : ''}`;
+    if (allowExplain) $('[data-action=explain]', card()).hidden = false;
+  };
   const show = () => {
     const q = questions[i];
     if (!$('.q-slot', el)) el.innerHTML = '<div class="quiz-wrap"><div class="passage-slot"></div><div class="q-slot"></div></div>';
@@ -682,13 +700,13 @@ function runQuiz(el, questions, { answerFn, onDone, allowExplain = true }) {
       document.body.classList.remove('drawer-open');
     }
     $('.q-slot', el).innerHTML = questionCard(q, i, questions.length);
+    if (answers[i]) showAnswered(answers[i]);
     shownAt = Date.now();
     // Next question of a long passage: bring the passage back into view (below the sticky top bar).
     const barH = $('#topbar')?.offsetHeight || 0;
     const top = (q.passage ? slot : $('.q-slot', el)).getBoundingClientRect().top;
     if (top < barH) window.scrollBy({ top: top - barH - 8 });
   };
-  const card = () => $('.qcard', el);
   const advance = () => {
     i++;
     if (i < questions.length) show();
@@ -708,21 +726,15 @@ function runQuiz(el, questions, { answerFn, onDone, allowExplain = true }) {
       }
       if (r.is_correct) correct++;
       else wrong++;
-      markOptions(card(), b.dataset.key, r.correct_option);
-      // Answered: no more skipping; "next" becomes active (it stays visible but disabled until now).
-      $('[data-action=skip]', card())?.remove();
-      $('.next-hint', card())?.remove();
-      const next = $('[data-action=next]', card());
-      next.disabled = false;
-      next.removeAttribute('title');
-      const fb = $('.feedback', card());
-      fb.hidden = false;
-      fb.className = `feedback ${r.is_correct ? 'good' : 'bad'}`;
-      fb.innerHTML = `${r.is_correct ? '✅ إجابة صحيحة' : '❌ إجابة خاطئة'}${r.note ? ` — <small>${esc(r.note)}</small>` : ''}`;
-      if (allowExplain) $('[data-action=explain]', card()).hidden = false;
+      answers[i] = { key: b.dataset.key, r };
+      // Skipped earlier, answered now (after going back): no longer skipped.
+      const was = skipped.indexOf(q);
+      if (was >= 0) skipped.splice(was, 1);
+      showAnswered(answers[i]);
     }),
+    prev: () => { if (i > 0) { i--; show(); } },
     skip: () => {
-      skipped.push(questions[i]);
+      if (!skipped.includes(questions[i])) skipped.push(questions[i]);
       toast(`⚠️ تخطيت السؤال ${i + 1} — لن يُحتسب خطأً، ويمكنك العودة إليه في النهاية`, 'warn');
       advance();
     },
