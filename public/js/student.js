@@ -659,17 +659,45 @@ async function askAI(card, qid, simpler = false) {
   }
 }
 
+/** A practice / mistakes round kept in this tab for 12 hours (survives a refresh, not a new login). */
+const quizStore = {
+  load(key) {
+    try {
+      const v = JSON.parse(sessionStorage.getItem(key) || 'null');
+      return v && Date.now() - v.at < 12 * 3600 * 1000 ? v.data : null;
+    } catch { return null; }
+  },
+  has(key) { return Boolean(this.load(key)?.questions?.length); },
+  save(key, data) { try { sessionStorage.setItem(key, JSON.stringify({ at: Date.now(), data })); } catch { /* storage full/blocked */ } },
+  clear(key) { try { sessionStorage.removeItem(key); } catch { /* ignore */ } },
+};
+
 /**
  * Runs a list of questions one by one. answerFn(q, key) → { is_correct, correct_option, note }.
  * Skipped questions are never sent to the server, so they are not counted wrong; onDone gets
  * { correct, wrong, skipped: [questions] } so the student can come back to them.
  */
-function runQuiz(el, questions, { answerFn, onDone, allowExplain = true }) {
+function runQuiz(el, questions, { answerFn, onDone, allowExplain = true, saveKey = null }) {
   let i = 0;
   let correct = 0;
   let wrong = 0;
   const skipped = [];
   const answers = []; // answers[i] = { key, r } once answered — shown again when the student comes back to it
+  // The round is kept in this tab (sessionStorage), so a page refresh continues it instead of starting over.
+  const key = saveKey && State.user ? `quiz:${State.user.id}:${saveKey}` : null;
+  const saved = key ? quizStore.load(key) : null;
+  if (saved?.questions?.length) {
+    questions = saved.questions;
+    i = Math.min(saved.i || 0, questions.length - 1);
+    correct = saved.correct || 0;
+    wrong = saved.wrong || 0;
+    (saved.answers || []).forEach((a, k) => { if (a) answers[k] = a; });
+    (saved.skipped || []).forEach((k) => skipped.push(questions[k]));
+  }
+  const save = () => key && quizStore.save(key, {
+    questions, i, correct, wrong, answers, skipped: skipped.map((q) => questions.indexOf(q)),
+  });
+  const finish = (result) => { if (key) quizStore.clear(key); onDone(result); };
   let shownAt = 0;
   const card = () => $('.qcard', el);
   const showAnswered = ({ key, r }) => {
@@ -700,7 +728,9 @@ function runQuiz(el, questions, { answerFn, onDone, allowExplain = true }) {
       document.body.classList.remove('drawer-open');
     }
     $('.q-slot', el).innerHTML = questionCard(q, i, questions.length);
+    if (key) $('.q-meta', el).insertAdjacentHTML('beforeend', '<button class="btn ghost tiny q-quit" data-action="quit">إنهاء الجولة</button>');
     if (answers[i]) showAnswered(answers[i]);
+    save();
     shownAt = Date.now();
     // Next question of a long passage: bring the passage back into view (below the sticky top bar).
     const barH = $('#topbar')?.offsetHeight || 0;
@@ -710,7 +740,7 @@ function runQuiz(el, questions, { answerFn, onDone, allowExplain = true }) {
   const advance = () => {
     i++;
     if (i < questions.length) show();
-    else onDone({ correct, wrong, skipped });
+    else finish({ correct, wrong, skipped });
   };
   onAction(el, {
     choose: (b) => run(null, async () => {
@@ -731,7 +761,13 @@ function runQuiz(el, questions, { answerFn, onDone, allowExplain = true }) {
       const was = skipped.indexOf(q);
       if (was >= 0) skipped.splice(was, 1);
       showAnswered(answers[i]);
+      save();
     }),
+    // Stop the round here (to pick another subject…): the summary of what was answered so far.
+    quit: () => {
+      if (!confirm('إنهاء الجولة الآن؟ إجاباتك السابقة محفوظة، والأسئلة المتبقية لن تُحتسب.')) return;
+      finish({ correct, wrong, skipped });
+    },
     prev: () => { if (i > 0) { i--; show(); } },
     skip: () => {
       if (!skipped.includes(questions[i])) skipped.push(questions[i]);
@@ -783,6 +819,18 @@ Views.practice = async (el) => {
     .filter((s) => s.questions > 0)
     .map((s) => ({ ...s, lessons: s.lessons.filter((l) => l.questions > 0) }));
   if (!subjects.length) { el.innerHTML = empty('لا توجد أسئلة متاحة للتدريب بعد.'); return; }
+  // fresh: a new round (forget any saved one); otherwise a saved round is resumed.
+  const startPractice = (questions, fresh = false) => {
+    if (fresh) quizStore.clear(`quiz:${State.user.id}:practice`);
+    runQuiz(el, questions, {
+      saveKey: 'practice',
+      answerFn: async (q, key, ms) => {
+        const a = await API.post('/catalog/answer', { question_id: q.id, choice: key, time_spent_ms: ms });
+        return { ...a, note: a.added_to_mistakes ? 'أُضيف إلى بنك الأخطاء' : a.removed_from_mistakes ? 'حُذف من بنك الأخطاء' : '' };
+      },
+      onDone: (res) => quizResult(el, res, { again: setup, solveSkipped: () => startPractice(res.skipped, true) }),
+    });
+  };
   const setup = () => {
     el.innerHTML = `<div class="card">
       <h1>التدريب</h1>
@@ -840,24 +888,21 @@ Views.practice = async (el) => {
         }
         return toast('لا توجد أسئلة بهذه الاختيارات', 'err');
       }
-      const start = (questions) => runQuiz(el, questions, {
-        answerFn: async (q, key, ms) => {
-          const a = await API.post('/catalog/answer', { question_id: q.id, choice: key, time_spent_ms: ms });
-          return { ...a, note: a.added_to_mistakes ? 'أُضيف إلى بنك الأخطاء' : a.removed_from_mistakes ? 'حُذف من بنك الأخطاء' : '' };
-        },
-        onDone: (res) => quizResult(el, res, { again: setup, solveSkipped: () => start(res.skipped) }),
-      });
-      start(r.questions);
+      startPractice(r.questions, true);
     });
   };
   if (!State.subscription && State.user.role !== 'admin') {
     return subscriptionWall(el, { message: 'التدريب يتطلب اشتراكًا فعالًا' });
   }
+  // A round in progress (page refreshed): carry on with it.
+  if (quizStore.has(`quiz:${State.user.id}:practice`)) return startPractice([]);
   setup();
 };
 
 // ---------------------------------------------------------------- Mistakes bank
 Views.mistakes = async (el) => {
+  // A retry round in progress (page refreshed): carry on with it.
+  if (quizStore.has(`quiz:${State.user.id}:mistakes`)) return mistakesRound(el, []);
   const summary = await API.get('/mistakes/summary');
   el.innerHTML = `<div class="card-head page-head"><h1>بنك الأخطاء</h1>${badge(`${summary.total} سؤال`, summary.total ? 'bad' : 'good')}</div>
     <p class="muted">أي سؤال تخطئ فيه يُحفظ هنا تلقائيًا. أعد حله — وإذا أجبت إجابة صحيحة يُحذف من القائمة.</p>
@@ -873,26 +918,35 @@ Views.mistakes = async (el) => {
       const qs = new URLSearchParams({ subject_id: b.dataset.subject, limit: '20' });
       if (b.dataset.lesson) qs.set('lesson_id', b.dataset.lesson);
       const { questions } = await API.get(`/mistakes/quiz?${qs}`);
-      const host = document.createElement('div');
-      el.replaceChildren(host);
-      const start = (qs) => runQuiz(host, qs, {
-        answerFn: async (q, key) => {
-          const r = await API.post(`/mistakes/${q.id}/retry`, { choice: key });
-          return { ...r, note: r.message };
-        },
-        onDone: (res) => {
-          host.innerHTML = quizSummary(res, {
-            title: `${res.correct} سؤال حُلّت بشكل صحيح وحُذفت من البنك`,
-            actions: `<button class="btn ${res.skipped.length ? 'ghost' : 'primary'}" data-action="back">العودة إلى بنك الأخطاء</button>`,
-          });
-          $('[data-action=back]', host).addEventListener('click', () => Views.mistakes(el));
-          $('[data-action=solveSkipped]', host)?.addEventListener('click', () => start(res.skipped));
-        },
-      });
-      start(questions);
+      mistakesRound(el, questions, true);
     }),
   });
 };
+
+/** Retrying mistakes: a round of questions; saved like practice, so a refresh continues it. */
+function mistakesRound(el, questions, fresh = false) {
+  const host = document.createElement('div');
+  el.replaceChildren(host);
+  const start = (qs, isNew) => {
+    if (isNew) quizStore.clear(`quiz:${State.user.id}:mistakes`);
+    runQuiz(host, qs, {
+      saveKey: 'mistakes',
+      answerFn: async (q, key) => {
+        const r = await API.post(`/mistakes/${q.id}/retry`, { choice: key });
+        return { ...r, note: r.message };
+      },
+      onDone: (res) => {
+        host.innerHTML = quizSummary(res, {
+          title: `${res.correct} سؤال حُلّت بشكل صحيح وحُذفت من البنك`,
+          actions: `<button class="btn ${res.skipped.length ? 'ghost' : 'primary'}" data-action="back">العودة إلى بنك الأخطاء</button>`,
+        });
+        $('[data-action=back]', host).addEventListener('click', () => Views.mistakes(el));
+        $('[data-action=solveSkipped]', host)?.addEventListener('click', () => start(res.skipped, true));
+      },
+    });
+  };
+  start(questions, fresh);
+}
 
 // ---------------------------------------------------------------- Competitions
 Views.competitions = async (el) => {

@@ -511,3 +511,5 @@ td .row { flex-wrap: wrap; }
 .btn.soft { background: var(--primary-soft); color: var(--primary); border-color: var(--primary); }
 .btn.soft:hover { background: var(--primary); color: var(--primary-ink); }
 .q-nav { display: flex; gap: 10px; margin-inline-start: auto; }
+
+.q-meta .q-quit { margin-inline-start: auto; }
