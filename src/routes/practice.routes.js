@@ -45,6 +45,7 @@ router.get('/questions', requireSubscription('practice'), validate({
   query: z.object({
     subject_id: z.coerce.number({ message: 'اختر المادة التي ستحل أسئلتها' }).int().positive(),
     lesson_id: z.coerce.number().int().positive().optional(),
+    unit: z.string().trim().min(1).max(100).optional(), // الفصل / الوحدة (the lessons' "نوع الدرس")
     category: z.enum(['lesson', 'past_exam']).optional(),
     exam_year: z.coerce.number().int().optional(),
     unsolved_only: z.enum(['true', 'false']).optional(),
@@ -61,6 +62,7 @@ router.get('/questions', requireSubscription('practice'), validate({
       WHERE q.is_active AND NOT q.competition_only
         AND ($1::int IS NULL OR q.subject_id = $1)
         AND ($2::int IS NULL OR q.lesson_id = $2)
+        AND ($9::text IS NULL OR q.lesson_id IN (SELECT l.id FROM lessons l WHERE l.subject_id = q.subject_id AND l.lesson_type = $9))
         AND ($3::text IS NULL OR q.category = $3)
         AND ($4::int IS NULL OR q.exam_year = $4)
         AND ($5::boolean = FALSE OR NOT EXISTS (SELECT 1 FROM attempts a WHERE a.user_id = $6 AND a.question_id = q.id))
@@ -68,7 +70,7 @@ router.get('/questions', requireSubscription('practice'), validate({
       ORDER BY md5(COALESCE('p' || q.passage_id, 'q' || q.id) || $8), q.id
       LIMIT $7`,
     [f.subject_id ?? null, f.lesson_id ?? null, f.category ?? null, f.exam_year ?? null,
-      f.unsolved_only === 'true', req.user.id, f.limit, crypto.randomUUID()],
+      f.unsolved_only === 'true', req.user.id, f.limit, crypto.randomUUID(), f.unit ?? null],
   );
   res.json({ questions: await publicQuestions(rows) });
 });

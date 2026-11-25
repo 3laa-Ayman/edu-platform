@@ -1007,5 +1007,19 @@ async function studentLogin(identifier, password, device) {
   ok((await call('POST', '/api/tracks/choose', { token: A.token, body: { track_id: 999999 } })).status === 404, 'unknown track refused');
   await call('DELETE', `/api/admin/tracks/${tEng.id}`, { token: AT });
 
+  // ---------------- 📚 Practice by chapter/unit (the lessons' "نوع الدرس")
+  const uSubj = (await call('POST', '/api/admin/subjects', { token: AT, body: { name: `كيمياء الفصول ${rnd}` } })).data.subject;
+  const uLesson = async (name, unit) => (await call('POST', `/api/admin/subjects/${uSubj.id}/lessons`, { token: AT, body: { name, lesson_type: unit } })).data.lesson;
+  const uL1 = await uLesson('1-1 تغيرات الحالة', 'الفصل الأول'); const uL2 = await uLesson('1-2 ضغط البخار', 'الفصل الأول'); const uL3 = await uLesson('2-1 المحاليل', 'الفصل الثاني');
+  const uQ = async (lesson, t) => call('POST', '/api/admin/questions', { token: AT, body: { subject_id: uSubj.id, lesson_id: lesson.id, question_text: `${t} ${rnd}`, option_a: '1', option_b: '2', option_c: '3', option_d: '4', correct_option: 'A' } });
+  await uQ(uL1, 'ف1د1'); await uQ(uL2, 'ف1د2'); await uQ(uL3, 'ف2د1');
+  const byUnit = async (unit) => (await call('GET', `/api/catalog/questions?subject_id=${uSubj.id}&unit=${encodeURIComponent(unit)}&limit=50`, { token: A.token })).data.questions;
+  const u1 = await byUnit('الفصل الأول'); const u2 = await byUnit('الفصل الثاني');
+  ok(u1.length === 2 && u1.every((q) => q.question.startsWith('ف1')), 'chapter filter: الفصل الأول → its 2 lessons', u1.map((q) => q.question));
+  ok(u2.length === 1 && u2[0].question.startsWith('ف2'), 'chapter filter: الفصل الثاني → its lesson only');
+  ok((await call('GET', `/api/catalog/questions?subject_id=${uSubj.id}&limit=50`, { token: A.token })).data.questions.length === 3, 'no chapter → whole subject');
+  const catU = (await call('GET', '/api/catalog/subjects', { token: A.token })).data.subjects.find((x) => x.id === uSubj.id);
+  ok(catU.lessons.map((l) => l.lesson_type).join('|') === 'الفصل الأول|الفصل الأول|الفصل الثاني', 'catalog gives each lesson its chapter, in order');
+
   console.log(`\n🎉 All ${passed} checks passed`);
 })().catch((e) => { console.error(e); process.exit(1); });

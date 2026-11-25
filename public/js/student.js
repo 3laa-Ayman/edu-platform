@@ -810,8 +810,14 @@ function quizResult(el, result, { again, solveSkipped }) {
 
 // ---------------------------------------------------------------- Practice
 /** Lesson select: "الدرس" shown until a choice, then "كل الدروس" + each lesson with its question count. */
-const lessonOptions = (subject) => `<option value="all">كل الدروس</option>${
-  (subject?.lessons || []).map((l) => `<option value="${l.id}">${esc(l.name)} (${l.questions})</option>`).join('')}`;
+/** A subject's chapters/units (the lessons' "نوع الدرس"), in lesson order. */
+const unitsOf = (subject) => [...new Set((subject?.lessons || []).map((l) => (l.lesson_type || '').trim()).filter(Boolean))];
+const unitOptions = (subject) => `<option value="all">كل الفصول</option>${unitsOf(subject)
+  .map((u) => `<option value="${esc(u)}">${esc(u)} (${subject.lessons.filter((l) => (l.lesson_type || '').trim() === u).reduce((n, l) => n + l.questions, 0)})</option>`).join('')}`;
+/** unit: only that chapter's lessons ('all' / none → every lesson of the subject). */
+const lessonOptions = (subject, unit = 'all') => `<option value="all">كل الدروس</option>${
+  (subject?.lessons || []).filter((l) => unit === 'all' || (l.lesson_type || '').trim() === unit)
+    .map((l) => `<option value="${l.id}">${esc(l.name)} (${l.questions})</option>`).join('')}`;
 
 Views.practice = async (el) => {
   // Students only see subjects/lessons that actually have questions.
@@ -837,6 +843,7 @@ Views.practice = async (el) => {
       <form id="f" class="form grid3">
         <label>المادة<span class="select-ph" data-ph="المادة"><select name="subject_id" required>
           ${subjects.map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select></span></label>
+        <label id="unit-field">الفصل / الوحدة<span class="select-ph" data-ph="الفصل / الوحدة"><select name="unit" required>${unitOptions(null)}</select></span></label>
         <label>الدرس<span class="select-ph" data-ph="الدرس"><select name="lesson_id" required>${lessonOptions(null)}</select></span></label>
         <label>النوع<select name="category"><option value="">الكل</option><option value="lesson">دروس</option><option value="past_exam">امتحانات سابقة</option></select></label>
         <label>عدد الأسئلة<select name="limit">${[10, 20, 30, 40, 50].map((n) => `<option ${n === 10 ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
@@ -855,12 +862,24 @@ Views.practice = async (el) => {
     form.addEventListener('change', (e) => {
       if (e.target.tagName === 'SELECT') e.target.parentElement.classList.toggle('filled', e.target.selectedIndex >= 0);
     });
+    // Subject → chapter/unit → lesson. A subject whose lessons have no chapter skips the chapter step.
+    const subjectNow = () => subjects.find((x) => String(x.id) === form.subject_id.value);
     form.subject_id.addEventListener('change', () => {
-      const s = subjects.find((x) => String(x.id) === form.subject_id.value);
+      const s = subjectNow();
+      const hasUnits = unitsOf(s).length > 0;
+      $('#unit-field', el).hidden = !hasUnits;
+      form.unit.required = hasUnits;
+      form.unit.innerHTML = unitOptions(s);
+      if (hasUnits) blank(form.unit);
       form.lesson_id.innerHTML = lessonOptions(s);
       blank(form.lesson_id);
     });
+    form.unit.addEventListener('change', () => {
+      form.lesson_id.innerHTML = lessonOptions(subjectNow(), form.unit.value);
+      blank(form.lesson_id);
+    });
     blank(form.subject_id);
+    blank(form.unit);
     blank(form.lesson_id);
     onSubmit(form, async (v) => {
       const qs = new URLSearchParams();
@@ -877,7 +896,7 @@ Views.practice = async (el) => {
           // Everything in this scope was already answered at least once.
           const subject = subjects.find((s) => String(s.id) === v.subject_id);
           const lesson = subject?.lessons.find((l) => String(l.id) === v.lesson_id);
-          const scope = lesson ? `درس "${esc(lesson.name)}"` : `مادة ${esc(subject?.name || '')}`;
+          const scope = lesson ? `درس "${esc(lesson.name)}"` : v.unit && v.unit !== 'all' ? `"${esc(v.unit)}"` : `مادة ${esc(subject?.name || '')}`;
           msg.innerHTML = `<div class="notice good all-solved">
             <b>🎉 لقد حللت كل الأسئلة</b> في ${scope}${v.category ? ` (${esc(LABELS.category[v.category])})` : ''}!
             <p>ألغِ اختيار "أسئلة جديدة فقط" لمراجعتها مرة أخرى، أو راجع بنك الأخطاء.</p>
