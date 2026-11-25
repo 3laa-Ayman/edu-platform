@@ -40,7 +40,7 @@ function normalizeMath(text) {
  * browser reorders its brackets and spaces around the Arabic words. Must contain a Latin letter (checked when matching).
  */
 // Unicode sub/superscript digits (CH₄, m², 10⁻¹⁹) belong to the formula they follow.
-const LTR_RUN = /(?:[A-Za-z0-9]|[(\[{](?=[A-Za-z0-9]))[A-Za-z0-9 .,:;!?'"=+\-−*/%<>()[\]{}^_×·&|#@$\\~°µΩ\u2070-\u207E\u2080-\u208E\u00B9\u00B2\u00B3]*[A-Za-z0-9)\]}'"%°\u2070-\u207E\u2080-\u208E\u00B9\u00B2\u00B3]/g;
+const LTR_RUN = /(?:[A-Za-z0-9]|[-−–+](?=\s?[0-9])|[(\[{](?=[A-Za-z0-9]))[A-Za-z0-9 .,:;!?'"=+\-−*/%<>()[\]{}^_×·&|#@$\\~°µΩ\u2070-\u207E\u2080-\u208E\u00B9\u00B2\u00B3]*[A-Za-z0-9)\]}'"%°\u2070-\u207E\u2080-\u208E\u00B9\u00B2\u00B3]/g;
 
 /** Formats one piece of text: escape, then exponents / subscripts. */
 function richChunk(text) {
@@ -138,7 +138,8 @@ function rich(text) {
       run = run.slice(cut);
       start += cut;
     }
-    if (!/[A-Za-z]/.test(run)) continue;
+    // Latin text/units, or a signed number (−273، −5): its sign must stay on its left.
+    if (!/[A-Za-z]/.test(run) && !/^[-−–+]\s?[0-9]/.test(run)) continue;
     out += `${richChunk(t.slice(last, start))}<bdi dir="ltr">${richChunk(run)}</bdi>`;
     last = start + run.length;
   }
