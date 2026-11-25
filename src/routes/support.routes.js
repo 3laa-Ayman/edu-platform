@@ -23,7 +23,8 @@ router.get('/', async (req, res) => {
   if (req.user.role === 'admin') return res.json({ enabled: true, available: true, whatsapp_url: `https://wa.me/${number}` });
 
   const sub = await getActiveSubscription(req.user.id);
-  const available = sub ? Boolean(sub.features?.priority_support) : Boolean(s.support_for_unsubscribed);
+  // Only the plans the admin chose (plan feature "priority_support"); students without a subscription don't get it.
+  const available = Boolean(sub?.features?.priority_support);
   if (!available) {
     const { rows: [plan] } = await db.query(
       `SELECT name_ar FROM plans WHERE is_active AND (features ->> 'priority_support')::boolean ORDER BY rank, price_egp LIMIT 1`);

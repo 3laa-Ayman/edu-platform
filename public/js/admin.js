@@ -1192,7 +1192,6 @@ Admin.announcements = async (el) => {
 // ---------------------------------------------------------------- Settings & admin accounts
 Admin.settings = async (el) => {
   const [{ settings: s, ai_key_configured: aiKey }, { admins, me }, { plans }] = await Promise.all([API.get('/admin/settings'), API.get('/admin/admins'), API.get('/admin/plans')]);
-  const supportPlans = plans.filter((p) => p.features?.priority_support).map((p) => p.name_ar);
   el.innerHTML = `<h1 class="page-head">الإعدادات</h1>
     <section class="card"><h2>إعدادات المنصة</h2><form id="sf" class="form grid2">
       <label>اسم المنصة<input name="site_name" required value="${esc(s.site_name)}"></label>
@@ -1212,10 +1211,10 @@ Admin.settings = async (el) => {
       <form id="csf" class="form grid2">
         <label class="check span2"><input type="checkbox" name="support_enabled" ${s.support_enabled ? 'checked' : ''}> تفعيل خدمة العملاء</label>
         <label>رقم واتساب خدمة العملاء<input name="support_phone" inputmode="numeric" dir="ltr" placeholder="01xxxxxxxxx" value="${esc(s.support_phone)}"></label>
-        <label class="check"><input type="checkbox" name="support_for_unsubscribed" ${s.support_for_unsubscribed ? 'checked' : ''}> متاحة أيضًا للطلاب غير المشتركين (للاستفسار قبل الاشتراك)</label>
         <label class="span2">الرسالة الجاهزة<textarea name="support_message" rows="2" maxlength="300">${esc(s.support_message || '')}</textarea></label>
-        <p class="span2 ${supportPlans.length ? 'muted' : 'notice mid'}">الباقات التي تشمل خدمة العملاء: <b>${supportPlans.length ? supportPlans.map(esc).join('، ') : 'لا توجد باقة'}</b>
-          — للتعديل افتح <a href="#/admin/plans">الباقات</a> وفعّل أو ألغِ «خدمة العملاء عبر واتساب» في كل باقة.</p>
+        <fieldset class="span2 support-plans"><legend>متاحة لمشتركي الباقات:</legend>
+          ${plans.map((p) => `<label class="check"><input type="checkbox" name="plan_${esc(p.code)}" ${p.features?.priority_support ? 'checked' : ''}> ${esc(p.name_ar)}${p.is_active ? '' : ' <small class="muted">(مخفية)</small>'}</label>`).join('')}
+          <small class="muted">الطالب غير المشترك أو المشترك في باقة غير محددة يظهر له الزر رماديًا مع اسم الباقة التي تتيح الخدمة.</small></fieldset>
         <button class="btn primary span2" type="submit">حفظ</button></form>
     </section>
 
@@ -1273,8 +1272,16 @@ Admin.settings = async (el) => {
   onSubmit($('#csf', el), async (v) => {
     const phone = (v.support_phone || '').replace(/\D/g, '');
     if (v.support_enabled && !/^(2?01[0125]\d{8})$/.test(phone)) throw new Error('اكتب رقم واتساب مصريًا صحيحًا (مثال: 01012345678)');
-    await API.patch('/admin/settings', { support_enabled: v.support_enabled, support_phone: phone,
-      support_for_unsubscribed: v.support_for_unsubscribed, support_message: v.support_message ?? '' });
+    if (v.support_enabled && !plans.some((p) => v[`plan_${p.code}`])) throw new Error('اختر باقة واحدة على الأقل تتاح لها خدمة العملاء');
+    await API.patch('/admin/settings', { support_enabled: v.support_enabled, support_phone: phone, support_message: v.support_message ?? '' });
+    // The chosen plans: the plan feature "خدمة العملاء عبر واتساب".
+    for (const p of plans) {
+      const on = Boolean(v[`plan_${p.code}`]);
+      if (on !== Boolean(p.features?.priority_support)) {
+        await API.patch(`/admin/plans/${p.code}`, { features: { ...p.features, priority_support: on } });
+        p.features = { ...p.features, priority_support: on };
+      }
+    }
     toast('تم حفظ إعدادات خدمة العملاء');
   });
   onSubmit($('#gf', el), async (v) => {

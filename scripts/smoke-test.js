@@ -826,14 +826,13 @@ async function studentLogin(identifier, password, device) {
   const sup = async (st) => (await call('GET', '/api/support', { token: st.token })).data;
   const setSup = (body) => call('PATCH', '/api/admin/settings', { token: AT, body });
   const supBefore = (await call('GET', '/api/admin/settings', { token: AT })).data.settings;
-  await setSup({ support_enabled: true, support_phone: '', support_for_unsubscribed: true });
+  await setSup({ support_enabled: true, support_phone: '' });
   ok((await sup(N1)).enabled === false, 'customer service hidden while no number is set');
   await setSup({ support_phone: '01012345678', support_message: 'محتاج مساعدة' });
-  const freeSup = await sup(outsider);
-  ok(freeSup.available && freeSup.whatsapp_url.startsWith('https://wa.me/201012345678?text=') && decodeURIComponent(freeSup.whatsapp_url).includes('محتاج مساعدة'),
-    'unsubscribed student opens WhatsApp support (setting on)', freeSup);
-  ok(decodeURIComponent((await sup(A)).whatsapp_url).includes(A.code), 'premium student: message carries the student code');
-  await setSup({ support_for_unsubscribed: false });
+  const premSup = await sup(A);
+  ok(premSup.available && premSup.whatsapp_url.startsWith('https://wa.me/201012345678?text=') && decodeURIComponent(premSup.whatsapp_url).includes('محتاج مساعدة'),
+    'premium student opens WhatsApp support', premSup);
+  ok(decodeURIComponent(premSup.whatsapp_url).includes(A.code), 'premium student: message carries the student code');
   const lockedSup = await sup(outsider);
   ok(lockedSup.enabled && !lockedSup.available && !lockedSup.whatsapp_url && lockedSup.plan_name, 'unsubscribed student: locked, told which plan has it (no number sent)', lockedSup);
   const stdPlanS = (await call('GET', '/api/admin/plans', { token: AT })).data.plans.find((p) => p.code === 'standard');
@@ -844,8 +843,7 @@ async function studentLogin(identifier, password, device) {
   await call('PATCH', '/api/admin/plans/standard', { token: AT, body: { features: stdPlanS.features } });
   await setSup({ support_enabled: false });
   ok((await sup(A)).enabled === false, 'admin turns customer service off → hidden for everyone');
-  await setSup({ support_enabled: supBefore.support_enabled, support_phone: supBefore.support_phone,
-    support_for_unsubscribed: supBefore.support_for_unsubscribed, support_message: supBefore.support_message });
+  await setSup({ support_enabled: supBefore.support_enabled, support_phone: supBefore.support_phone, support_message: supBefore.support_message });
 
   // ---------------- ✍️ A competition's own questions (typed in the form or from Excel — not added to the bank)
   const pgdb = require('../src/config/db');
