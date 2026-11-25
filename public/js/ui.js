@@ -140,6 +140,11 @@ function rich(text) {
       run = run.slice(cut);
       start += cut;
     }
+    // An equation written in Arabic words («سرعة تكوّن HI = 2 × سرعة اختفاء H₂») reads right-to-left: when the run is
+    // followed by an operator and then Arabic, only its leading symbol (HI) is kept left-to-right.
+    if (/^\s*[×+\-−–=/·÷]\s*[\u0600-\u06FF]/.test(t.slice(start + run.length))) {
+      run = run.match(/^[^\s=×+\-−–/·÷]+/)?.[0] || '';
+    }
     // Latin text/units, or a signed number (−273، −5): its sign must stay on its left —
     // or numbers joined by a dash / operator (4–5%، 10-20، 5 - 3 = 2), which would otherwise be read right-to-left.
     if (!/[A-Za-z]/.test(run) && !/^[-−–+]\s?[0-9]/.test(run) && !/[0-9]\s?[-−–+=×/]\s?[0-9]/.test(run)) continue;
