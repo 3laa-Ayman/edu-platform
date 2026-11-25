@@ -628,9 +628,9 @@ async function showExplanation(card, qid, btn) {
   const box = $('.explain', card);
   const r = await API.get(`/catalog/questions/${qid}/explanation`);
   box.hidden = false;
-  const law = r.law_note ? `<p class="law">📐 ${rich(r.law_note)}</p>` : '';
+  const law = r.law_note ? `<p class="law">📐 ${rich(cleanExplanation(r.law_note))}</p>` : '';
   if (r.explanation || r.explanation_image) {
-    box.innerHTML = `<div class="src">${r.source === 'question_bank' ? 'شرح من بنك الأسئلة — مجاني' : 'شرح محفوظ — مجاني'}</div>${r.explanation ? `<p class="pre">${rich(r.explanation)}</p>` : ''}${qImage(r.explanation_image, 'صورة الشرح')}${law}
+    box.innerHTML = `<div class="src">${r.source === 'question_bank' ? 'شرح من بنك الأسئلة — مجاني' : 'شرح محفوظ — مجاني'}</div>${r.explanation ? `<p class="pre">${rich(cleanExplanation(r.explanation))}</p>` : ''}${qImage(r.explanation_image, 'صورة الشرح')}${law}
       ${r.source === 'question_bank' ? '<div class="ai-more"><button class="btn ai" data-action="ai" data-simpler="1">🤔 لم أفهم، اشرح لي أكثر</button></div>' : ''}`;
     btn.remove();
     return;
@@ -647,7 +647,7 @@ async function askAI(card, qid, simpler = false) {
     const cost = r.usage?.cost_egp
       ? `<div class="src">✨ شرح بالذكاء الاصطناعي · استُهلك ${fmtPoints(r.usage.cost_points)} · متبقي ${fmtPoints(r.usage.remaining_points)}</div>`
       : `<div class="src">${simpler ? '✨ شرح أبسط بالذكاء الاصطناعي — مجاني' : 'شرح محفوظ — مجاني'}</div>`;
-    box.innerHTML = `${cost}<p class="pre">${rich(r.explanation)}</p>${r.law_note && !simpler ? `<p class="law">📐 ${rich(r.law_note)}</p>` : ''}
+    box.innerHTML = `${cost}<p class="pre">${rich(cleanExplanation(r.explanation))}</p>${r.law_note && !simpler ? `<p class="law">📐 ${rich(cleanExplanation(r.law_note))}</p>` : ''}
       ${r.warning ? `<p class="notice bad">${esc(r.warning)}</p>` : ''}`;
   } catch (err) {
     if (err.code === 'AI_LIMIT_REACHED') box.innerHTML = `<p class="notice bad">⛔ ${esc(err.message)}</p>`;

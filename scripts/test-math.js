@@ -131,8 +131,24 @@ const rx = rich('2H_2 + O_2 → 2H_2O'); // eslint-disable-line no-undef
 const rxOk = rx.startsWith('<bdi dir="ltr">') && rx.endsWith('</bdi>') && render('2H_2 + O_2 → 2H_2O') === '2H<sub>2</sub> + O<sub>2</sub> → 2H<sub>2</sub>O';
 if (!rxOk) failed++;
 console.log(`${rxOk ? '✅' : '❌'} reaction with arrow kept as one LTR piece`);
+// Explanations: LaTeX / Markdown habits → the platform's notation.
+const cleanCases = [
+  ['$\\Delta H = \\frac{927}{2} = 463.5\\ \\text{kJ/mol}$', 'ΔH = (927)/(2) = 463.5 kJ/mol'],
+  ['$2H_2 + O_2 \\rightarrow 2H_2O$', '2H_2 + O_2 → 2H_2O'],
+  ['$-5^\\circ C$', '-5°C'],
+  ['### الحل', '**الحل**'],
+  ['* خطوة أولى\n- خطوة ثانية\n-5 درجات', '• خطوة أولى\n• خطوة ثانية\n-5 درجات'],
+  ['\\( x^{2} \\times 3 \\)', 'x^{2} × 3'],
+  ['النسبة 2 -> 3', 'النسبة 2 → 3'],
+];
+for (const [input, expected] of cleanCases) {
+  const got = cleanExplanation(input); // eslint-disable-line no-undef
+  const pass = got === expected;
+  if (!pass) failed++;
+  console.log(`${pass ? '✅' : '❌'} clean ${JSON.stringify(input)} → ${JSON.stringify(got)}${pass ? '' : `  (expected ${JSON.stringify(expected)})`}`);
+}
 const boldOk = rich('**Note** مهم').startsWith('<strong>'); // eslint-disable-line no-undef
 if (!boldOk) failed++;
 console.log(`${boldOk ? '✅' : '❌'} bold kept around an LTR run`);
-console.log(failed ? `\n${failed} failed` : `\n🎉 all ${cases.length + ltr.length + fracs.length + 5} math checks passed`);
+console.log(failed ? `\n${failed} failed` : `\n🎉 all ${cases.length + ltr.length + fracs.length + cleanCases.length + 5} math checks passed`);
 process.exit(failed ? 1 : 0);

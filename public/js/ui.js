@@ -171,6 +171,43 @@ function rich(text) {
     .replace(/\u0003(\d+)\u0004/g, (_, n) => fr.parts[Number(n)]);
 }
 
+/**
+ * Explanations (saved or AI) may use LaTeX or Markdown habits; turn them into the platform's notation before rich():
+ * $…$ \frac{a}{b} \sqrt{x} \times \Delta \rightarrow \text{} … and "### title", "* item", "- item".
+ */
+const LATEX_SYMBOLS = {
+  times: '×', cdot: '·', div: '÷', pm: '±', mp: '∓', le: '≤', leq: '≤', ge: '≥', geq: '≥', ne: '≠', neq: '≠', approx: '≈',
+  to: '→', rightarrow: '→', longrightarrow: '⟶', leftarrow: '←', Rightarrow: '⇒', leftrightarrow: '↔', rightleftharpoons: '⇌',
+  infty: '∞', degree: '°', circ: '°', percent: '%', ldots: '…', cdots: '⋯', propto: '∝', therefore: '∴',
+  alpha: 'α', beta: 'β', gamma: 'γ', delta: 'δ', Delta: 'Δ', epsilon: 'ε', theta: 'θ', lambda: 'λ', mu: 'μ', nu: 'ν', pi: 'π',
+  rho: 'ρ', sigma: 'σ', Sigma: 'Σ', tau: 'τ', phi: 'φ', omega: 'ω', Omega: 'Ω',
+};
+function cleanExplanation(text) {
+  let t = String(text ?? '');
+  for (let k = 0; k < 3; k++) { // nested \frac{\frac{…}{…}}{…}
+    t = t.replace(/\\[dt]?frac\s*\{([^{}]*)\}\s*\{([^{}]*)\}/g, '($1)/($2)')
+      .replace(/\\sqrt\s*\{([^{}]*)\}/g, '√($1)')
+      .replace(/\\(?:text|mathrm|textbf|mathbf|operatorname|mbox)\s*\{([^{}]*)\}/g, '$1');
+  }
+  t = t.replace(/\^\s*\{?\\circ\}?/g, '°')
+    // \Delta H → ΔH (the space after a Greek command belongs to LaTeX, not to the text)
+    .replace(/\\([A-Za-z]+)( (?=[A-Za-z]))?/g, (m, w, sp = '') => {
+      const sym = LATEX_SYMBOLS[w];
+      if (!sym) return w + sp; // unknown command: keep its name
+      return /[\u0370-\u03FF]/.test(sym) ? sym : sym + sp;
+    })
+    .replace(/°\s+([CFK])\b/g, '°$1')
+    .replace(/\\[(\[)\]]|\$\$?/g, '') // \( \) \[ \] $ $$
+    .replace(/\\[,;: !]/g, ' ')
+    .replace(/\{([^{}^_]*)\}/g, (m, inner, i, all) => (/[\^_]$/.test(all.slice(0, i)) ? m : inner)) // stray braces (not ^{…} _{…})
+    .replace(/[ \t]*->[ \t]*/g, ' → ').replace(/[ \t]*=>[ \t]*/g, ' ⇒ ').replace(/<=>/g, '⇔');
+  return t.split('\n').map((line) => line
+    .replace(/^\s{0,3}#{1,6}\s+(.+?)\s*#*\s*$/, '**$1**') // ### title → bold line
+    .replace(/^\s*[*•]\s+/, '• ') // * item → • item
+    .replace(/^\s*-\s+(?=\D)/, '• ')) // - item → • item (a minus before a number stays)
+    .join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
 const fmtDate = (d) => (d ? new Date(d).toLocaleString('ar-EG-u-nu-latn', { dateStyle: 'medium', timeStyle: 'short' }) : '—');
 const fmtDay = (d) => (d ? new Date(d).toLocaleDateString('ar-EG-u-nu-latn', { dateStyle: 'medium' }) : '—');
 const fmtMoney = (n, digits = 2) => `${Number(n || 0).toLocaleString('ar-EG-u-nu-latn', { maximumFractionDigits: digits })} ج`;
