@@ -220,6 +220,12 @@ function cleanExplanation(text) {
     .replace(/\\[,;: !]/g, ' ')
     .replace(/\{([^{}^_]*)\}/g, (m, inner, i, all) => (/[\^_]$/.test(all.slice(0, i)) ? m : inner)) // stray braces (not ^{…} _{…})
     .replace(/[ \t]*->[ \t]*/g, ' → ').replace(/[ \t]*=>[ \t]*/g, ' ⇒ ').replace(/<=>/g, '⇔');
+  // Readability: every step of a calculation on its own line. A new clause that starts with an Arabic word and reaches
+  // «=» soon («، وحجمها = …»، «؛ الكثافة = …»، «: كتلتها = …») starts a line, and so does a new sentence after «.».
+  t = t.replace(/([:؛،])[ \t]+(?=[ء-ي][^=≈،؛:.\n]{0,30}[=≈])/g, '$1\n')
+    .replace(/([.!؟])[ \t]+(?=[(ء-ي])/g, '$1\n')
+    // the conjunction «و» glued to a number / symbol / bracket («و4.5»، «و(3، −2)») gets its space
+    .replace(/(^|[\s(،؛:])و(?=[0-9A-Za-z(٠-٩])/gm, '$1و ');
   return t.split('\n').map((line) => line
     .replace(/^\s{0,3}#{1,6}\s+(.+?)\s*#*\s*$/, '**$1**') // ### title → bold line
     .replace(/^\s*[*•]\s+/, '• ') // * item → • item
