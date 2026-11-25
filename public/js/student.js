@@ -817,7 +817,7 @@ const unitOptions = (subject) => `<option value="all">كل الفصول</option>
 /** unit: only that chapter's lessons ('all' / none → every lesson of the subject). */
 const lessonOptions = (subject, unit = 'all') => `<option value="all">كل الدروس</option>${
   (subject?.lessons || []).filter((l) => unit === 'all' || (l.lesson_type || '').trim() === unit)
-    .map((l) => `<option value="${l.id}">${esc(l.name)} (${l.questions})</option>`).join('')}`;
+    .map((l) => `<option value="${l.id}">${esc(l.name)}</option>`).join('')}`;
 
 Views.practice = async (el) => {
   // Students only see subjects/lessons that actually have questions.
