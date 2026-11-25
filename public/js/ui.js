@@ -148,8 +148,23 @@ function rich(text) {
     // Latin text/units, or a signed number (−273، −5): its sign must stay on its left —
     // or numbers joined by a dash / operator (4–5%، 10-20، 5 - 3 = 2), which would otherwise be read right-to-left.
     if (!/[A-Za-z]/.test(run) && !/^[-−–+]\s?[0-9]/.test(run) && !/[0-9]\s?[-−–+=×/]\s?[0-9]/.test(run)) continue;
-    out += `${richChunk(t.slice(last, start))}<bdi dir="ltr">${richChunk(run)}</bdi>`;
-    last = start + run.length;
+    // A formula followed by a new quantity (CH₄ ΔH = −891 kJ/mol): two pieces, so the formula stays next to its
+    // Arabic name and the quantity follows it.
+    const pieces = [];
+    let rest = run;
+    let at = start;
+    for (let g = rest.search(/\s+(?=[\u0370-\u03FF][A-Za-z])/); g > 0 && !/[=×+\-−–/·÷]\s*$/.test(rest.slice(0, g));
+      g = rest.search(/\s+(?=[\u0370-\u03FF][A-Za-z])/)) {
+      pieces.push([at, rest.slice(0, g)]);
+      const skip = rest.slice(g).length - rest.slice(g).trimStart().length;
+      at += g + skip;
+      rest = rest.slice(g + skip);
+    }
+    pieces.push([at, rest]);
+    for (const [pos, piece] of pieces) {
+      out += `${richChunk(t.slice(last, pos))}<bdi dir="ltr">${richChunk(piece)}</bdi>`;
+      last = pos + piece.length;
+    }
   }
   out += richChunk(t.slice(last));
   return out.replace(/\u0001/g, '<strong>').replace(/\u0002/g, '</strong>')
