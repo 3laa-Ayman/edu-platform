@@ -68,6 +68,8 @@ const ltr = [
   ['السعة الحرارية 4.2 J/(g·°C) للماء', ['4.2 J/g·°C']],
   ['حل 15 سؤال في 3 ساعات', []],
   ['CH₄', ['CH₄']],
+  ['الكثافة = (عدد الذرات × الكتلة الذرية ÷ N_a) ÷ a^3', ['N<sub>a</sub>', 'a<sup>3</sup>']],
+  ['الكثافة ≈ 9.1 g/cm^3. (2.3 g/cm^3 بذرة واحدة، و4.5 بذرتين).', ['9.1 g/cm<sup>3</sup>', '2.3 g/cm<sup>3</sup>']],
   ['واحتراق الميثان CH₄ ΔH = −891 kJ/mol، و', ['CH₄', 'ΔH = −891 kJ/mol']],
   ['قيمة x = ΔH + 5 هنا', ['x = ΔH + 5']],
   ['سرعة تكوّن HI = 2 × سرعة اختفاء H₂', ['HI', 'H₂']],
@@ -91,7 +93,7 @@ const ltr = [
 ];
 for (const [input, runs] of ltr) {
   const html = rich(input); // eslint-disable-line no-undef
-  const got = [...html.matchAll(/<bdi dir="ltr">(.*?)<\/bdi>(?![^<]*<\/bdi>)/g)].map((m) => m[1].replace(/<bdi[^>]*>|<\/bdi>/g, ''));
+  const got = [...html.matchAll(/<bdi dir="ltr"(?: class="nw")?>(.*?)<\/bdi>(?![^<]*<\/bdi>)/g)].map((m) => m[1].replace(/<bdi[^>]*>|<\/bdi>/g, ''));
   const pass = JSON.stringify(got) === JSON.stringify(runs);
   if (!pass) failed++;
   console.log(`${pass ? '✅' : '❌'} LTR ${input}  →  ${JSON.stringify(got)}${pass ? '' : `   (expected ${JSON.stringify(runs)})`}`);
@@ -128,8 +130,12 @@ for (const [input, expected] of fracs) {
 }
 // A whole reaction (with arrow) is one left-to-right piece.
 const rx = rich('2H_2 + O_2 → 2H_2O'); // eslint-disable-line no-undef
-const rxOk = rx.startsWith('<bdi dir="ltr">') && rx.endsWith('</bdi>') && render('2H_2 + O_2 → 2H_2O') === '2H<sub>2</sub> + O<sub>2</sub> → 2H<sub>2</sub>O';
+const rxOk = /^<bdi dir="ltr"( class="nw")?>/.test(rx) && rx.endsWith('</bdi>') && render('2H_2 + O_2 → 2H_2O') === '2H<sub>2</sub> + O<sub>2</sub> → 2H<sub>2</sub>O';
 if (!rxOk) failed++;
+const dv = rich('كتلتها = 4×63.5 ÷ 6.0×10^23 = 4.23×10^-22 g، وحجمها'); // eslint-disable-line no-undef
+const dvOk = /<bdi dir="ltr"( class="nw")?>4×63.5 ÷ /.test(dv) && dv.endsWith(' g</bdi>، وحجمها');
+if (!dvOk) failed++;
+console.log(`${dvOk ? '✅' : '❌'} division ÷ kept inside one LTR equation`);
 console.log(`${rxOk ? '✅' : '❌'} reaction with arrow kept as one LTR piece`);
 // Explanations: LaTeX / Markdown habits → the platform's notation.
 const cleanCases = [
@@ -150,5 +156,5 @@ for (const [input, expected] of cleanCases) {
 const boldOk = rich('**Note** مهم').startsWith('<strong>'); // eslint-disable-line no-undef
 if (!boldOk) failed++;
 console.log(`${boldOk ? '✅' : '❌'} bold kept around an LTR run`);
-console.log(failed ? `\n${failed} failed` : `\n🎉 all ${cases.length + ltr.length + fracs.length + cleanCases.length + 5} math checks passed`);
+console.log(failed ? `\n${failed} failed` : `\n🎉 all ${cases.length + ltr.length + fracs.length + cleanCases.length + 6} math checks passed`);
 process.exit(failed ? 1 : 0);

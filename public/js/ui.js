@@ -40,7 +40,7 @@ function normalizeMath(text) {
  * browser reorders its brackets and spaces around the Arabic words. Must contain a Latin letter (checked when matching).
  */
 // Unicode sub/superscript digits (CH₄, m², 10⁻¹⁹), Greek letters (ΔH, λ), reaction arrows (⇌ →) and ½ ¼ ¾ belong to the formula.
-const LTR_RUN = /(?:[A-Za-z0-9\u0370-\u03FF\u00BC-\u00BE\u2150-\u215E]|[-−–+](?=\s?[0-9])|[(\[{](?=[A-Za-z0-9]))[A-Za-z0-9 .,:;!?'"=+\-−–*/%<>()[\]{}^_×·&|#@$\\~°µΩ\u0370-\u03FF\u00BC-\u00BE\u2150-\u215E⇌⇄↔→←⟶⟵⇒⇔≈≠≤≥\u2070-\u207E\u2080-\u208E\u00B9\u00B2\u00B3]*[A-Za-z0-9)\]}'"%°\u2070-\u207E\u2080-\u208E\u00B9\u00B2\u00B3]/g;
+const LTR_RUN = /(?:[A-Za-z0-9\u0370-\u03FF\u00BC-\u00BE\u2150-\u215E]|[-−–+](?=\s?[0-9])|[(\[{](?=[A-Za-z0-9]))[A-Za-z0-9 .,:;!?'"=+\-−–*/%<>()[\]{}^_×÷·&|#@$\\~°µΩ\u0370-\u03FF\u00BC-\u00BE\u2150-\u215E⇌⇄↔→←⟶⟵⇒⇔≈≠≤≥\u2070-\u207E\u2080-\u208E\u00B9\u00B2\u00B3]*[A-Za-z0-9)\]}'"%°\u2070-\u207E\u2080-\u208E\u00B9\u00B2\u00B3]/g;
 
 /** Formats one piece of text: escape, then exponents / subscripts. */
 function richChunk(text) {
@@ -129,43 +129,62 @@ function rich(text) {
   const t = fr.text.replace(/\*\*([^*\n]+?)\*\*/g, '\u0001$1\u0002');
   let out = '';
   let last = 0;
-  for (const m of t.matchAll(LTR_RUN)) {
-    let run = m[0];
-    let start = m.index;
-    // A bracket with no partner inside the run belongs to the Arabic sentence around it: «(… O = 16)» — leave it outside.
-    const count = (str, ch) => str.split(ch).length - 1;
-    while (/[)\]}]$/.test(run) && count(run, '(') + count(run, '[') + count(run, '{') < count(run, ')') + count(run, ']') + count(run, '}')) run = run.slice(0, -1).trimEnd();
-    while (/^[(\[{]/.test(run) && count(run, '(') + count(run, '[') + count(run, '{') > count(run, ')') + count(run, ']') + count(run, '}')) {
-      const cut = run.length - run.slice(1).trimStart().length;
-      run = run.slice(cut);
-      start += cut;
+  const count = (str, ch) => str.split(ch).length - 1;
+  /** Index of the first bracket without its partner inside the run — opened and not closed, or closed without
+   * being opened there (or −1). */
+  const unmatched = (str) => {
+    const stack = [];
+    for (let k = 0; k < str.length; k++) {
+      if ('([{'.includes(str[k])) stack.push(k);
+      else if (')]}'.includes(str[k])) {
+        if (!stack.length) return k; // closes a bracket of the Arabic sentence: «(… ÷ Nₐ) ÷ a³»
+        stack.pop();
+      }
     }
+    return stack.length ? stack[0] : -1;
+  };
+  const handle = (pos, run) => {
+    if (!run) return;
+    // A bracket whose partner is in the Arabic sentence («… 9.1 g/cm³. (2.3 g/cm³ بذرة …)»، «(… ÷ Nₐ) ÷ a³») belongs to
+    // the sentence: split there — what comes before and after it are separate pieces (operators next to it stay Arabic).
+    const b = unmatched(run);
+    if (b >= 0) {
+      handle(pos, run.slice(0, b).replace(/[\s.,;:=×+\-−–/·÷]+$/, ''));
+      const after = run.slice(b + 1);
+      const lead = after.length - after.replace(/^[\s=×+\-−–/·÷]+/, '').length;
+      handle(pos + b + 1 + lead, after.slice(lead));
+      return;
+    }
+    // A closing bracket with no partner in the run belongs to the Arabic sentence around it: «(… O = 16)».
+    while (/[)\]}]$/.test(run) && count(run, '(') + count(run, '[') + count(run, '{') < count(run, ')') + count(run, ']') + count(run, '}')) run = run.slice(0, -1).trimEnd();
     // An equation written in Arabic words («سرعة تكوّن HI = 2 × سرعة اختفاء H₂») reads right-to-left: when the run is
     // followed by an operator and then Arabic, only its leading symbol (HI) is kept left-to-right.
-    if (/^\s*[×+\-−–=/·÷]\s*[\u0600-\u06FF]/.test(t.slice(start + run.length))) {
+    if (/^\s*[×+\-−–=/·÷]\s*[؀-ۿ]/.test(t.slice(pos + run.length))) {
       run = run.match(/^[^\s=×+\-−–/·÷]+/)?.[0] || '';
     }
     // Latin text/units, or a signed number (−273، −5): its sign must stay on its left —
     // or numbers joined by a dash / operator (4–5%، 10-20، 5 - 3 = 2), which would otherwise be read right-to-left.
-    if (!/[A-Za-z]/.test(run) && !/^[-−–+]\s?[0-9]/.test(run) && !/[0-9]\s?[-−–+=×/]\s?[0-9]/.test(run)) continue;
+    if (!/[A-Za-z]/.test(run) && !/^[-−–+]\s?[0-9]/.test(run) && !/[0-9]\s?[-−–+=×÷/]\s?[0-9]/.test(run)) return;
     // A formula followed by a new quantity (CH₄ ΔH = −891 kJ/mol): two pieces, so the formula stays next to its
     // Arabic name and the quantity follows it.
     const pieces = [];
     let rest = run;
-    let at = start;
-    for (let g = rest.search(/\s+(?=[\u0370-\u03FF][A-Za-z])/); g > 0 && !/[=×+\-−–/·÷]\s*$/.test(rest.slice(0, g));
-      g = rest.search(/\s+(?=[\u0370-\u03FF][A-Za-z])/)) {
+    let at = pos;
+    for (let g = rest.search(/\s+(?=[Ͱ-Ͽ][A-Za-z])/); g > 0 && !/[=×+\-−–/·÷]\s*$/.test(rest.slice(0, g));
+      g = rest.search(/\s+(?=[Ͱ-Ͽ][A-Za-z])/)) {
       pieces.push([at, rest.slice(0, g)]);
       const skip = rest.slice(g).length - rest.slice(g).trimStart().length;
       at += g + skip;
       rest = rest.slice(g + skip);
     }
     pieces.push([at, rest]);
-    for (const [pos, piece] of pieces) {
-      out += `${richChunk(t.slice(last, pos))}<bdi dir="ltr">${richChunk(piece)}</bdi>`;
-      last = pos + piece.length;
+    for (const [ppos, piece] of pieces) {
+      // A short formula never breaks across two lines (it moves to the next line whole); long English text still wraps.
+      out += `${richChunk(t.slice(last, ppos))}<bdi dir="ltr"${piece.length <= 40 ? ' class="nw"' : ''}>${richChunk(piece)}</bdi>`;
+      last = ppos + piece.length;
     }
-  }
+  };
+  for (const m of t.matchAll(LTR_RUN)) handle(m.index, m[0]);
   out += richChunk(t.slice(last));
   return out.replace(/\u0001/g, '<strong>').replace(/\u0002/g, '</strong>')
     .replace(/\u0003(\d+)\u0004/g, (_, n) => fr.parts[Number(n)]);
