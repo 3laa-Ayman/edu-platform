@@ -12,10 +12,20 @@ def iso(line):
         if not re.search('[' + L + ']', s): return s
         return '⁦' + s + '⁩'
     return RUN.sub(f, line)
+def edges(line):
+    # Spaces at the edges and a sentence-final '.' go OUTSIDE the isolate (else the '.' shows next to the Arabic word).
+    if not AR.search(line) or '⁦' not in line: return line
+    def f(m):
+        s = m.group(1); lead = re.match(r'\s*', s).group(0); s = s[len(lead):]
+        trail = re.search(r'\s*$', s).group(0); s = s[:len(s) - len(trail)] if trail else s
+        out = ''
+        if s.endswith('.') and not s.endswith('..') and not s.endswith('…'): s, out = s[:-1], '.'
+        return lead + '⁦' + s + '⁩' + out + trail
+    return re.sub('⁦([^⁩]*)⁩', f, line)
 p = sys.argv[1]; d = json.load(open(p)); n = 0
 for q in d['questions']:
     for k in F:
         v = q.get(k)
         if isinstance(v, str):
-            new = '\n'.join(iso(l) for l in v.split('\n')); n += new != v; q[k] = new
+            new = '\n'.join(edges(iso(l)) for l in v.split('\n')); n += new != v; q[k] = new
 json.dump(d, open(p, 'w'), ensure_ascii=False, indent=1); print('fields isolated:', n)
