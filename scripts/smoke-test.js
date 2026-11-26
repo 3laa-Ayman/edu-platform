@@ -1001,6 +1001,15 @@ async function studentLogin(identifier, password, device) {
   await call('PATCH', `/api/admin/students/${tStu.id}`, { token: AT, body: { track_id: tMed.id } });
   const tMoved = await subjNames();
   ok(tMoved.includes(sMed.id) && !tMoved.includes(sEng.id), 'admin moves the student to الطب → subjects follow');
+  await call('PATCH', `/api/admin/students/${tStu.id}`, { token: AT, body: { all_tracks: true } });
+  const tAll = await subjNames();
+  ok(tAll.includes(sMed.id) && tAll.includes(sEng.id), 'admin opens every track to the student → all subjects');
+  ok((await call('GET', `/api/catalog/questions?subject_id=${sEng.id}`, { token: tStu.token })).status === 200, 'all tracks: opens any track questions');
+  ok((await call('GET', '/api/auth/me', { token: tStu.token })).data.user.track?.name === 'كل الأنظمة', 'me shows كل الأنظمة');
+  ok((await call('GET', `/api/admin/students/${tStu.id}`, { token: AT })).data.student?.all_tracks === true, 'admin sees the all-tracks flag');
+  await call('PATCH', `/api/admin/students/${tStu.id}`, { token: AT, body: { all_tracks: false, track_id: tMed.id } });
+  const tBack = await subjNames();
+  ok(tBack.includes(sMed.id) && !tBack.includes(sEng.id), 'all tracks removed → back to one track');
   ok((await call('GET', '/api/catalog/subjects', { token: AT })).data.subjects.some((x) => x.id === sMed.id) && (await call('GET', '/api/catalog/subjects', { token: AT })).data.subjects.some((x) => x.id === sEng.id), 'admin sees every subject');
   await call('DELETE', `/api/admin/tracks/${tMed.id}`, { token: AT });
   ok((await call('GET', '/api/auth/me', { token: tStu.token })).data.needs_track === true, 'track deleted → student picks again');

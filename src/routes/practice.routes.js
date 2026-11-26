@@ -26,8 +26,9 @@ async function getQuestion(id) {
 router.get('/subjects', async (req, res) => {
   // Same for every student of a track: cached briefly per track (admin changes clear it). Admins see every subject.
   const admin = req.user.role === 'admin';
-  const track = admin ? null : await userTrack(req.user.id);
-  const { rows } = await cached(`catalog:subjects:${admin ? 'all' : track ?? 'none'}`, 15_000, () => db.query(
+  const track = admin ? 'all' : await userTrack(req.user.id); // 'all': admin, or a student opened to every track
+  const everything = track === 'all';
+  const { rows } = await cached(`catalog:subjects:${track ?? 'none'}`, 15_000, () => db.query(
     `SELECT s.id, s.name,
             COALESCE(json_agg(json_build_object('id', l.id, 'name', l.name, 'lesson_type', l.lesson_type,
                      'questions', (SELECT COUNT(*) FROM questions q WHERE q.lesson_id = l.id AND q.is_active AND NOT q.competition_only))
@@ -36,7 +37,7 @@ router.get('/subjects', async (req, res) => {
             (SELECT COUNT(*)::int FROM questions q WHERE q.subject_id = s.id AND q.is_active AND NOT q.competition_only) AS questions
        FROM subjects s LEFT JOIN lessons l ON l.subject_id = s.id
       WHERE $1::boolean OR ${visibleTo('s', '$2::int')}
-      GROUP BY s.id ORDER BY s.name`, [admin, track],
+      GROUP BY s.id ORDER BY s.name`, [everything, everything ? null : track],
   ));
   res.json({ subjects: rows });
 });

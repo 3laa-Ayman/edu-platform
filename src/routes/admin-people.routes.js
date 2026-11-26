@@ -39,7 +39,7 @@ router.post('/students', validate({
 router.get('/students/:id', validate({ params: idParam }), async (req, res) => {
   const { rows: [u] } = await db.query(
     `SELECT id, student_code, full_name, email, phone, parent_phone, parent_email, is_verified, is_active,
-            ai_spent_egp, ai_limit_egp, created_at, track_id
+            ai_spent_egp, ai_limit_egp, created_at, track_id, all_tracks
        FROM users WHERE id = $1 AND role = 'student'`, [req.p.id]);
   if (!u) throw notFound('الطالب غير موجود');
   const [subs, payments, team, mistakes, subjects] = await Promise.all([
@@ -87,10 +87,11 @@ router.patch('/students/:id', validate({
     ai_limit_egp: z.number().min(0).max(10000),
     reset_ai_spent: z.boolean(),
     track_id: z.number().int().positive().nullable(), // null = the student picks again
+    all_tracks: z.boolean(), // every track's subjects open to this student
   }).partial(),
 }), async (req, res) => {
   const b = req.body;
-  const fields = ['full_name', 'email', 'phone', 'parent_phone', 'parent_email', 'is_verified', 'is_active', 'ai_limit_egp', 'track_id'].filter((k) => k in b);
+  const fields = ['full_name', 'email', 'phone', 'parent_phone', 'parent_email', 'is_verified', 'is_active', 'ai_limit_egp', 'track_id', 'all_tracks'].filter((k) => k in b);
   // Column names come from the fixed whitelist — values are parameterized.
   const sets = fields.map((k, i) => `${k} = $${i + 2}`);
   if (b.reset_ai_spent) sets.push('ai_spent_egp = 0');
@@ -98,7 +99,7 @@ router.patch('/students/:id', validate({
   if (!sets.length) throw badRequest('لا توجد حقول للتعديل');
   const { rows: [u] } = await db.query(
     `UPDATE users SET ${sets.join(', ')}, updated_at = now() WHERE id = $1 AND role = 'student'
-     RETURNING id, student_code, full_name, email, phone, parent_phone, parent_email, is_verified, is_active, ai_spent_egp, ai_limit_egp, track_id`,
+     RETURNING id, student_code, full_name, email, phone, parent_phone, parent_email, is_verified, is_active, ai_spent_egp, ai_limit_egp, track_id, all_tracks`,
     [req.p.id, ...fields.map((k) => b[k])]);
   if (!u) throw notFound('الطالب غير موجود');
   res.json({ student: u });

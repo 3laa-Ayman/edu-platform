@@ -312,9 +312,9 @@ router.get('/me', authenticate, async (req, res) => {
     `SELECT u.*, t.name AS track_name, EXISTS (SELECT 1 FROM track_subjects) AS tracks_ready
        FROM users u LEFT JOIN tracks t ON t.id = u.track_id WHERE u.id = $1`, [req.user.id]);
   res.json({
-    user: { ...profile(u), track: u.track_id ? { id: u.track_id, name: u.track_name } : null },
+    user: { ...profile(u), track: u.all_tracks ? { id: null, name: 'كل الأنظمة' } : u.track_id ? { id: u.track_id, name: u.track_name } : null },
     // A student must pick a track (once) before studying — as soon as the admin has linked subjects to tracks.
-    needs_track: u.role === 'student' && !u.track_id && u.tracks_ready,
+    needs_track: u.role === 'student' && !u.track_id && !u.all_tracks && u.tracks_ready,
     subscription: await getActiveSubscription(u.id),
   });
 });

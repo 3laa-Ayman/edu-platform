@@ -986,7 +986,8 @@ Admin.student = async (el, { id }, query = {}) => {
         <label class="check"><input type="checkbox" name="is_verified" ${s.is_verified ? 'checked' : ''}> الحساب مفعّل (تم تأكيد الإيميل)</label>
         <label class="check"><input type="checkbox" name="is_active" ${s.is_active ? 'checked' : ''}> الحساب نشط (إلغاؤه يمنع الدخول)</label>
         ${tracks.length ? `<label>النظام<select name="track_id"><option value="">لم يختر بعد (يختاره عند الدخول)</option>
-          ${tracks.map((t) => opt(t.id, t.name, String(s.track_id ?? ''))).join('')}</select></label>` : ''}
+          ${tracks.map((t) => opt(t.id, t.name, s.all_tracks ? 'all' : String(s.track_id ?? ''))).join('')}
+          ${opt('all', '🔓 كل الأنظمة (كل المواد مفتوحة له)', s.all_tracks ? 'all' : '')}</select></label>` : ''}
         <button class="btn primary span2" type="submit">حفظ البيانات</button></form></section>
 
     <section class="card"><h2>الاشتراكات</h2>
@@ -1051,7 +1052,7 @@ Admin.student = async (el, { id }, query = {}) => {
     await API.patch(`/admin/students/${id}`, {
       full_name: v.full_name, email: v.email, phone: v.phone, parent_phone: v.parent_phone,
       parent_email: v.parent_email || null, is_verified: v.is_verified, is_active: v.is_active,
-      ...(tracks.length ? { track_id: v.track_id ? Number(v.track_id) : null } : {}),
+      ...(tracks.length ? (v.track_id === 'all' ? { all_tracks: true } : { all_tracks: false, track_id: v.track_id ? Number(v.track_id) : null }) : {}),
     });
     toast('تم حفظ البيانات');
     reload();

@@ -624,6 +624,8 @@ CREATE TABLE IF NOT EXISTS track_subjects (
   PRIMARY KEY (track_id, subject_id)
 );
 ALTER TABLE users ADD COLUMN IF NOT EXISTS track_id INT REFERENCES tracks(id) ON DELETE SET NULL;
+-- Opened by the admin: every track's subjects are open to this student (they are never asked to pick one).
+ALTER TABLE users ADD COLUMN IF NOT EXISTS all_tracks BOOLEAN NOT NULL DEFAULT false;
 -- The four tracks, created once (if the admin deletes or renames them, they are not brought back).
 INSERT INTO tracks (name, sort)
 SELECT v.name, v.sort FROM (VALUES ('الهندسة', 1), ('الطب', 2), ('الفنون', 3), ('الآداب', 4)) AS v(name, sort)
