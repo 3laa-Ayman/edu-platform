@@ -427,13 +427,13 @@ Views.home = async (el) => {
 // ---------------------------------------------------------------- Announcements (from the admins)
 const TONE_ICON = { info: '📢', success: '🎉', warning: '⚠️' };
 /**
- * Payment method logos (manual payment card). InstaPay: a text badge until its logo is added (public/img/pay/instapay.png).
+ * Payment method logos (manual payment card).
  */
 const PAY_LOGOS = {
   vodafone: '<img class="pay-logo" src="/img/pay/vodafone.svg" alt="فودافون كاش" title="فودافون كاش">',
   etisalat: '<img class="pay-logo" src="/img/pay/etisalat.png" alt="اتصالات كاش" title="اتصالات كاش">',
   orange: '<img class="pay-logo full" src="/img/pay/orange.png" alt="أورانج كاش" title="أورانج كاش">',
-  instapay: '<span class="pay-logo text instapay" title="إنستاباي">InstaPay</span>',
+  instapay: '<img class="pay-logo" src="/img/pay/instapay.png" alt="إنستاباي" title="إنستاباي">',
 };
 
 /**
