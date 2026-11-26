@@ -312,7 +312,7 @@ Admin.questions = async (el, params, query) => {
       <p class="muted">🖼 <b>الصور:</b> الصق الصورة داخل صف السؤال (Insert ← Pictures ← <b>Place over Cells</b>). في عمود "صورة السؤال" = صورة السؤال، في عمود اختيار = صورة الاختيار، في عمود الشرح = صورة الشرح. الحد الأقصى للملف 4MB وللصورة الواحدة 2MB — إذا كانت الصور كثيرة فقسّم الأسئلة على عدة ملفات.</p>
       <p class="muted">📖 <b>القطع والرسومات المشتركة (اختياري):</b> أعمدة <b>رقم القطعة</b> · <b>القطعة</b> · <b>صورة القطعة</b>. الأسئلة التي لها نفس "رقم القطعة" تُربط بقطعة واحدة تبقى ثابتة فوق أسئلتها ويتنقل الطالب بينها. اكتب نص القطعة (أو الصق الرسمة في عمود "صورة القطعة") مرة واحدة في أي صف من صفوفها — أو في صف مستقل يحتوي على رقم القطعة فقط بدون سؤال.</p>
       <form id="uf" class="form grid3">
-        <label class="span2">ملف .xlsx (حتى 4MB)<input type="file" name="file" accept=".xlsx" required></label>
+        <label class="span2">ملف أو أكثر .xlsx (حتى 4MB لكل ملف — يمكنك اختيار عدة ملفات معًا)<input type="file" name="file" accept=".xlsx" multiple required></label>
         <label>مادة افتراضية (إذا لم يوجد عمود مادة)<input name="default_subject"></label>
         <label class="check"><input type="checkbox" name="dry_run"> فحص فقط بدون حفظ</label>
         <button class="btn primary" type="submit">رفع</button>
@@ -368,23 +368,48 @@ Admin.questions = async (el, params, query) => {
     if (v.missing) p.set('missing', '1');
     location.hash = `#/admin/questions?${p}`;
   });
+  // One sheet or several: they are uploaded one after the other (each request stays under the 4MB limit), and each
+  // file gets its own result.
   onSubmit($('#uf', el), async (v, form) => {
-    const fd = new FormData();
-    fd.append('file', form.file.files[0]);
-    if (v.default_subject) fd.append('default_subject', v.default_subject);
+    const files = [...form.file.files];
     const res = $('#result', el);
-    try {
-      const r = await API.upload(`/admin/questions/upload${v.dry_run ? '?dry_run=true' : ''}`, fd);
-      const errs = r.errors || [];
-      res.innerHTML = `<div class="notice ${errs.length ? 'mid' : 'good'}">${r.dry_run
-        ? `فحص: ${r.valid_rows} صف سليم (بها ${r.images} صورة${r.passages ? ` و${r.passages} قطعة/رسمة مشتركة` : ''})، ${r.failed} صف به أخطاء`
-        : `تمت إضافة <b>${r.inserted}</b> سؤال و${r.images} صورة${r.passages ? ` و${r.passages} قطعة/رسمة مشتركة` : ''} · مكرر (تم تجاهله): ${r.duplicates} · به أخطاء: ${r.failed}`}</div>
-        ${errs.length ? table(['الصف', 'الأخطاء'], errs.map((e) => [e.row, esc(e.errors.join('، '))])) : ''}`;
-      if (!r.dry_run) { toast(`تم رفع ${r.inserted} سؤال`); setTimeout(reload, 1500); }
-    } catch (err) {
-      const d = err.details;
-      res.innerHTML = `<div class="notice bad">${esc(err.message)}${d?.missing_columns ? `: ${esc(d.missing_columns.join('، '))}` : ''}</div>
-        ${d?.errors ? table(['الصف', 'الأخطاء'], d.errors.map((e) => [e.row, esc(e.errors.join('، '))])) : ''}`;
+    const many = files.length > 1;
+    res.innerHTML = files.map((f, i) => `<div class="upload-result" id="ur-${i}">${many ? `<h3>📄 ${esc(f.name.replace(/\.xlsx$/i, ''))}</h3>` : ''}
+      <p class="muted small">${i ? 'في الانتظار…' : 'جارٍ الرفع…'}</p></div>`).join('');
+    let added = 0;
+    let failedFiles = 0;
+    for (const [i, file] of files.entries()) {
+      const box = $(`#ur-${i}`, res);
+      const head = many ? `<h3>📄 ${esc(file.name.replace(/\.xlsx$/i, ''))}</h3>` : '';
+      box.querySelector('p').textContent = 'جارٍ الرفع…';
+      const fd = new FormData();
+      fd.append('file', file);
+      if (v.default_subject) fd.append('default_subject', v.default_subject);
+      try {
+        const r = await API.upload(`/admin/questions/upload${v.dry_run ? '?dry_run=true' : ''}`, fd);
+        const errs = r.errors || [];
+        if (!r.dry_run) added += r.inserted;
+        box.innerHTML = `${head}<div class="notice ${errs.length ? 'mid' : 'good'}">${r.dry_run
+          ? `فحص: ${r.valid_rows} صف سليم (بها ${r.images} صورة${r.passages ? ` و${r.passages} قطعة/رسمة مشتركة` : ''})، ${r.failed} صف به أخطاء`
+          : `تمت إضافة <b>${r.inserted}</b> سؤال و${r.images} صورة${r.passages ? ` و${r.passages} قطعة/رسمة مشتركة` : ''} · مكرر (تم تجاهله): ${r.duplicates} · به أخطاء: ${r.failed}`}</div>
+          ${errs.length ? table(['الصف', 'الأخطاء'], errs.map((e) => [e.row, esc(e.errors.join('، '))])) : ''}`;
+      } catch (err) {
+        failedFiles += 1;
+        const d = err.details;
+        box.innerHTML = `${head}<div class="notice bad">${esc(err.message)}${d?.missing_columns ? `: ${esc(d.missing_columns.join('، '))}` : ''}</div>
+          ${d?.errors ? table(['الصف', 'الأخطاء'], d.errors.map((e) => [e.row, esc(e.errors.join('، '))])) : ''}`;
+      }
+    }
+    if (many) {
+      res.insertAdjacentHTML('afterbegin', `<div class="notice ${failedFiles ? 'mid' : 'good'}"><b>${files.length - failedFiles} من ${files.length} ملفات</b>
+        ${v.dry_run ? 'تم فحصها' : `تم رفعها · إجمالي الأسئلة المضافة: <b>${added}</b>`}${failedFiles ? ` · ${failedFiles} ملف به مشكلة (التفاصيل تحت)` : ''}
+        ${!v.dry_run && added ? ' <button class="btn ghost tiny" type="button" id="ur-reload">تحديث قائمة الأسئلة والشيتات</button>' : ''}</div>`);
+      $('#ur-reload', res)?.addEventListener('click', reload);
+    }
+    if (!v.dry_run && added) {
+      toast(`تم رفع ${added} سؤال`);
+      // Keep the results on screen when something failed; otherwise refresh the lists.
+      if (!failedFiles && !many) setTimeout(reload, 1500);
     }
   });
   onAction(el, {

@@ -522,3 +522,6 @@ td .row { flex-wrap: wrap; }
 .lessons-box[open] > summary { margin-bottom: 8px; }
 
 bdi.nw { white-space: nowrap; }
+
+.upload-result { margin-top: 10px; }
+.upload-result h3 { font-size: 1rem; margin: 0 0 6px; }
