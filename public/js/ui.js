@@ -62,7 +62,7 @@ function richChunk(text) {
 function extractFractions(t) {
   const parts = [];
   const POWER = /^[\^_](?:\{[^{}]*\}|[-−+]?[0-9٠-٩]+|[A-Za-z\u0621-\u064A])/;
-  const isTerm = (c) => /[0-9٠-٩.A-Za-z\u0621-\u064A^_{}]/.test(c || '');
+  const isTerm = (c) => /[0-9٠-٩.A-Za-z\u0621-\u064A\u0391-\u03A9\u03B1-\u03C9^_{}]/.test(c || ''); // Greek too: 2πr/l
   const operand = (from, dir) => { // dir -1: left of the slash, +1: right of it
     let i = from;
     while (t[i] === ' ') i += dir;
@@ -103,12 +103,15 @@ function extractFractions(t) {
     const right = left && operand(i + 1, 1);
     if (!left || !right || left.start < last) continue;
     // Units are not fractions: J/(g·°C), kJ/(mol·K) — Latin unit letters over a unit, no numbers or + − = in them.
-    const unit = (o) => /[A-Za-z°µΩ]/.test(o.inner) && !/[\u0600-\u06FF0-9٠-٩+\-−–=]/.test(o.inner);
+    // A Greek letter other than μ / Ω (πr/l، θ/t) is algebra, not a unit.
+    const unit = (o) => /[A-Za-z°µΩ]/.test(o.inner) && !/[\u0600-\u06FF0-9٠-٩+\-−–=\u0391-\u03A8\u03B1-\u03BB\u03BD-\u03C9]/.test(o.inner);
     if (!left.paren && unit(left) && unit(right)) continue;
     if (!left.paren && !right.paren) {
       // Without brackets: number/number or number/term (٣/٤، ١/س، س/٢) — never term/term (units like م/ث، كم/س),
       // and not part of a date or a longer a/b/c chain.
-      if (left.letter && right.letter) continue;
+      // A Greek letter (other than μ / Ω) makes it algebra, not a unit: 2πr/l، Δx/Δt.
+      const greek = (o) => /[\u0391-\u03A8\u03B1-\u03BB\u03BD-\u03C9]/.test(o.inner);
+      if (left.letter && right.letter && !greek(left) && !greek(right)) continue;
       const before = t.slice(0, left.start).match(/(\S)\s*$/)?.[1];
       const after = t.slice(right.end).match(/^\s*(\S)/)?.[1];
       if (before === '/' || after === '/') continue;
