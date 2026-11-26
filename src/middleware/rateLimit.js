@@ -44,6 +44,11 @@ module.exports = {
   authLimiter: rateLimit({ ...base, ...shared('auth'), windowMs: 15 * 60 * 1000, limit: AUTH_LIMIT, message: message('محاولات كثيرة من نفس الشبكة، حاول بعد قليل') }),
   otpLimiter: rateLimit({ ...base, ...shared('otp'), windowMs: 60 * 60 * 1000, limit: 100, message: message('طلبات رمز تحقق كثيرة من نفس الشبكة، حاول لاحقاً') }),
   aiLimiter: rateLimit({ ...base, ...shared('ai'), windowMs: 60 * 1000, limit: 10, keyGenerator: userOrIp, message: message('طلبات شرح كثيرة، انتظر دقيقة') }),
-  uploadLimiter: rateLimit({ ...base, ...shared('upload'), windowMs: 60 * 60 * 1000, limit: 20, keyGenerator: userOrIp, message: message('عمليات رفع كثيرة') }),
+  // Students' receipts: 20 / hour. The admin uploading question sheets (one after another) isn't limited.
+  uploadLimiter: rateLimit({
+    ...base, ...shared('upload'), windowMs: 60 * 60 * 1000, limit: 20, keyGenerator: userOrIp,
+    skip: (req) => req.user?.role === 'admin',
+    message: message('عمليات رفع كثيرة، حاول بعد ساعة'),
+  }),
   webhookLimiter: rateLimit({ ...base, windowMs: 60 * 1000, limit: 300 }),
 };
